@@ -29,6 +29,7 @@ from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
+from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
@@ -381,6 +382,13 @@ async def mazda_clear(request: Request) -> dict:
 def peugeot_full_scan(adapter: str | None = None, mode: str = "real") -> dict:
     instance = _obd_adapter_or_400(adapter, mode)
     return peugeot_scan.scan(instance, mode)
+
+
+@app.get("/api/peugeot/live")
+def peugeot_live(adapter: str | None = None, mode: str = "real") -> dict:
+    """Peugeot health check: PSA-specific mode-22 values + mileage cross-check."""
+    instance = _obd_adapter_or_400(adapter, mode)
+    return peugeot_pids.live(instance, mode)
 
 
 @app.post("/api/peugeot/clear")

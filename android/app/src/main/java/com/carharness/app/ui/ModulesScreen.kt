@@ -108,12 +108,12 @@ fun ModulesScreen(state: AppState) {
                     ) {
                         Text(if (state.modScanning) "Scanning…" else "Scan all modules")
                     }
+                    val ready = state.connState is ConnState.Connected &&
+                        !state.modScanning && !state.extrasBusy
                     if (mazda) {
-                        val ready = state.connState is ConnState.Connected &&
-                            !state.modScanning && !state.mazdaExtrasBusy
                         OutlinedButton(onClick = { state.runMazdaExtras() }, enabled = ready) {
                             Text(
-                                if (state.mazdaExtrasBusy && state.mazdaExtrasSource != "snapshot")
+                                if (state.extrasBusy && state.extrasSource != "snapshot")
                                     "Reading…" else "Live extras"
                             )
                         }
@@ -121,8 +121,13 @@ fun ModulesScreen(state: AppState) {
                             Text("Snapshot")
                         }
                     }
+                    if (peugeot) {
+                        OutlinedButton(onClick = { state.runPeugeotExtras() }, enabled = ready) {
+                            Text(if (state.extrasBusy) "Reading…" else "Health check")
+                        }
+                    }
                 }
-                if ((state.modScanning || state.mazdaExtrasBusy) && state.modProgress.isNotEmpty()) {
+                if ((state.modScanning || state.extrasBusy) && state.modProgress.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(state.modProgress, color = Amber, fontSize = 12.sp)
                 }
@@ -140,43 +145,62 @@ fun ModulesScreen(state: AppState) {
             }
         }
 
-        if (mazda && state.mazdaExtrasRead) {
-            val fromSnapshot = state.mazdaExtrasSource == "snapshot"
+        // Extras card: only shown for the brand that produced it, same rule as
+        // the module report below.
+        if (state.extrasRead && state.extrasBrand == brand) {
+            val fromSnapshot = state.extrasSource == "snapshot"
             item {
                 SectionCard {
-                    PanelTitle(if (fromSnapshot) "MAZDA SNAPSHOT (BROADCAST)" else "MAZDA LIVE EXTRAS")
-                    if (state.mazdaExtras.isEmpty()) {
+                    PanelTitle(
+                        when {
+                            peugeot -> "PEUGEOT HEALTH CHECK"
+                            fromSnapshot -> "MAZDA SNAPSHOT (BROADCAST)"
+                            else -> "MAZDA LIVE EXTRAS"
+                        }
+                    )
+                    if (state.extras.isEmpty()) {
                         Text(
-                            if (fromSnapshot) {
-                                "No decodable broadcast frames were captured. Make sure the " +
-                                    "ignition is ON — with the car fully asleep the bus is quiet."
-                            } else {
-                                "This car didn't answer any of the Mazda-specific values. " +
-                                    "They vary by model year and engine — the generic live " +
-                                    "dashboard on the Car tab still works."
+                            when {
+                                peugeot ->
+                                    "This car didn't answer any of the PSA-specific values. " +
+                                        "Make sure the ignition is ON — coverage also varies " +
+                                        "by model year and engine."
+                                fromSnapshot ->
+                                    "No decodable broadcast frames were captured. Make sure the " +
+                                        "ignition is ON — with the car fully asleep the bus is quiet."
+                                else ->
+                                    "This car didn't answer any of the Mazda-specific values. " +
+                                        "They vary by model year and engine — the generic live " +
+                                        "dashboard on the Car tab still works."
                             },
                             color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp
                         )
                     } else {
-                        state.mazdaExtras.forEach { r ->
+                        state.extras.forEach { r ->
+                            val warn = r.value.startsWith("⚠")
                             Row(Modifier.padding(vertical = 3.dp)) {
                                 Text(
-                                    r.name, color = TextMuted, fontSize = 13.sp,
+                                    r.name, color = if (warn) Red else TextMuted, fontSize = 13.sp,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
                                     if (r.unit.isEmpty()) r.value else "${r.value} ${r.unit}",
-                                    color = TextMain, fontSize = 13.sp,
+                                    color = if (warn) Red else TextMain, fontSize = 13.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            if (fromSnapshot)
-                                "Passive listen — nothing was sent to the car. Tap Snapshot to refresh."
-                            else
-                                "One-shot read — tap Live extras again to refresh.",
+                            when {
+                                peugeot ->
+                                    "One-shot read-only pass — tap Health check again to refresh. " +
+                                        "Values this car doesn't support are skipped."
+                                fromSnapshot ->
+                                    "Passive listen — nothing was sent to the car. Tap Snapshot to refresh."
+                                else ->
+                                    "One-shot read — tap Live extras again to refresh."
+                            },
                             color = TextFaint, fontSize = 11.sp
                         )
                     }

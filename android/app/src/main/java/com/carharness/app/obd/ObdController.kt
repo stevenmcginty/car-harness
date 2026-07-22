@@ -163,6 +163,12 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
         PeugeotUds.clearDtcs(session, address)
     }
 
+    /** One pass over the Peugeot health-check values (PSA mode-22 DIDs). */
+    suspend fun peugeotEnhanced(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            PeugeotUds.readEnhanced(session, onProgress)
+        }
+
     suspend fun live(keys: List<String> = Pids.dashboardKeys): List<LiveReading> = mutex.withLock {
         session.ensureProtocol()
         if (supported == null) supported = Pids.readSupported(session)

@@ -77,6 +77,26 @@ def tester_present(client, dst: int, timeout: float = 0.8) -> bool:
     return bool(payload)
 
 
+def answers(client, dst: int, timeout: float = 0.8) -> bool:
+    """Presence ladder: TesterPresent, then real ident reads.
+
+    BMW's own tooling opens contact with ReadDataByIdentifier, and some ECUs
+    (the DME foremost) never answer a naked 3E 00 at all.
+    """
+    if tester_present(client, dst, timeout=timeout):
+        return True
+    for did_hi, did_lo in ((0xF1, 0x90), (0xF1, 0x50)):
+        try:
+            payload = client.request(
+                dst, bytes([SVC_READ_DATA_BY_ID, did_hi, did_lo]), timeout=timeout
+            )
+        except Exception:
+            continue
+        if payload:
+            return True
+    return False
+
+
 def read_vin(client, dst: int = 0x10, timeout: float = 2.0) -> Optional[str]:
     payload = client.request(
         dst, bytes([SVC_READ_DATA_BY_ID, DID_VIN >> 8, DID_VIN & 0xFF]), timeout=timeout
@@ -99,9 +119,10 @@ def status_flags(status: int) -> List[str]:
 
 
 def read_dtcs(client, dst: int, timeout: float = 3.0) -> List[dict]:
-    """reportDTCByStatusMask; tries the wide mask first, then a narrow one."""
+    """reportDTCByStatusMask; 0x0C (confirmed+pending) is what BMW's own
+    tooling asks for, the others are fallbacks for picky modules."""
     last_error = None
-    for mask in (0xAF, 0x0C):
+    for mask in (0x0C, 0xAF, 0x08):
         try:
             payload = client.request(
                 dst, bytes([SVC_READ_DTC, 0x02, mask]), timeout=timeout
@@ -110,9 +131,7 @@ def read_dtcs(client, dst: int, timeout: float = 3.0) -> List[dict]:
             break
         except UdsNegativeResponse as exc:
             last_error = exc
-            if exc.nrc in (0x12, 0x31):
-                continue  # mask not supported -- try the narrower one
-            raise
+            continue  # picky module -- try a narrower mask
     else:
         raise last_error
 

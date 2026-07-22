@@ -41,6 +41,7 @@ object PeugeotUds {
         Ecu(0x6A1, 0x681, "SCR", "AdBlue / SCR (diesel)"),
         Ecu(0x6C1, 0x601, "ADDITIF", "DPF additive (diesel)"),
         Ecu(0x730, 0x710, "CPL", "Rain / light sensor"),
+        Ecu(0x6B4, 0x694, "BMS", "HV battery (EV / PHEV)"),
     )
 
     private val RESP_FOR: Map<Int, Int> = ECUS.associate { it.req to it.resp }
@@ -271,6 +272,20 @@ object PeugeotUds {
         val present = modules.filter { it.present }
         val faults = present.sumOf { it.dtcs.size }
         val simPrefix = if (simulated) "SIMULATED — no real car connected. " else ""
+
+        // Dealer check: every module that knows its VIN should agree. A module
+        // reporting a different VIN was swapped in from another car (crash
+        // repair, or the cluster/BSI dance used to disguise mileage).
+        val vins = modules.flatMap { m ->
+            m.ident.filter { it.first == "VIN" && it.second.length >= 11 }
+                .map { m.code to it.second.take(17) }
+        }
+        val distinct = vins.map { it.second }.distinct()
+        val vinWarning = if (distinct.size > 1) {
+            " ⚠ VIN MISMATCH: " + vins.joinToString(", ") { "${it.first}=${it.second}" } +
+                " — a control unit from another car is fitted (crash repair or clocking risk)."
+        } else ""
+
         return UdsScanReport(
             ok = true,
             simulated = simulated,
@@ -278,9 +293,117 @@ object PeugeotUds {
             modules = modules,
             message = simPrefix + "${present.size} module(s) answered on the diagnostic CAN, " +
                 "$faults fault" + (if (faults == 1) "" else "s") +
-                " stored. Read-only scan — nothing was changed on the car. Modules on other " +
+                " stored." + vinWarning +
+                " Read-only scan — nothing was changed on the car. Modules on other " +
                 "PSA buses (or older KWP/VAN cars) aren't reachable through a standard OBD dongle.",
         )
+    }
+
+    // ---------------------------------------------------------- health check
+
+    private const val KM_TO_MI = 0.621371
+
+    /**
+     * One RDBI read with per-module session escalation: some PSA modules only
+     * expose measurement DIDs in an extended session (read-safe, lapses on its
+     * own). Escalates at most once per module per pass. Returns the payload
+     * after `62 <did>` or null if this car doesn't answer the DID.
+     */
+    private fun readDid(
+        session: Elm327Session,
+        reqId: Int,
+        did: Int,
+        escalated: MutableSet<Int>,
+    ): ByteArray? {
+        repeat(2) { attempt ->
+            try {
+                val payload = request(session, reqId, 0x22, "%04X".format(did), 2500)
+                if (payload.size < 4) return null
+                return payload.drop(3).toByteArray()
+            } catch (e: UdsNegativeResponse) {
+                val canEscalate = attempt == 0 && e.nrc in SESSION_NRCS &&
+                    reqId !in escalated
+                if (!canEscalate) return null
+                escalated.add(reqId)
+                if (!startExtendedSession(session, reqId)) return null
+            } catch (_: Exception) {
+                return null
+            }
+        }
+        return null
+    }
+
+    /**
+     * Dealer health check: one read-only pass over the PSA-specific values
+     * (PeugeotPids) — DPF, AdBlue, battery, temperatures — plus odometer
+     * readings from more than one module, cross-checked. Two modules that
+     * disagree about the mileage are the classic clocking signature.
+     */
+    fun readEnhanced(
+        session: Elm327Session,
+        onProgress: (String) -> Unit = {},
+    ): List<EnhancedReading> {
+        session.ensureProtocol()
+        if (!protocolSupported(session)) {
+            throw ObdException(
+                "Not on the 11-bit/500k CAN a PSA car's diagnostics use.",
+                ObdException.Kind.PROTOCOL
+            )
+        }
+        val out = mutableListOf<EnhancedReading>()
+        begin(session)
+        try {
+            val escalated = mutableSetOf<Int>()
+            for (def in PeugeotPids.DIDS) {
+                onProgress("Reading ${def.name}…")
+                val body = readDid(session, def.reqId, def.did, escalated) ?: continue
+                val value = try {
+                    def.decode(body)
+                } catch (_: Exception) {
+                    null
+                } ?: continue
+                out.add(EnhancedReading(def.name, value, def.unit))
+            }
+
+            // Odometer cross-check: read every source that answers, show each,
+            // then compare. Sources should agree to within a few miles.
+            val odoKm = mutableListOf<Pair<String, Double>>()
+            for (src in PeugeotPids.ODO_SOURCES) {
+                onProgress("Reading odometer (${src.label})…")
+                val body = readDid(session, src.reqId, src.did, escalated) ?: continue
+                val km = try {
+                    src.decodeKm(body)
+                } catch (_: Exception) {
+                    null
+                } ?: continue
+                odoKm.add(src.label to km)
+                out.add(
+                    EnhancedReading(
+                        "Odometer (${src.label})",
+                        "%,.0f mi (%,.0f km)".format(km * KM_TO_MI, km),
+                        ""
+                    )
+                )
+            }
+            if (odoKm.size >= 2) {
+                val kms = odoKm.map { it.second }
+                val spreadMi = (kms.max() - kms.min()) * KM_TO_MI
+                out.add(
+                    if (spreadMi <= 6.0) {
+                        EnhancedReading("Mileage cross-check", "✓ sources agree", "")
+                    } else {
+                        EnhancedReading(
+                            "Mileage cross-check",
+                            "⚠ sources differ by %,.0f mi — clocking risk".format(spreadMi),
+                            ""
+                        )
+                    }
+                )
+            }
+        } finally {
+            restore(session)
+        }
+        return out
     }
 
     /** Clear one module's fault memory, then re-read it. Returns fresh DTCs. */

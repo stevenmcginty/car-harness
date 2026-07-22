@@ -11,8 +11,9 @@ from typing import List, Optional
 
 from backend.core import doip, hsfz, interfaces, uds
 
-# Common F-series diagnostic addresses (F25/F26 era). Probing an address that
-# isn't fitted is harmless -- the gateway just never answers and we mark it
+# F-series diagnostic addresses, incl. UKL-platform MINIs (F54/F55/F56/F60)
+# where the BDC took over the 0x40 body slot. Probing an address that isn't
+# fitted is harmless -- the gateway just never answers and we mark it
 # "not fitted".
 ECU_TABLE = [
     (0x10, "ZGW", "Central gateway"),
@@ -21,11 +22,18 @@ ECU_TABLE = [
     (0x01, "ACSM", "Airbag / crash safety"),
     (0x29, "DSC", "ABS / stability control"),
     (0x30, "EPS", "Power steering"),
-    (0x40, "FEM", "Front body electronics"),
+    (0x40, "FEM/BDC", "Body electronics"),
     (0x72, "REM", "Rear body electronics"),
     (0x60, "KOMBI", "Instrument cluster"),
     (0x63, "HU", "Head unit (nav / radio)"),
+    (0x62, "HU-L", "Head unit (basic radio, if fitted)"),
     (0x78, "IHKA", "Climate control"),
+    (0x5D, "KAFAS", "Camera / driver assistance (if fitted)"),
+    (0x5E, "GWS", "Gear selector (if fitted)"),
+    (0x56, "FZD", "Roof function centre (if fitted)"),
+    (0x67, "ZBE", "iDrive controller (if fitted)"),
+    (0x3D, "HUD", "Head-up display (if fitted)"),
+    (0x71, "AHM", "Trailer module (if fitted)"),
     (0x36, "TCB", "Telematics (if fitted)"),
     (0x21, "VDM", "Adaptive suspension (if fitted)"),
     (0x64, "PMA", "Parking assistant (if fitted)"),
@@ -133,7 +141,7 @@ def scan(mode: str = "real") -> dict:
                     "dtcs": [],
                     "error": None,
                 }
-                if not uds.tester_present(client, addr):
+                if not uds.answers(client, addr):
                     modules.append(entry)
                     continue
                 entry["present"] = True
@@ -210,7 +218,7 @@ def clear(mode: str = "real", address: Optional[str] = None) -> dict:
     try:
         with hsfz.HsfzClient(found["ip"]) as client:
             targets = [wanted] if wanted is not None else [
-                addr for addr, _, _ in ECU_TABLE if uds.tester_present(client, addr)
+                addr for addr, _, _ in ECU_TABLE if uds.answers(client, addr)
             ]
             for addr in targets:
                 try:

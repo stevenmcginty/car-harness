@@ -11,7 +11,8 @@ package com.carharness.app.obd
  */
 object BmwUds {
 
-    // Common F-series diagnostic addresses (F25/F26 era) — same table as the
+    // F-series diagnostic addresses, incl. UKL-platform MINIs (F54/F55/F56/
+    // F60) where the BDC took over the 0x40 body slot — same table as the
     // desktop's ENET scan. Probing an address that isn't fitted is harmless:
     // the gateway never answers and we mark it "not fitted".
     val ECUS = listOf(
@@ -21,11 +22,18 @@ object BmwUds {
         Triple(0x01, "ACSM", "Airbag / crash safety"),
         Triple(0x29, "DSC", "ABS / stability control"),
         Triple(0x30, "EPS", "Power steering"),
-        Triple(0x40, "FEM", "Front body electronics"),
+        Triple(0x40, "FEM/BDC", "Body electronics"),
         Triple(0x72, "REM", "Rear body electronics"),
         Triple(0x60, "KOMBI", "Instrument cluster"),
         Triple(0x63, "HU", "Head unit (nav / radio)"),
+        Triple(0x62, "HU-L", "Head unit (basic radio, if fitted)"),
         Triple(0x78, "IHKA", "Climate control"),
+        Triple(0x5D, "KAFAS", "Camera / driver assistance (if fitted)"),
+        Triple(0x5E, "GWS", "Gear selector (if fitted)"),
+        Triple(0x56, "FZD", "Roof function centre (if fitted)"),
+        Triple(0x67, "ZBE", "iDrive controller (if fitted)"),
+        Triple(0x3D, "HUD", "Head-up display (if fitted)"),
+        Triple(0x71, "AHM", "Trailer module (if fitted)"),
         Triple(0x36, "TCB", "Telematics (if fitted)"),
         Triple(0x21, "VDM", "Adaptive suspension (if fitted)"),
         Triple(0x64, "PMA", "Parking assistant (if fitted)"),
@@ -36,6 +44,8 @@ object BmwUds {
         0xF189 to "Software",
         0xF191 to "Hardware",
     )
+
+    private const val ENGINE = 0x12
 
     /** True when the detected protocol is the 11-bit / 500k CAN BMWs use. */
     fun protocolSupported(session: Elm327Session): Boolean = session.protocolNum == 6
@@ -50,12 +60,25 @@ object BmwUds {
         session.at("ATST64")  // ~410ms silence window — plenty for a live module
     }
 
-    /** Point the ELM at one module's address. */
+    /** Point the ELM at one module's address. The flow control uses a finite
+     *  block size (8 frames, 2ms gap) so a big fault dump pauses for our ACK
+     *  every 8 frames instead of flooding the dongle's tiny buffer. */
     private fun target(session: Elm327Session, dst: Int) {
+        session.at("ATFCSH6F1")  // re-assert: the engine fallback moves it to 7E0
         session.at("ATSH6F1")
         session.at("ATCEA%02X".format(dst))
         session.at("ATCRA6%02X".format(dst))
-        session.at("ATFCSD%02X300008".format(dst))
+        session.at("ATFCSD%02X300802".format(dst))
+    }
+
+    /** Standard 11-bit OBD addressing (7E0 → 7E8) — some engine ECUs ignore
+     *  the 6F1 gateway scheme but always answer on the plain OBD channel. */
+    private fun targetStandard(session: Elm327Session) {
+        session.at("ATCEA")      // extended addressing off
+        session.at("ATSH7E0")
+        session.at("ATFCSH7E0")
+        session.at("ATCRA7E8")
+        session.at("ATFCSD300802")
     }
 
     /** Put the ELM back the way the generic OBD stack expects it. */
@@ -80,7 +103,7 @@ object BmwUds {
         timeoutMs: Long = 6000,
     ): ByteArray {
         val cmd = "%02X".format(service) + dataHex
-        var pendingRetries = 2
+        var pendingRetries = 6
         while (true) {
             val records = session.udsRecords(cmd, timeoutMs)
             var negative: UdsNegativeResponse? = null
@@ -100,7 +123,7 @@ object BmwUds {
             }
             if (negative != null) {
                 if (negative.nrc == 0x78 && pendingRetries-- > 0) {
-                    Thread.sleep(300)
+                    Thread.sleep(400)
                     continue
                 }
                 throw negative
@@ -111,17 +134,27 @@ object BmwUds {
 
     // ------------------------------------------------------------- services
 
+    /** True if anything UDS-shaped answers at the currently-targeted address.
+     *  Ladder: plain TesterPresent, then real ident reads — BMW's own tooling
+     *  opens contact with ReadDataByIdentifier, and some ECUs (the DME
+     *  foremost) never answer a naked 3E 00 at all. */
+    private fun answersHere(session: Elm327Session): Boolean {
+        for ((service, data) in listOf(0x3E to "00", 0x22 to "F190", 0x22 to "F150")) {
+            try {
+                request(session, service, data, 2500)
+                return true
+            } catch (_: UdsNegativeResponse) {
+                return true  // a negative response still proves an ECU is there
+            } catch (_: Exception) {
+            }
+        }
+        return false
+    }
+
     /** True if anything UDS-shaped lives at this address. */
     private fun testerPresent(session: Elm327Session, dst: Int): Boolean {
         target(session, dst)
-        return try {
-            request(session, 0x3E, "00", 4000)
-            true
-        } catch (_: UdsNegativeResponse) {
-            true  // a negative response still proves an ECU is there
-        } catch (_: Exception) {
-            false
-        }
+        return answersHere(session)
     }
 
     private fun readIdent(session: Elm327Session): List<Pair<String, String>> {
@@ -150,23 +183,55 @@ object BmwUds {
     }
 
     private fun readDtcs(session: Elm327Session): List<UdsDtc> {
-        // reportDTCByStatusMask; wide mask first, then a narrow fallback.
-        var payload: ByteArray? = null
-        var lastNegative: UdsNegativeResponse? = null
-        for (mask in listOf(0xAF, 0x0C)) {
+        // reportDTCByStatusMask. 0x0C (confirmed+pending) is what BMW's own
+        // tooling asks for; wider/narrower masks are fallbacks. A chassis
+        // module on a car that sat with a low battery can hold dozens of
+        // faults — a reply too big or too slow for some BLE dongles — and a
+        // count-only read (19 01) is the honest last stop.
+        session.at("ATSTFF")  // ~1s silence window for big or slow replies
+        try {
+            var lastError: Exception? = null
+            for (mask in listOf(0x0C, 0xAF, 0x08)) {
+                try {
+                    return parseDtcReport(request(session, 0x19, "02%02X".format(mask)))
+                } catch (e: UdsNegativeResponse) {
+                    lastError = e
+                } catch (e: ObdException) {
+                    lastError = e
+                }
+            }
+            val count = try {
+                readDtcCount(session)
+            } catch (_: Exception) {
+                null
+            }
+            when {
+                count == 0 -> return emptyList()
+                count != null -> throw ObdException(
+                    "$count fault" + (if (count == 1) "" else "s") +
+                        " stored, but the full list would not fit through this dongle.",
+                    ObdException.Kind.NO_DATA
+                )
+            }
+            throw lastError ?: ObdException("Fault read failed.", ObdException.Kind.NO_DATA)
+        } finally {
             try {
-                payload = request(session, 0x19, "02%02X".format(mask))
-                break
-            } catch (e: UdsNegativeResponse) {
-                lastNegative = e
-                if (e.nrc == 0x12 || e.nrc == 0x31) continue
-                throw e
+                session.at("ATST64")
+            } catch (_: Exception) {
             }
         }
-        val data = payload ?: throw (lastNegative ?: ObdException(
-            "Fault read failed.", ObdException.Kind.NO_DATA
-        ))
+    }
 
+    /** 19 01 = reportNumberOfDTCByStatusMask: 59 01 <avail> <fmt> <hi> <lo>. */
+    private fun readDtcCount(session: Elm327Session): Int {
+        val p = request(session, 0x19, "01AF")
+        if (p.size < 6) {
+            throw ObdException("Short reply to the fault-count read.", ObdException.Kind.NO_DATA)
+        }
+        return ((p[4].toInt() and 0xFF) shl 8) or (p[5].toInt() and 0xFF)
+    }
+
+    private fun parseDtcReport(data: ByteArray): List<UdsDtc> {
         // Reply: 59 02 <availabilityMask> then 4-byte records [dtc x3][status].
         val dtcs = mutableListOf<UdsDtc>()
         var i = 3
@@ -193,6 +258,18 @@ object BmwUds {
         return dtcs
     }
 
+    /** Generic OBD Mode 03 stored codes as UdsDtc rows (engine fallback). */
+    private fun obdStoredCodes(session: Elm327Session): List<UdsDtc> =
+        Dtc.readCodes(session, 0x03).map { code ->
+            UdsDtc(
+                code = code,
+                hex = "",
+                status = "",
+                flags = listOf("confirmed"),
+                description = Dtc.describe(code),
+            )
+        }
+
     // ------------------------------------------------------------- top level
 
     fun scan(
@@ -213,7 +290,22 @@ object BmwUds {
         try {
             for ((addr, code, name) in ECUS) {
                 onProgress("Probing $code — $name…")
-                if (!testerPresent(session, addr)) {
+                var viaStandardObd = false
+                var present = testerPresent(session, addr)
+                if (!present && addr == ENGINE) {
+                    // The engine demonstrably talks (generic OBD works), so an
+                    // engine that ignores the 6F1 scheme gets one more chance
+                    // on the standard OBD channel it must answer.
+                    onProgress("Probing $code — $name (standard OBD channel)…")
+                    present = try {
+                        targetStandard(session)
+                        answersHere(session)
+                    } catch (_: Exception) {
+                        false
+                    }
+                    viaStandardObd = present
+                }
+                if (!present) {
                     modules.add(UdsModuleResult(addr, code, name, false, emptyList(), emptyList(), null))
                     continue
                 }
@@ -223,10 +315,19 @@ object BmwUds {
                 try {
                     ident = readIdent(session)
                     dtcs = readDtcs(session)
-                } catch (e: UdsNegativeResponse) {
-                    error = e.message
-                } catch (e: ObdException) {
-                    error = e.message
+                } catch (e: Exception) {
+                    if (e !is UdsNegativeResponse && e !is ObdException) throw e
+                    if (viaStandardObd) {
+                        // Engine on the plain OBD channel may not speak UDS
+                        // fault services — generic Mode 03 codes still do.
+                        try {
+                            dtcs = obdStoredCodes(session)
+                        } catch (_: Exception) {
+                            error = e.message
+                        }
+                    } else {
+                        error = e.message
+                    }
                 }
                 modules.add(UdsModuleResult(addr, code, name, true, ident, dtcs, error))
             }
@@ -257,7 +358,14 @@ object BmwUds {
         begin(session)
         try {
             target(session, dst)
-            request(session, 0x14, "FFFFFF", 8000)
+            try {
+                request(session, 0x14, "FFFFFF", 8000)
+            } catch (e: ObdException) {
+                if (dst != ENGINE) throw e
+                // Engine that only answers on the standard OBD channel.
+                targetStandard(session)
+                request(session, 0x14, "FFFFFF", 8000)
+            }
             return try {
                 readDtcs(session)
             } catch (_: Exception) {

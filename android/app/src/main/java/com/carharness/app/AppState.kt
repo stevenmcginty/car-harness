@@ -256,12 +256,14 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     var modError by mutableStateOf("")
     var modClearingAddr by mutableStateOf<Int?>(null)
 
-    // Mazda enhanced (mode-22) values / broadcast snapshot, read separately
-    // from the module scan. One card shows whichever ran last.
-    var mazdaExtras by mutableStateOf<List<EnhancedReading>>(emptyList())
-    var mazdaExtrasBusy by mutableStateOf(false)
-    var mazdaExtrasRead by mutableStateOf(false) // true once a read completed
-    var mazdaExtrasSource by mutableStateOf("")  // "extras" | "snapshot"
+    // Brand-specific enhanced values (Mazda mode-22 / snapshot, Peugeot health
+    // check), read separately from the module scan. One card shows whichever
+    // ran last; extrasBrand keeps a Mazda card from showing under Peugeot.
+    var extras by mutableStateOf<List<EnhancedReading>>(emptyList())
+    var extrasBusy by mutableStateOf(false)
+    var extrasRead by mutableStateOf(false)  // true once a read completed
+    var extrasSource by mutableStateOf("")   // "extras" | "snapshot"
+    var extrasBrand by mutableStateOf("")    // brand that produced the card
 
     fun chooseModuleBrand(brand: String) {
         if (brand == moduleBrand) return
@@ -337,7 +339,8 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
-    private fun runMazdaReadings(
+    private fun runExtraReadings(
+        brand: String,
         source: String,
         read: suspend (ObdController, (String) -> Unit) -> List<EnhancedReading>,
     ) {
@@ -345,19 +348,20 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
             modError = "Connect to the car first (Car tab)."
             return
         }
-        if (mazdaExtrasBusy || modScanning) return
+        if (extrasBusy || modScanning) return
         setLive(false) // retargets the ELM; pause the dashboard
-        mazdaExtrasBusy = true
+        extrasBusy = true
         modError = ""
         scope.launch(Dispatchers.IO) {
             try {
-                val extras = read(ctrl) { step ->
+                val readings = read(ctrl) { step ->
                     scope.launch(Dispatchers.Main) { modProgress = step }
                 }
                 withContext(Dispatchers.Main) {
-                    mazdaExtras = extras
-                    mazdaExtrasRead = true
-                    mazdaExtrasSource = source
+                    extras = readings
+                    extrasRead = true
+                    extrasSource = source
+                    extrasBrand = brand
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -365,7 +369,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 }
             } finally {
                 withContext(Dispatchers.Main) {
-                    mazdaExtrasBusy = false
+                    extrasBusy = false
                     modProgress = ""
                 }
             }
@@ -373,13 +377,18 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     }
 
     /** Mazda mode-22 values asked from each module (PCM, TCM, cluster, body). */
-    fun runMazdaExtras() = runMazdaReadings("extras") { ctrl, onStep ->
+    fun runMazdaExtras() = runExtraReadings("mazda", "extras") { ctrl, onStep ->
         ctrl.mazdaEnhanced(onStep)
     }
 
     /** Passive listen to the car's own broadcast frames — sends nothing. */
-    fun runMazdaSnapshot() = runMazdaReadings("snapshot") { ctrl, onStep ->
+    fun runMazdaSnapshot() = runExtraReadings("mazda", "snapshot") { ctrl, onStep ->
         ctrl.mazdaSnapshot(onStep)
+    }
+
+    /** Peugeot dealer health check: PSA-specific values + mileage cross-check. */
+    fun runPeugeotExtras() = runExtraReadings("peugeot", "extras") { ctrl, onStep ->
+        ctrl.peugeotEnhanced(onStep)
     }
 
     // ---------------- desktop pairing + remote ----------------

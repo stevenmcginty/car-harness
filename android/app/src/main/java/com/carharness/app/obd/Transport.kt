@@ -29,15 +29,25 @@ class DemoTransport : ObdTransport {
     private var cea: Int? = null
     private val bmwCleared = mutableSetOf<Int>()
 
-    // 11-bit header state: the Mazda recipe aims at modules with ATSH<id>.
+    // 11-bit header state: the Mazda/PSA recipes aim at modules with ATSH<id>.
     private var atsh: Int? = null
     private var cra: Int? = null
     private val mazdaCleared = mutableSetOf<Int>()
+    private val psaCleared = mutableSetOf<Int>()
+    private val psaExtended = mutableSetOf<Int>()
 
     // Every id the simulated Mazda's UDS side owns (present or not).
     private val mazdaTargets =
         (0x7E0..0x7E7).toSet() + setOf(0x706, 0x720, 0x726, 0x730, 0x731, 0x736,
             0x737, 0x760, 0x764, 0x772, 0x793)
+
+    // Every id the simulated PSA car's UDS side owns (PeugeotUds.ECUS request
+    // ids). Note 0x730/0x760/0x764 are on the Mazda list too — Mazda wins
+    // there, which is fine: those PSA modules then read as "not fitted".
+    private val psaTargets = setOf(
+        0x752, 0x6A8, 0x6A9, 0x6AD, 0x744, 0x75F, 0x75D, 0x6B5, 0x6B3,
+        0x76D, 0x6AF, 0x765, 0x6A1, 0x6C1,
+    )
 
     override fun open() {}
     override fun close() {}
@@ -59,6 +69,7 @@ class DemoTransport : ObdTransport {
             cmd.startsWith("AT") -> "OK"
             cea != null -> bmwReply(cea!!, cmd)
             (atsh ?: 0) in mazdaTargets -> mazdaReply(atsh!!, cmd)
+            (atsh ?: 0) in psaTargets -> psaReply(atsh!!, cmd)
             cmd == "0100" -> "4100BE3FA813"
             cmd == "0120" -> "412080000001"
             cmd == "0140" -> "414040000000"
@@ -133,6 +144,51 @@ class DemoTransport : ObdTransport {
             else -> "5902AF"
         }
     }
+
+    // ------------------------------------------------- simulated PSA modules
+    // Mirrors the desktop's backend/profiles/peugeot sim: BSI, engine, ABS,
+    // airbag, cluster and SCR present; the airbag only reports faults after
+    // an extended session (1003), exercising the real escalation path.
+
+    private val psaPresent = setOf(0x752, 0x6A8, 0x6AD, 0x744, 0x75F, 0x6A1)
+
+    private fun psaReply(reqId: Int, cmd: String): String {
+        if (reqId !in psaPresent) return "NO DATA"
+        return when {
+            cmd == "3E00" -> "7E00"
+            cmd == "1003" -> { psaExtended.add(reqId); "5003003201F4" }
+            cmd == "22F190" && reqId == 0x752 ->
+                isoTp("62F190" + ascii("SIMULATED0PEUGEOT"))
+            cmd == "22F187" && reqId == 0x752 -> isoTp("62F187" + ascii("9822009980"))
+            cmd == "22F188" && reqId == 0x6A8 -> isoTp("62F188" + ascii("1037564321"))
+            cmd.startsWith("22") && cmd.length == 6 -> psaDid(reqId, cmd.substring(2))
+            cmd.startsWith("1902") -> psaDtcs(reqId)
+            cmd == "14FFFFFF" -> { psaCleared.add(reqId); "54" }
+            else -> "NO DATA"
+        }
+    }
+
+    private fun psaDtcs(reqId: Int): String {
+        // The airbag refuses in the default session — the client must escalate.
+        if (reqId == 0x744 && reqId !in psaExtended) return "7F197F"
+        if (reqId in psaCleared) return "5902AF"
+        return when (reqId) {
+            0x6A8 -> isoTp("5902AF" + "0234002F" + "13380008") // engine: P0234 + P1338
+            0x744 -> isoTp("5902AF" + "90040008")              // airbag: B1004
+            0x6A1 -> isoTp("5902AF" + "20E80008")              // SCR: P20E8
+            else -> "5902AF"
+        }
+    }
+
+    /** PSA health-check demo answers, matching PeugeotPids' decode formulas. */
+    private fun psaDid(reqId: Int, did: String): String {
+        val hex = psaDemoDids[reqId]?.get(did) ?: return "7F2231"
+        return isoTp("62$did$hex")
+    }
+
+    // reqId -> (DID hex -> payload hex). Filled alongside PeugeotPids so the
+    // demo car answers the same DIDs the real read asks for.
+    private val psaDemoDids: Map<Int, Map<String, String>> = emptyMap()
 
     /** Enhanced (mode-22) demo answers so "Live extras" works hardware-free.
      *  Values chosen to decode plausibly through MazdaPids' formulas. */

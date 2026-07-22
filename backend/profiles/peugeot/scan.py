@@ -52,6 +52,7 @@ PEUGEOT_ECU_TABLE = [
     (0x6A1, 0x681, "SCR", "AdBlue / SCR", "Diesel selective catalytic reduction"),
     (0x6C1, 0x601, "ADDITIF", "DPF additive", "Diesel particulate additive pump"),
     (0x730, 0x710, "CPL", "Rain / light sensor", "Rain & light sensor (if fitted)"),
+    (0x6B4, 0x694, "BMS", "HV battery", "High-voltage battery management (EV/PHEV, if fitted)"),
 ]
 
 # request_id -> response_id map handed to the PSA UDS client so it can set the
@@ -170,6 +171,22 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
 
         present = [m for m in modules if m["present"]]
         faults = sum(len(m["dtcs"]) for m in present)
+
+        # Dealer check: every module that knows its VIN should agree. A module
+        # reporting a different VIN was swapped in from another car (crash
+        # repair, or the cluster/BSI dance used to disguise mileage).
+        vins = [(m["code"], item["value"][:17]) for m in modules
+                for item in m["ident"]
+                if item["label"] == "VIN" and len(item["value"]) >= 11]
+        vin_warning = ""
+        if len({v for _, v in vins}) > 1:
+            vin_warning = (
+                " WARNING - VIN MISMATCH: "
+                + ", ".join(f"{code}={v}" for code, v in vins)
+                + " -- a control unit from another car is fitted (crash repair or "
+                "clocking risk)."
+            )
+
         return {
             "ok": True, "simulated": False,
             "vehicle": {"vin": vin, "protocol": session.protocol or "ISO 15765-4 (CAN 11/500)",
@@ -177,9 +194,9 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
             "modules": modules,
             "message": (
                 f"{len(present)} module(s) answered on the diagnostic CAN, {faults} fault"
-                f"{'s' if faults != 1 else ''} stored. Read-only scan -- nothing was changed on "
-                "the car. Modules on other PSA buses (or older KWP/VAN cars) aren't reachable "
-                "through a standard OBD dongle."
+                f"{'s' if faults != 1 else ''} stored.{vin_warning} Read-only scan -- nothing "
+                "was changed on the car. Modules on other PSA buses (or older KWP/VAN cars) "
+                "aren't reachable through a standard OBD dongle."
             ),
             "timestamp": _now(),
         }

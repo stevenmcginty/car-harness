@@ -26,6 +26,7 @@ from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
+from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
 
 mcp = FastMCP("car-harness")
@@ -229,6 +230,25 @@ def peugeot_scan_modules(adapter_id: str | None = None, mode: str = "real") -> d
     if error is not None:
         return error
     return peugeot_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def peugeot_health_check(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read Peugeot/PSA dealer health-check values over a generic dongle.
+
+    One read-only pass over community-documented PSA mode-22 DIDs: DPF soot
+    load and regeneration data (HDi/BlueHDi diesels), AdBlue level, battery
+    state, engine temperatures, plus odometer readings from more than one
+    module cross-checked against each other -- a mismatch is a clocking red
+    flag. Values this car/engine doesn't support are skipped. Ignition ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_pids.live(instance, mode)
 
 
 @mcp.tool()
