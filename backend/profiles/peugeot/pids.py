@@ -80,12 +80,80 @@ def _byte(scale: float = 1.0, offset: float = 0.0, dp: int = 0,
     return decode
 
 
-# Filled from the community DID research -- see module docstring.
-DIDS: List[Tuple[int, int, str, str, Callable[[bytes], Optional[str]]]] = []
+def _u16_at(i: int, scale: float = 1.0, offset: float = 0.0, dp: int = 0,
+            lo: float = float("-inf"), hi: float = float("inf")):
+    def decode(b: bytes) -> Optional[str]:
+        v = _u16(b, i)
+        if v is None:
+            return None
+        val = v * scale + offset
+        return _fmt(val, dp) if lo <= val <= hi else None
+    return decode
 
-# Odometer sources for the clocking cross-check:
-# (req_id, did, label, decode -> km float or None).
-ODO_SOURCES: List[Tuple[int, int, str, Callable[[bytes], Optional[float]]]] = []
+
+def _u8_at(i: int, scale: float = 1.0, offset: float = 0.0, dp: int = 0,
+           lo: float = float("-inf"), hi: float = float("inf")):
+    def decode(b: bytes) -> Optional[str]:
+        v = _u8(b, i)
+        if v is None:
+            return None
+        val = v * scale + offset
+        return _fmt(val, dp) if lo <= val <= hi else None
+    return decode
+
+
+# UDS service-0x22 single values. e-CMP HV battery on the BMS (0x6B4 -> 0x694),
+# from OBDb's Corsa-e signalset (same e-CMP battery in the e-208/e-2008/e-C4/DS3
+# E-Tense). SOC is verified on real Peugeot captures; the rest are Corsa-e
+# defined (medium). A non-EV never answers. (req_id, did, name, unit, decode)
+DIDS: List[Tuple[int, int, str, str, Callable[[bytes], Optional[str]]]] = [
+    (0x6B4, 0xD860, "HV battery health (SOH)", "%", _u16_at(1, 1 / 16, dp=1, lo=0, hi=100)),
+    (0x6B4, 0xD410, "HV battery charge (SOC)", "%", _u16_at(0, 1 / 512, dp=1, lo=0, hi=100)),
+    (0x6B4, 0xD815, "HV battery voltage", "V", _u16_at(0, 1 / 16, dp=1, lo=0, hi=4095)),
+    (0x6B4, 0xD865, "HV energy stored", "kWh", _u16_at(0, 1 / 64, dp=2, lo=0, hi=200)),
+    (0x6B4, 0xD86F, "HV min cell voltage", "mV", _u16_at(0, lo=0, hi=5000)),
+    (0x6B4, 0xD870, "HV max cell voltage", "mV", _u16_at(0, lo=0, hi=5000)),
+]
+
+# KWP service-0x21 measurement blocks (HDi diesels, Delphi DCM3.5 / DW10CD from a
+# Diagbox trace -- MEDIUM confidence, engine-family specific). One request per
+# block returns many values at byte offsets (letter A = index 0 of the block
+# payload after the `61 <localId>` echo). A different engine simply NAKs.
+# (req_id, local_id_hex, label, [(name, unit, decode), ...])
+BLOCKS: List[Tuple[int, str, str, List[Tuple[str, str, Callable[[bytes], Optional[str]]]]]] = [
+    (0x6A8, "CB8001", "exhaust / DPF", [
+        ("DPF soot load", "g", _u16_at(9, 0.001, dp=1, lo=0, hi=120)),
+        ("DPF differential pressure", "mbar", _u16_at(15, lo=0, hi=2000)),
+        ("DPF temperature", "°C", _u16_at(25, lo=-50, hi=1000)),
+        ("Distance since last regen", "km", _u16_at(28, lo=0, hi=65000)),
+        ("Avg distance between regens", "km", _u16_at(30, lo=0, hi=65000)),
+        ("Additive (Eolys) tank", "", _u16_at(19, lo=0, hi=65535)),
+    ]),
+    (0x6A8, "C98001", "injection", [
+        ("Engine RPM", "rpm", _u16_at(0, lo=0, hi=8000)),
+        ("Rail pressure (measured)", "bar", _u16_at(12, 0.1, dp=1, lo=0, hi=3000)),
+        ("Fuel temperature", "°C", _u8_at(28, offset=-50, lo=-40, hi=150)),
+    ]),
+    (0x6A8, "CA8001", "air / turbo", [
+        ("Turbo pressure (measured)", "mbar", _u16_at(8, lo=0, hi=4000)),
+        ("Turbo pressure (setpoint)", "mbar", _u16_at(6, lo=0, hi=4000)),
+    ]),
+    (0x6A8, "CD8001", "coolant", [
+        ("Coolant temperature", "°C", _u8_at(3, offset=-50, lo=-40, hi=150)),
+    ]),
+    (0x6A8, "CC8001", "electrical", [
+        ("Battery voltage (engine ECU)", "V", _u8_at(15, 0.1, dp=1, lo=5, hi=16)),
+    ]),
+]
+
+# Odometer sources for the clocking cross-check. Only the e-CMP BMS has a
+# documented odometer DID (D49C: u32/1000 km); pre-2021 diesel/petrol BSI &
+# cluster mileage has no clean public DID, so the module-to-module compare only
+# fires when 2+ sources answer. (req_id, did, label, decode -> km or None)
+ODO_SOURCES: List[Tuple[int, int, str, Callable[[bytes], Optional[float]]]] = [
+    (0x6B4, 0xD49C, "HV battery module",
+     lambda b: (_u32(b, 0) / 1000.0) if _u32(b, 0) is not None else None),
+]
 
 
 def _now() -> str:
@@ -114,6 +182,20 @@ def _read_did(client: PsaElm327UdsClient, req_id: int, did: int,
                 continue
         return None
     return None
+
+
+def _read_block(client: PsaElm327UdsClient, req_id: int, local_id: str) -> Optional[bytes]:
+    """KWP 0x21 block read -> payload after the ``61 <local_id>`` echo, or None."""
+    try:
+        reply = client.request(
+            req_id, bytes.fromhex("21" + local_id), timeout=3.0
+        )
+    except (ObdError, TransportError):
+        return None
+    echo_len = 1 + len(local_id) // 2  # 0x61 + the local-id bytes
+    if not reply or reply[0] != 0x61 or len(reply) <= echo_len:
+        return None
+    return reply[echo_len:]
 
 
 def live(adapter: Optional[dict], mode: str = "real") -> dict:
@@ -157,6 +239,20 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
                     continue
                 if value is not None:
                     readings.append({"name": name, "value": value, "unit": unit})
+
+            # KWP 0x21 measurement blocks (HDi diesels): one request, many
+            # values. A non-diesel/newer engine just NAKs the local id.
+            for req_id, local_id, _label, fields in BLOCKS:
+                body = _read_block(client, req_id, local_id)
+                if body is None:
+                    continue
+                for name, unit, decode in fields:
+                    try:
+                        value = decode(body)
+                    except Exception:
+                        continue
+                    if value is not None:
+                        readings.append({"name": name, "value": value, "unit": unit})
 
             # Odometer cross-check: show every source that answers, compare.
             odo_km = []

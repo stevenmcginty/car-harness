@@ -28,8 +28,12 @@ from backend.obd.uds_elm327 import reassemble  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
 
 FAKE_VIN = "VF3XXXXXXXX000001"
-BSI, ENGINE, AIRBAG, ABS = 0x752, 0x6A8, 0x744, 0x6AD
-PRESENT = {BSI, ENGINE, AIRBAG, ABS}
+BSI, ENGINE, AIRBAG, ABS, BMS = 0x752, 0x6A8, 0x744, 0x6AD, 0x6B4
+PRESENT = {BSI, ENGINE, AIRBAG, ABS, BMS}
+
+# Demo DPF 0x21 block (engine), same bytes the Android demo uses: soot 12.0g,
+# diff 30mbar, additive 3200, DPF temp 235C, dist-since-regen 220km, avg 450km.
+DPF_BLOCK = bytes.fromhex("0000000000000000002EE000000000001E00000C800000000000EB0000DC01C2")
 
 
 class FakePsaCar:
@@ -50,12 +54,29 @@ class FakePsaCar:
             self.sessions[tx] = True
             self.ext_started.append(tx)
             return bytes([0x50, 0x03, 0x00, 0x32, 0x01, 0xF4])
+        if svc == 0x21 and len(req) >= 4:                 # KWP block read (HDi)
+            if tx == ENGINE and req[1:4] == bytes([0xCB, 0x80, 0x01]):
+                return bytes([0x61, 0xCB, 0x80, 0x01]) + DPF_BLOCK
+            return bytes([0x7F, 0x21, 0x11])
         if svc == 0x22 and len(req) >= 3:                 # ReadDataByIdentifier
             did = (req[1] << 8) | req[2]
             if tx == BSI and did == 0xF190:
                 return bytes([0x62, 0xF1, 0x90]) + FAKE_VIN.encode()
             if tx == ENGINE and did == 0xF188:
                 return bytes([0x62, 0xF1, 0x88]) + b"1037564321"
+            # EV HV battery (BMS) health-check DIDs.
+            if tx == BMS:
+                ev = {
+                    0xD860: bytes([0x00, 0x05, 0xC0]),        # SOH 92.0%
+                    0xD410: bytes([0xC5, 0x01]),              # SOC 98.5%
+                    0xD815: bytes([0x16, 0x80]),              # 360.0 V
+                    0xD865: bytes([0x0A, 0x80]),              # 42.00 kWh
+                    0xD86F: bytes([0x0F, 0x5A]),              # min cell 3930 mV
+                    0xD870: bytes([0x0F, 0x6E]),              # max cell 3950 mV
+                    0xD49C: bytes([0x01, 0xC9, 0xC3, 0x80]),  # odometer 30000 km
+                }
+                if did in ev:
+                    return bytes([0x62, req[1], req[2]]) + ev[did]
             return bytes([0x7F, 0x22, 0x31])              # request out of range
         if svc == 0x19:                                   # ReadDTCInformation
             if tx == ENGINE:
@@ -197,6 +218,34 @@ def main() -> int:
 
     uds.clear_dtcs(client, ENGINE)
     check("clear accepted on engine", ENGINE in car.cleared)
+
+    # --- integration: the health-check reads (EV DIDs + HDi 0x21 block) ------
+    from backend.profiles.peugeot import pids as peugeot_pids
+
+    dpf_body = peugeot_pids._read_block(client, ENGINE, "CB8001")
+    check("DPF 0x21 block read strips echo to 32 bytes",
+          dpf_body is not None and len(dpf_body) == 32,
+          str(len(dpf_body) if dpf_body else 0))
+    if dpf_body:
+        soot = peugeot_pids.BLOCKS[0][3][0][2](dpf_body)
+        regen = peugeot_pids.BLOCKS[0][3][3][2](dpf_body)
+        check("DPF soot load decodes to 12.0 g", soot == "12.0", str(soot))
+        check("distance since last regen decodes to 220 km", regen == "220", str(regen))
+
+    soh_body = peugeot_pids._read_did(client, BMS, 0xD860, set())
+    check("EV SOH DID read", soh_body is not None)
+    if soh_body:
+        soh = peugeot_pids.DIDS[0][4](soh_body)
+        check("HV battery SOH decodes to 92.0 %", soh == "92.0", str(soh))
+    odo_body = peugeot_pids._read_did(client, BMS, 0xD49C, set())
+    check("EV odometer read", odo_body is not None and
+          abs(peugeot_pids.ODO_SOURCES[0][3](odo_body) - 30000.0) < 0.5)
+
+    check("EV BMS module in id map (0x6B4 -> 0x694)", id_map.get(0x6B4) == 0x694)
+
+    hsim = peugeot_pids.live(None, "sim")
+    check("sim health check ok+simulated", hsim["ok"] and hsim["simulated"])
+    check("sim health check labelled SIMULATED", "SIMULATED" in hsim["message"])
 
     client.restore()
     check("restore hands ELM back to generic stack (ATSH7DF)", "ATSH7DF" in session.at_log)

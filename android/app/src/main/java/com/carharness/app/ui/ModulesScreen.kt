@@ -84,10 +84,13 @@ fun ModulesScreen(state: AppState) {
                 Text(
                     when {
                         peugeot ->
-                            "Walks the Peugeot's (PSA) control units by their own CAN ids — BSI, " +
-                                "engine, gearbox, ABS, airbags, cluster, AdBlue/DPF and more — and " +
-                                "reads each one's own fault memory. For ~2010+ cars; pre-2004 (VAN) " +
-                                "and many 2004-2010 (KWP) cars can't be reached over a plain dongle."
+                            "Scan all modules walks the Peugeot's (PSA) control units by their own " +
+                                "CAN ids — BSI, engine, gearbox, ABS, airbags, cluster, AdBlue/DPF " +
+                                "and more — reads each one's fault memory, and cross-checks every " +
+                                "module's VIN. Health check adds DPF soot/regen (HDi diesels) and " +
+                                "battery State-of-Health/charge (e-208 & other e-CMP EVs). " +
+                                "For ~2010+ cars; pre-2004 (VAN) and many 2004-2010 (KWP) cars " +
+                                "can't be reached over a plain dongle."
                         mazda ->
                             "Walks the Mazda's HS-CAN control units — engine and whatever else " +
                                 "answers on the diagnostic bus — and reads each one's own fault " +

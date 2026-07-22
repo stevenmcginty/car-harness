@@ -46,7 +46,7 @@ class DemoTransport : ObdTransport {
     // there, which is fine: those PSA modules then read as "not fitted".
     private val psaTargets = setOf(
         0x752, 0x6A8, 0x6A9, 0x6AD, 0x744, 0x75F, 0x75D, 0x6B5, 0x6B3,
-        0x76D, 0x6AF, 0x765, 0x6A1, 0x6C1,
+        0x76D, 0x6AF, 0x765, 0x6A1, 0x6C1, 0x6B4,
     )
 
     override fun open() {}
@@ -150,7 +150,8 @@ class DemoTransport : ObdTransport {
     // airbag, cluster and SCR present; the airbag only reports faults after
     // an extended session (1003), exercising the real escalation path.
 
-    private val psaPresent = setOf(0x752, 0x6A8, 0x6AD, 0x744, 0x75F, 0x6A1)
+    // BSI, engine, ABS, airbag, cluster, SCR and the HV battery module answer.
+    private val psaPresent = setOf(0x752, 0x6A8, 0x6AD, 0x744, 0x75F, 0x6A1, 0x6B4)
 
     private fun psaReply(reqId: Int, cmd: String): String {
         if (reqId !in psaPresent) return "NO DATA"
@@ -162,6 +163,7 @@ class DemoTransport : ObdTransport {
             cmd == "22F187" && reqId == 0x752 -> isoTp("62F187" + ascii("9822009980"))
             cmd == "22F188" && reqId == 0x6A8 -> isoTp("62F188" + ascii("1037564321"))
             cmd.startsWith("22") && cmd.length == 6 -> psaDid(reqId, cmd.substring(2))
+            cmd.startsWith("21") && reqId == 0x6A8 -> psaBlock(cmd.substring(2))
             cmd.startsWith("1902") -> psaDtcs(reqId)
             cmd == "14FFFFFF" -> { psaCleared.add(reqId); "54" }
             else -> "NO DATA"
@@ -186,9 +188,31 @@ class DemoTransport : ObdTransport {
         return isoTp("62$did$hex")
     }
 
-    // reqId -> (DID hex -> payload hex). Filled alongside PeugeotPids so the
-    // demo car answers the same DIDs the real read asks for.
-    private val psaDemoDids: Map<Int, Map<String, String>> = emptyMap()
+    // reqId -> (DID hex -> payload hex), matching PeugeotPids.DIDS/ODO_SOURCES.
+    // The demo HV battery (0x6B4) reads as a healthy used EV.
+    private val psaDemoDids: Map<Int, Map<String, String>> = mapOf(
+        0x6B4 to mapOf(
+            "D860" to "0005C0",   // SOH: skip 1 byte, then 0x05C0/16 = 92.0 %
+            "D410" to "C501",     // SOC: 0xC501/512 = 98.5 %
+            "D815" to "1680",     // voltage: 0x1680/16 = 360.0 V
+            "D865" to "0A80",     // energy: 0x0A80/64 = 42.00 kWh
+            "D86F" to "0F5A",     // min cell: 3930 mV
+            "D870" to "0F6E",     // max cell: 3950 mV
+            "D49C" to "01C9C380", // odometer: 0x01C9C380/1000 = 30000 km
+        ),
+    )
+
+    /** DPF 0x21 block demo (engine 0x6A8) -> a diesel with a half-full filter. */
+    private fun psaBlock(localIdAndData: String): String {
+        val localId = localIdAndData.take(6)
+        if (localId != "CB8001") return "7F2111"  // only the DPF block is demoed
+        // 32-byte block; u16 fields at the offsets PeugeotPids reads:
+        //  9:soot 0x2EE0/1000=12.0g, 15:diffP 0x001E=30mbar, 19:additive 0x0C80,
+        //  25:DPF temp 0x00EB=235C, 28:dist-since-regen 0x00DC=220km, 30:avg 0x01C2=450km.
+        val block = "0000000000000000002EE00000000000" +  // bytes 0..15
+            "1E00000C800000000000EB0000DC01C2"             // bytes 16..31
+        return isoTp("61CB8001$block")
+    }
 
     /** Enhanced (mode-22) demo answers so "Live extras" works hardware-free.
      *  Values chosen to decode plausibly through MazdaPids' formulas. */

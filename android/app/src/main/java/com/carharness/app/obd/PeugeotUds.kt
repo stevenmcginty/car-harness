@@ -334,10 +334,24 @@ object PeugeotUds {
     }
 
     /**
+     * KWP service-0x21 block read: `21 <localId>` -> `61 <localId> <block>`.
+     * Returns the block payload AFTER the `61 <localId>` echo (byte "A" = index
+     * 0), or null if this engine doesn't answer the local id. Read-only.
+     */
+    private fun readBlock(session: Elm327Session, reqId: Int, localId: String): ByteArray? = try {
+        val reply = request(session, reqId, 0x21, localId, 3000)
+        val echoLen = 1 + localId.length / 2  // 0x61 + the local-id bytes
+        if (reply.size <= echoLen) null else reply.copyOfRange(echoLen, reply.size)
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
      * Dealer health check: one read-only pass over the PSA-specific values
-     * (PeugeotPids) — DPF, AdBlue, battery, temperatures — plus odometer
-     * readings from more than one module, cross-checked. Two modules that
-     * disagree about the mileage are the classic clocking signature.
+     * (PeugeotPids) — DPF, injection, turbo, battery — plus any documented
+     * odometer source. On an EV the HV battery answers UDS DIDs (SOH/SOC); on
+     * an HDi diesel the engine answers the KWP 0x21 measurement blocks. A car
+     * only answers the set that applies to it; the rest are silently skipped.
      */
     fun readEnhanced(
         session: Elm327Session,
@@ -363,6 +377,21 @@ object PeugeotUds {
                     null
                 } ?: continue
                 out.add(EnhancedReading(def.name, value, def.unit))
+            }
+
+            // KWP 0x21 measurement blocks (HDi diesels): one request per block,
+            // many values out of each. A non-diesel/newer engine just NAKs.
+            for (block in PeugeotPids.BLOCKS) {
+                onProgress("Reading ${block.label}…")
+                val body = readBlock(session, block.reqId, block.localId) ?: continue
+                for (field in block.fields) {
+                    val value = try {
+                        field.decode(body)
+                    } catch (_: Exception) {
+                        null
+                    } ?: continue
+                    out.add(EnhancedReading(field.name, value, field.unit))
+                }
             }
 
             // Odometer cross-check: read every source that answers, show each,

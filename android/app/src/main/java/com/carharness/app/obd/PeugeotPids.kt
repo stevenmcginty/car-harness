@@ -96,9 +96,25 @@ object PeugeotPids {
     }
 
     // ------------------------------------------------------------- UDS 0x22 DIDs
-    // Filled per-model from OBDb once that research lands; the standard PSA
-    // DIDs (VIN F190 etc.) are already read by the module scan.
-    val DIDS: List<PsaDid> = emptyList()
+    // e-CMP HV battery, on the BMS at 0x6B4 -> 0x694. From OBDb's Corsa-e
+    // signalset (the one real PSA-family dataset there); the same e-CMP battery
+    // is in the e-208 / e-2008 / e-C4 / DS3 E-Tense. State of Charge is verified
+    // against real Peugeot captures (e-208/e-2008/e-3008); the rest are Corsa-e
+    // defined, medium confidence — a non-EV simply never answers, so harmless.
+    // Battery State of Health is the used-EV appraisal headline.
+    val DIDS: List<PsaDid> = listOf(
+        // D860 SOH: fmt bix 8 (skip 1 byte), len 16, div 16, max 100.
+        PsaDid(0x6B4, 0xD860, "HV battery health (SOH)", "%", u16At(1, 1.0 / 16, dp = 1, lo = 0.0, hi = 100.0)),
+        // D410 SOC (calibrated): len 16, div 512, max 100. VERIFIED on real cars.
+        PsaDid(0x6B4, 0xD410, "HV battery charge (SOC)", "%", u16At(0, 1.0 / 512, dp = 1, lo = 0.0, hi = 100.0)),
+        // D815 HV pack voltage: len 16, div 16.
+        PsaDid(0x6B4, 0xD815, "HV battery voltage", "V", u16At(0, 1.0 / 16, dp = 1, lo = 0.0, hi = 4095.0)),
+        // D865 energy stored: len 16, div 64, unit kWh.
+        PsaDid(0x6B4, 0xD865, "HV energy stored", "kWh", u16At(0, 1.0 / 64, dp = 2, lo = 0.0, hi = 200.0)),
+        // D86F / D870 min & max cell voltage: len 16, unit mV.
+        PsaDid(0x6B4, 0xD86F, "HV min cell voltage", "mV", u16At(0, lo = 0.0, hi = 5000.0)),
+        PsaDid(0x6B4, 0xD870, "HV max cell voltage", "mV", u16At(0, lo = 0.0, hi = 5000.0)),
+    )
 
     // ---------------------------------------------------------- KWP 0x21 blocks
     // Verified for the Delphi DCM3.5 / DW10CD (2.0 BlueHDi) family from a
@@ -160,9 +176,13 @@ object PeugeotPids {
         ),
     )
 
-    // Odometer sources for the clocking cross-check. PSA has no clean public
-    // odometer DID, so this stays empty until a model-specific signal is
-    // confirmed; the VIN cross-check in the module scan is the fraud check
-    // that IS reliable today.
-    val ODO_SOURCES: List<OdoSource> = emptyList()
+    // Odometer, from the e-CMP BMS at 0x6B4 (DID D49C: len 32, div 1000, km).
+    // This is the ONLY documented PSA odometer read — the pre-2021 diesel/petrol
+    // BSI/cluster mileage has no clean public DID, so the module-to-module
+    // clocking cross-check only fires when 2+ sources answer (EVs today); on a
+    // diesel this list is silent and the VIN cross-check in the scan is the
+    // fraud check that works. On an EV, compare this against the dash.
+    val ODO_SOURCES: List<OdoSource> = listOf(
+        OdoSource(0x6B4, 0xD49C, "HV battery module") { b -> u32(b, 0)?.let { it / 1000.0 } },
+    )
 }
