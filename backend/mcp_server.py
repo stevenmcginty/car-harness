@@ -28,6 +28,8 @@ from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
 from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
+from backend.profiles.vw import pids as vw_pids  # noqa: E402
+from backend.profiles.vw import scan as vw_scan  # noqa: E402
 
 mcp = FastMCP("car-harness")
 
@@ -270,6 +272,72 @@ def peugeot_clear_module(
     if error is not None:
         return error
     return peugeot_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# VW / Audi (VAG) module scan over a generic OBD dongle (pure UDS)
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def vw_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a VW/Audi's module fault memory over a generic OBD-II dongle (read-only).
+
+    Walks VAG's diagnostic address table -- powertrain on the standard block
+    (engine 0x7E0, gearbox 0x7E1), body/chassis/comfort on VAG's own block
+    (gateway 0x710, cluster 0x714, ABS 0x713, airbag 0x715 and more, answered on
+    request + 0x6A) -- and reads each responding module's manufacturer-level UDS
+    fault codes + identification, deeper than generic OBD-II. For VW/Škoda/SEAT
+    ~2012+ (MQB, Golf 7 on) and Audi ~2008+ (B8 on) -- pure UDS, no KWP dialect.
+    Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    Note: pre-2012 VAG cars (TP2.0/K-line) can't be module-scanned through a
+    standard OBD dongle.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vw_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def vw_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read VW/Audi-specific live "extras" over a generic OBD dongle.
+
+    One read-only pass over the engine ECU's remapped-OBD DIDs (coolant, oil
+    temp, battery voltage, fuel level, ambient temp, load) plus community-
+    sourced diesel DPF and EV state-of-charge DIDs shown as raw values only
+    (their scaling isn't publicly confirmed). Values this particular car/engine
+    doesn't support are skipped silently. Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vw_pids.live(instance, mode)
+
+
+@mcp.tool()
+def vw_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on VW/Audi modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    address: hex request id like "0x7E0" (the engine) or "0x710" (the gateway);
+        omit to clear every VAG module that answers. Faults return if the
+        underlying problem is still present.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vw_scan.clear(instance, mode, address)
 
 
 # --------------------------------------------------------------------------- #
