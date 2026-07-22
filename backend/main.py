@@ -26,6 +26,10 @@ from backend.core import interfaces, pairing, registry  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
+from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
+from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
+from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
+from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
@@ -321,6 +325,82 @@ async def bmw_clear(request: Request) -> dict:
     if mode not in ("real", "sim"):
         raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
     return bmw_scan.clear(mode, body.get("address"))
+
+
+# --------------------------------------------------------------------------- #
+# Mazda module scan over a generic OBD dongle (HS-CAN, UDS). Read-only except
+# /clear, which demands confirm: true. Needs an ELM327-style adapter (there is
+# no native Mazda cable); mode=sim returns clearly-labelled fakes.
+# --------------------------------------------------------------------------- #
+@app.get("/api/mazda/scan")
+def mazda_full_scan(adapter: str | None = None, mode: str = "real") -> dict:
+    instance = _obd_adapter_or_400(adapter, mode)
+    return mazda_scan.scan(instance, mode)
+
+
+@app.get("/api/mazda/live")
+def mazda_live(adapter: str | None = None, mode: str = "real") -> dict:
+    """Mazda-specific mode-22 values (one pass). Read-only."""
+    instance = _obd_adapter_or_400(adapter, mode)
+    return mazda_pids.live(instance, mode)
+
+
+@app.get("/api/mazda/snapshot")
+def mazda_snapshot(adapter: str | None = None, mode: str = "real") -> dict:
+    """Passive broadcast-CAN snapshot (ATMA sniff). Read-only."""
+    instance = _obd_adapter_or_400(adapter, mode)
+    return mazda_snapshot_mod.snapshot(instance, mode)
+
+
+@app.post("/api/mazda/clear")
+async def mazda_clear(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"adapter": "...", "mode": "real"|"sim", "confirm": true, "address": "0x7E0"?}.',
+        )
+    body = body or {}
+    if body.get("confirm") is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="Clearing module fault memory changes the car. Send confirm: true.",
+        )
+    mode = body.get("mode") or "real"
+    instance = _obd_adapter_or_400(body.get("adapter"), mode)
+    return mazda_scan.clear(instance, mode, body.get("address"))
+
+
+# --------------------------------------------------------------------------- #
+# Peugeot / PSA module scan over a generic OBD dongle (diagnostic CAN, UDS).
+# Read-only except /clear, which demands confirm: true. Needs an ELM327-style
+# adapter (no native PSA cable here); mode=sim returns clearly-labelled fakes.
+# --------------------------------------------------------------------------- #
+@app.get("/api/peugeot/scan")
+def peugeot_full_scan(adapter: str | None = None, mode: str = "real") -> dict:
+    instance = _obd_adapter_or_400(adapter, mode)
+    return peugeot_scan.scan(instance, mode)
+
+
+@app.post("/api/peugeot/clear")
+async def peugeot_clear(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"adapter": "...", "mode": "real"|"sim", "confirm": true, "address": "0x752"?}.',
+        )
+    body = body or {}
+    if body.get("confirm") is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="Clearing module fault memory changes the car. Send confirm: true.",
+        )
+    mode = body.get("mode") or "real"
+    instance = _obd_adapter_or_400(body.get("adapter"), mode)
+    return peugeot_scan.clear(instance, mode, body.get("address"))
 
 
 # --------------------------------------------------------------------------- #

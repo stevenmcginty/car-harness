@@ -170,6 +170,44 @@
       </div>
     </section>
 
+    <section class="panel mazda-panel" aria-label="Mazda module scan">
+      <div class="panel-header">
+        <h2>Mazda — All modules (OBD dongle)</h2>
+        <div class="panel-actions">
+          <button id="mazda-scan-btn" class="btn btn-primary" type="button">Scan all modules</button>
+          <button id="mazda-live-btn" class="btn btn-secondary" type="button">Live extras</button>
+          <button id="mazda-snap-btn" class="btn btn-secondary" type="button">Snapshot</button>
+        </div>
+      </div>
+
+      <div id="mazda-sim-banner" class="banner banner-amber" hidden role="status">
+        <svg class="banner-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.01" />
+        </svg>
+        <span>SIMULATED — no real car connected</span>
+      </div>
+
+      <p id="mazda-hint" class="obd-hint">
+        Module scan for SkyActiv-era Mazdas (≈2012+) over the ordinary OBD dongle — each
+        HS-CAN module's own fault memory, deeper than generic OBD-II. Pick the adapter
+        top-right, ignition ON, then scan. “Live extras” reads Mazda-specific values the
+        generic list doesn't carry. Body/comfort modules sit on MS-CAN and need a
+        switchable adapter — they won't show here.
+      </p>
+
+      <div id="mazda-result" hidden>
+        <div id="mazda-chips" class="obd-chips"></div>
+        <p id="mazda-message" class="status-message"></p>
+        <div id="mazda-modules" class="bmw-modules"></div>
+      </div>
+
+      <div id="mazda-extras" hidden>
+        <div class="obd-live-header"><h3>Mazda live extras</h3></div>
+        <p id="mazda-extras-message" class="status-message"></p>
+        <div id="mazda-extras-chips" class="obd-chips"></div>
+      </div>
+    </section>
+
     <section class="panel modules-panel" aria-label="Jobs">
       <div class="panel-header">
         <h2>Jobs</h2>

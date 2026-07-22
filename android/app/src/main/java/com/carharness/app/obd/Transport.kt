@@ -29,20 +29,36 @@ class DemoTransport : ObdTransport {
     private var cea: Int? = null
     private val bmwCleared = mutableSetOf<Int>()
 
+    // 11-bit header state: the Mazda recipe aims at modules with ATSH<id>.
+    private var atsh: Int? = null
+    private var cra: Int? = null
+    private val mazdaCleared = mutableSetOf<Int>()
+
+    // Every id the simulated Mazda's UDS side owns (present or not).
+    private val mazdaTargets =
+        (0x7E0..0x7E7).toSet() + setOf(0x706, 0x720, 0x726, 0x730, 0x731, 0x736,
+            0x737, 0x760, 0x764, 0x772, 0x793)
+
     override fun open() {}
     override fun close() {}
 
     override fun exchange(data: ByteArray, timeoutMs: Long): ByteArray {
         val cmd = data.toString(Charsets.US_ASCII).trim().uppercase().replace(" ", "")
         val reply = when {
+            cmd.isEmpty() -> ""  // monitor-stop interrupt char
             cmd == "ATZ" -> "ELM327 v1.5 (SIMULATED)"
             cmd.startsWith("ATRV") -> "12.4V"
             cmd == "ATDP" -> "SIMULATED CAN 11/500"
             cmd == "ATDPN" -> "A6"
             cmd == "ATCEA" -> { cea = null; "OK" }
             cmd.startsWith("ATCEA") -> { cea = cmd.removePrefix("ATCEA").toIntOrNull(16); "OK" }
+            cmd == "ATCRA" -> { cra = null; "OK" }
+            cmd.startsWith("ATCRA") -> { cra = cmd.removePrefix("ATCRA").toIntOrNull(16); "OK" }
+            cmd.startsWith("ATSH") -> { atsh = cmd.removePrefix("ATSH").toIntOrNull(16); "OK" }
+            cmd == "ATMA" -> mazdaMonitor(cra)
             cmd.startsWith("AT") -> "OK"
             cea != null -> bmwReply(cea!!, cmd)
+            (atsh ?: 0) in mazdaTargets -> mazdaReply(atsh!!, cmd)
             cmd == "0100" -> "4100BE3FA813"
             cmd == "0120" -> "412080000001"
             cmd == "0140" -> "414040000000"
@@ -87,6 +103,105 @@ class DemoTransport : ObdTransport {
             0x18 -> isoTp("5902AF" + "27710108")              // gearbox: 1 fault
             else -> "5902AF"
         }
+    }
+
+    // ------------------------------------------------ simulated Mazda modules
+    // Mirrors the desktop's backend/profiles/mazda sim: PCM, TCM, cluster,
+    // front body module and DSC on HS-CAN; honest "SIMULATED" identity strings.
+
+    private val mazdaPresent = setOf(0x7E0, 0x7E1, 0x720, 0x726, 0x760)
+
+    private fun mazdaReply(reqId: Int, cmd: String): String {
+        if (reqId !in mazdaPresent) return "NO DATA"
+        return when {
+            cmd == "3E00" -> "7E00"
+            cmd == "22F190" && reqId == 0x7E0 -> isoTp("62F190" + ascii("SIMULATED000MAZDA"))
+            cmd == "22F187" -> isoTp("62F187" + ascii("PY01-%03X-K2".format(reqId)))
+            cmd == "22F188" && reqId == 0x7E0 -> isoTp("62F188" + ascii("PY0118881"))
+            cmd.startsWith("22") && cmd.length == 6 -> mazdaDid(reqId, cmd.substring(2))
+            cmd.startsWith("1902") -> mazdaDtcs(reqId)
+            cmd == "14FFFFFF" -> { mazdaCleared.add(reqId); "54" }
+            else -> "NO DATA"
+        }
+    }
+
+    private fun mazdaDtcs(reqId: Int): String {
+        if (reqId in mazdaCleared) return "5902AF"
+        return when (reqId) {
+            0x7E0 -> isoTp("5902AF" + "0302002F" + "04560008") // PCM: P0302 + P0456
+            0x760 -> isoTp("5902AF" + "40510008")              // DSC: C0051
+            else -> "5902AF"
+        }
+    }
+
+    /** Enhanced (mode-22) demo answers so "Live extras" works hardware-free.
+     *  Values chosen to decode plausibly through MazdaPids' formulas. */
+    private fun mazdaDid(reqId: Int, did: String): String {
+        val hex = when (reqId) {
+            0x7E0 -> when (did) {
+                "1310" -> "33AE"  // oil temp 92.3°C
+                "0415" -> "0140"  // oil pressure 320 kPa
+                "0202" -> "02"    // stored faults
+                "0301" -> "04D8"  // MAP 1.24V
+                "16E9" -> "0073"  // alternator 14.4V
+                "16E8" -> "2000"  // field duty 25%
+                "03E8" -> "3000"  // knock adjust 0.75
+                "0353" -> "0193"  // baro 100.8 kPa
+                "057D" -> "76"    // ambient 19°C
+                "038F" -> "1619"  // coolant 88.4°C
+                "0519" -> "012C"  // 1200 km since oil change
+                "0542" -> "2EE0"  // 12000 km interval
+                "1172" -> "C6"    // battery 12.4V
+                "16C1" -> "50B8"  // fuel 63%
+                "096E" -> "0BB8"  // idle target 750rpm
+                "0307" -> "30A4"  // pump duty 38%
+                else -> null
+            }
+            0x7E1 -> when (did) {
+                "1E1C" -> "1888"  // ATF 78.5°C
+                "1E12" -> "04"    // 4th gear
+                "1E24" -> "01"    // locked
+                "1EE4" -> "1770"  // 120 Nm
+                else -> null
+            }
+            0x720 -> when (did) {
+                "61B1" -> "1F"      // 31 L
+                "404C" -> "05ED94"  // 38850.0 km
+                "2A05", "2A06", "2A07", "2A08" -> "92"  // ~29 psi
+                else -> null
+            }
+            0x726 -> when (did) {
+                "4028" -> "54"    // 84%
+                "4029" -> "3D"    // 21°C
+                "402A" -> "84"    // 12.6V
+                "402B" -> "7D"    // -2A
+                "4027" -> "01A4"  // 420 days
+                else -> null
+            }
+            else -> null
+        } ?: return "7F2231"
+        return isoTp("62$did$hex")
+    }
+
+    /** ATMA demo: broadcast frames for whichever id ATCRA points at. */
+    private fun mazdaMonitor(craId: Int?): String {
+        val line = when (craId) {
+            0x202 -> "2020D48000000000000"  // 850 rpm, 0 km/h, 0% pedal
+            0x420 -> "420" + "80" + "0000000000" + "324C"  // coolant 88°C, ambient 19°C
+            0x215 -> "2152710271027102710"  // 4 × 0 km/h
+            0x078 -> "078000000009C400000"  // 0 bar
+            0x086 -> "0863EA3000000000000"  // -3.5°
+            0x165 -> "1650000000000001300"  // N or 1st
+            0x0FD -> "0FD0000000000006300"  // 99+2 kPa
+            0x4FA -> "4FA000000003E000000"  // IAT 22°C
+            0x09E -> "09E00000000009D0000"  // 31.4 L
+            0x09F -> "09F1000000000000000"  // handbrake applied
+            0x050 -> "0500200000000000000"  // ignition ON
+            0x43E -> "43E0000000000000000"  // all closed
+            0x3D1 -> "3D100000000025F0800"  // 38850 km
+            else -> return ""
+        }
+        return "$line\r$line"
     }
 
     private fun ascii(text: String): String =

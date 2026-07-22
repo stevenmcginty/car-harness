@@ -100,6 +100,17 @@
     bmwChips: document.getElementById("bmw-chips"),
     bmwMessage: document.getElementById("bmw-message"),
     bmwModules: document.getElementById("bmw-modules"),
+    mazdaScanBtn: document.getElementById("mazda-scan-btn"),
+    mazdaLiveBtn: document.getElementById("mazda-live-btn"),
+    mazdaSnapBtn: document.getElementById("mazda-snap-btn"),
+    mazdaSimBanner: document.getElementById("mazda-sim-banner"),
+    mazdaResult: document.getElementById("mazda-result"),
+    mazdaChips: document.getElementById("mazda-chips"),
+    mazdaMessage: document.getElementById("mazda-message"),
+    mazdaModules: document.getElementById("mazda-modules"),
+    mazdaExtras: document.getElementById("mazda-extras"),
+    mazdaExtrasMessage: document.getElementById("mazda-extras-message"),
+    mazdaExtrasChips: document.getElementById("mazda-extras-chips"),
     pairBtn: document.getElementById("pair-btn"),
     pairModal: document.getElementById("pair-modal"),
     pairModalClose: document.getElementById("pair-modal-close"),
@@ -117,6 +128,7 @@
   };
   var pair = { open: false, info: null, devices: [], error: "" };
   var bmw = { scanInFlight: false, clearInFlight: false };
+  var mazda = { scanInFlight: false, clearInFlight: false, liveInFlight: false };
 
   // ---------- Helpers ----------
 
@@ -185,6 +197,7 @@
       renderStatusOffline();
       resetObdPanel();
       resetBmwPanel();
+      resetMazdaPanel();
       startReconnectPoll();
     }
   }
@@ -1429,7 +1442,7 @@
     el.bmwMessage.textContent = "";
   }
 
-  function buildBmwModuleRow(m) {
+  function buildModuleRow(m, onClearRequested) {
     var row = document.createElement("div");
     row.className = "bmw-module" + (m.present ? "" : " is-absent");
 
@@ -1468,7 +1481,7 @@
       clearBtn.className = "btn btn-danger btn-small";
       clearBtn.textContent = "Clear";
       clearBtn.addEventListener("click", function () {
-        runBmwClear(m.address, m.code + " — " + m.name);
+        onClearRequested(m);
       });
       head.appendChild(clearBtn);
     }
@@ -1526,7 +1539,9 @@
     if (v.ip) el.bmwChips.appendChild(chip("Car IP", v.ip, "is-mono"));
 
     (data.modules || []).forEach(function (m) {
-      el.bmwModules.appendChild(buildBmwModuleRow(m));
+      el.bmwModules.appendChild(buildModuleRow(m, function (mm) {
+        runBmwClear(mm.address, mm.code + " — " + mm.name);
+      }));
     });
   }
 
@@ -1582,6 +1597,139 @@
       .then(function () {
         bmw.clearInFlight = false;
       });
+  }
+
+  // ---------- Mazda module scan (OBD dongle) ----------
+
+  function resetMazdaPanel() {
+    el.mazdaResult.hidden = true;
+    el.mazdaSimBanner.hidden = true;
+    el.mazdaChips.innerHTML = "";
+    el.mazdaModules.innerHTML = "";
+    el.mazdaMessage.textContent = "";
+    el.mazdaExtras.hidden = true;
+    el.mazdaExtrasChips.innerHTML = "";
+    el.mazdaExtrasMessage.textContent = "";
+  }
+
+  function renderMazdaScan(data) {
+    el.mazdaResult.hidden = false;
+    el.mazdaSimBanner.hidden = !(data && data.simulated);
+    el.mazdaChips.innerHTML = "";
+    el.mazdaModules.innerHTML = "";
+    el.mazdaMessage.textContent = (data && data.message) || "";
+
+    if (!data || !data.ok) return;
+
+    var v = data.vehicle || {};
+    if (v.vin) el.mazdaChips.appendChild(chip("VIN", v.vin, "is-mono"));
+    if (v.protocol) el.mazdaChips.appendChild(chip("Protocol", v.protocol));
+    if (v.adapter) el.mazdaChips.appendChild(chip("Adapter", v.adapter));
+
+    (data.modules || []).forEach(function (m) {
+      el.mazdaModules.appendChild(buildModuleRow(m, function (mm) {
+        runMazdaClear(mm.address, mm.code + " — " + mm.name);
+      }));
+    });
+  }
+
+  function runMazdaScan() {
+    if (mazda.scanInFlight) return;
+    mazda.scanInFlight = true;
+    el.mazdaScanBtn.disabled = true;
+    var original = el.mazdaScanBtn.textContent;
+    el.mazdaScanBtn.textContent = "Scanning…";
+    el.mazdaResult.hidden = false;
+    el.mazdaChips.innerHTML = "";
+    el.mazdaModules.innerHTML = "";
+    el.mazdaMessage.textContent =
+      "Walking the HS-CAN modules through the dongle… (absent addresses time out quietly)";
+
+    apiFetch(obdUrl("/api/mazda/scan"))
+      .then(function (data) {
+        renderMazdaScan(data);
+      })
+      .catch(function () {
+        renderMazdaScan({ ok: false, message: "Couldn't reach the backend to scan." });
+      })
+      .then(function () {
+        mazda.scanInFlight = false;
+        el.mazdaScanBtn.disabled = false;
+        el.mazdaScanBtn.textContent = original;
+      });
+  }
+
+  function runMazdaClear(address, label) {
+    if (mazda.clearInFlight) return;
+    if (
+      !window.confirm(
+        "Clear the fault memory of " + label + "?\n\nFaults will return if the " +
+          "underlying problem is still present."
+      )
+    ) {
+      return;
+    }
+    mazda.clearInFlight = true;
+    var body = { mode: obdMode(), confirm: true, address: address };
+    if (!state.simulate && state.currentAdapterId) body.adapter = state.currentAdapterId;
+    apiFetch("/api/mazda/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    })
+      .then(function (data) {
+        el.mazdaMessage.textContent = (data && data.message) || "";
+        if (data && data.ok) runMazdaScan();
+      })
+      .catch(function () {
+        el.mazdaMessage.textContent = "Couldn't reach the backend to clear.";
+      })
+      .then(function () {
+        mazda.clearInFlight = false;
+      });
+  }
+
+  function runMazdaReadings(btn, path, busyText) {
+    if (mazda.liveInFlight) return;
+    mazda.liveInFlight = true;
+    btn.disabled = true;
+    var original = btn.textContent;
+    btn.textContent = "Reading…";
+    el.mazdaExtras.hidden = false;
+    el.mazdaExtrasChips.innerHTML = "";
+    el.mazdaExtrasMessage.textContent = busyText;
+
+    apiFetch(obdUrl(path))
+      .then(function (data) {
+        el.mazdaExtrasMessage.textContent = (data && data.message) || "";
+        el.mazdaExtrasChips.innerHTML = "";
+        ((data && data.readings) || []).forEach(function (r) {
+          var value = r.unit ? r.value + " " + r.unit : r.value;
+          el.mazdaExtrasChips.appendChild(chip(r.name, value));
+        });
+      })
+      .catch(function () {
+        el.mazdaExtrasMessage.textContent = "Couldn't reach the backend.";
+      })
+      .then(function () {
+        mazda.liveInFlight = false;
+        btn.disabled = false;
+        btn.textContent = original;
+      });
+  }
+
+  function runMazdaLive() {
+    runMazdaReadings(
+      el.mazdaLiveBtn, "/api/mazda/live",
+      "Asking the modules for the Mazda-specific values…"
+    );
+  }
+
+  function runMazdaSnapshot() {
+    runMazdaReadings(
+      el.mazdaSnapBtn, "/api/mazda/snapshot",
+      "Listening to the car's broadcast frames (~10s)…"
+    );
   }
 
   // ---------- Phone pairing ----------
@@ -1736,6 +1884,7 @@
     state.simulate = el.simulateToggle.checked;
     resetObdPanel();
     resetBmwPanel();
+    resetMazdaPanel();
     if (obd.liveOn) {
       el.liveToggle.checked = false;
       setLive(false);
@@ -1778,6 +1927,7 @@
   el.adapterSelect.addEventListener("change", function () {
     state.currentAdapterId = el.adapterSelect.value;
     resetObdPanel();
+    resetMazdaPanel(); // the Mazda scan runs through the picked adapter too
     if (obd.liveOn) {
       el.liveToggle.checked = false;
       setLive(false);
@@ -1788,6 +1938,9 @@
   el.obdScanBtn.addEventListener("click", runObdScan);
   el.obdClearBtn.addEventListener("click", runObdClear);
   el.bmwScanBtn.addEventListener("click", runBmwScan);
+  el.mazdaScanBtn.addEventListener("click", runMazdaScan);
+  el.mazdaLiveBtn.addEventListener("click", runMazdaLive);
+  el.mazdaSnapBtn.addEventListener("click", runMazdaSnapshot);
   el.liveToggle.addEventListener("change", function () {
     setLive(el.liveToggle.checked);
   });

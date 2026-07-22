@@ -9,6 +9,9 @@ paired_devices.json
 modules_store/*
 !modules_store/.gitkeep
 
+# Private research / notes -- local only, never pushed to the public repo
+docs/private/
+
 # Android build machinery and caches
 android/local.properties
 android/.gradle/

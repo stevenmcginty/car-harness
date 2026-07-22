@@ -1,0 +1,8 @@
+{
+  "id": "mazda",
+  "name": "Mazda",
+  "transport": "elm327",
+  "description": "Mazda over a generic OBD-II dongle (HS-CAN, UDS). Tuned for 2016 SkyActiv (MX-5 ND and siblings). Reads modules on the HS-CAN bus only -- body/comfort modules on MS-CAN need an MS-CAN switchable adapter.",
+  "probe": "profile.py",
+  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"]
+}

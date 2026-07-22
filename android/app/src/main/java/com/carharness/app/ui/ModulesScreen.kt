@@ -1,5 +1,6 @@
 package com.carharness.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,13 +27,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.carharness.app.AppState
 import com.carharness.app.ConnState
-import com.carharness.app.obd.BmwDtc
-import com.carharness.app.obd.BmwModuleResult
+import com.carharness.app.obd.UdsDtc
+import com.carharness.app.obd.UdsModuleResult
 
 @Composable
 fun ModulesScreen(state: AppState) {
@@ -40,7 +42,7 @@ fun ModulesScreen(state: AppState) {
     var confirmAddr by remember { mutableStateOf<Int?>(null) }
 
     confirmAddr?.let { addr ->
-        val module = state.bmwReport?.modules?.firstOrNull { it.address == addr }
+        val module = state.modReport?.modules?.firstOrNull { it.address == addr }
         AlertDialog(
             onDismissRequest = { confirmAddr = null },
             containerColor = Panel,
@@ -56,7 +58,7 @@ fun ModulesScreen(state: AppState) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmAddr = null
-                    state.runBmwClear(addr)
+                    state.runModuleClear(addr)
                 }) { Text("Clear module", color = Red) }
             },
             dismissButton = {
@@ -65,26 +67,64 @@ fun ModulesScreen(state: AppState) {
         )
     }
 
+    val brand = state.moduleBrand
+    val mazda = brand == "mazda"
+    val peugeot = brand == "peugeot"
+
     LazyColumn(Modifier.fillMaxSize().padding(top = 10.dp)) {
         item {
             SectionCard {
-                PanelTitle("BMW MODULE SCAN")
+                PanelTitle("MODULE SCAN")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BrandChip("BMW", brand == "bmw") { state.chooseModuleBrand("bmw") }
+                    BrandChip("Mazda", mazda) { state.chooseModuleBrand("mazda") }
+                    BrandChip("Peugeot", peugeot) { state.chooseModuleBrand("peugeot") }
+                }
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    "Walks every control unit on the car — engine, gearbox, ABS, airbags, " +
-                        "cluster, head unit and more — and reads each one's own fault memory. " +
-                        "This is the deep scan generic OBD apps can't do.",
+                    when {
+                        peugeot ->
+                            "Walks the Peugeot's (PSA) control units by their own CAN ids — BSI, " +
+                                "engine, gearbox, ABS, airbags, cluster, AdBlue/DPF and more — and " +
+                                "reads each one's own fault memory. For ~2010+ cars; pre-2004 (VAN) " +
+                                "and many 2004-2010 (KWP) cars can't be reached over a plain dongle."
+                        mazda ->
+                            "Walks the Mazda's HS-CAN control units — engine and whatever else " +
+                                "answers on the diagnostic bus — and reads each one's own fault " +
+                                "memory. Body/comfort modules sit on MS-CAN and need a switchable " +
+                                "adapter, so they won't appear here."
+                        else ->
+                            "Walks every control unit on the car — engine, gearbox, ABS, airbags, " +
+                                "cluster, head unit and more — and reads each one's own fault memory. " +
+                                "This is the deep scan generic OBD apps can't do."
+                    },
                     color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp
                 )
                 Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = { state.runBmwScan() },
-                    enabled = state.connState is ConnState.Connected && !state.bmwScanning,
-                ) {
-                    Text(if (state.bmwScanning) "Scanning…" else "Scan all modules")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { state.runModuleScan() },
+                        enabled = state.connState is ConnState.Connected && !state.modScanning,
+                    ) {
+                        Text(if (state.modScanning) "Scanning…" else "Scan all modules")
+                    }
+                    if (mazda) {
+                        val ready = state.connState is ConnState.Connected &&
+                            !state.modScanning && !state.mazdaExtrasBusy
+                        OutlinedButton(onClick = { state.runMazdaExtras() }, enabled = ready) {
+                            Text(
+                                if (state.mazdaExtrasBusy && state.mazdaExtrasSource != "snapshot")
+                                    "Reading…" else "Live extras"
+                            )
+                        }
+                        OutlinedButton(onClick = { state.runMazdaSnapshot() }, enabled = ready) {
+                            Text("Snapshot")
+                        }
+                    }
                 }
-                if (state.bmwScanning && state.bmwProgress.isNotEmpty()) {
+                if ((state.modScanning || state.mazdaExtrasBusy) && state.modProgress.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text(state.bmwProgress, color = Amber, fontSize = 12.sp)
+                    Text(state.modProgress, color = Amber, fontSize = 12.sp)
                 }
                 if (state.connState !is ConnState.Connected) {
                     Spacer(Modifier.height(8.dp))
@@ -93,33 +133,80 @@ fun ModulesScreen(state: AppState) {
                         color = TextFaint, fontSize = 12.sp
                     )
                 }
-                if (state.bmwError.isNotEmpty()) {
+                if (state.modError.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text(state.bmwError, color = Red, fontSize = 13.sp, lineHeight = 18.sp)
+                    Text(state.modError, color = Red, fontSize = 13.sp, lineHeight = 18.sp)
                 }
             }
         }
 
-        state.bmwReport?.let { report ->
+        if (mazda && state.mazdaExtrasRead) {
+            val fromSnapshot = state.mazdaExtrasSource == "snapshot"
             item {
                 SectionCard {
-                    if (report.simulated) {
+                    PanelTitle(if (fromSnapshot) "MAZDA SNAPSHOT (BROADCAST)" else "MAZDA LIVE EXTRAS")
+                    if (state.mazdaExtras.isEmpty()) {
+                        Text(
+                            if (fromSnapshot) {
+                                "No decodable broadcast frames were captured. Make sure the " +
+                                    "ignition is ON — with the car fully asleep the bus is quiet."
+                            } else {
+                                "This car didn't answer any of the Mazda-specific values. " +
+                                    "They vary by model year and engine — the generic live " +
+                                    "dashboard on the Car tab still works."
+                            },
+                            color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp
+                        )
+                    } else {
+                        state.mazdaExtras.forEach { r ->
+                            Row(Modifier.padding(vertical = 3.dp)) {
+                                Text(
+                                    r.name, color = TextMuted, fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    if (r.unit.isEmpty()) r.value else "${r.value} ${r.unit}",
+                                    color = TextMain, fontSize = 13.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (fromSnapshot)
+                                "Passive listen — nothing was sent to the car. Tap Snapshot to refresh."
+                            else
+                                "One-shot read — tap Live extras again to refresh.",
+                            color = TextFaint, fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Only show a report produced by the currently selected brand — a BMW
+        // report under a Mazda heading (or vice versa) would mislead.
+        val report = state.modReport?.takeIf { it.brand == state.moduleBrand }
+        report?.let {
+            item {
+                SectionCard {
+                    if (it.simulated) {
                         Text("SIMULATED — no real car connected", color = Amber, fontSize = 12.sp)
                         Spacer(Modifier.height(6.dp))
                     }
-                    Text(report.message, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
+                    Text(it.message, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
                 }
             }
 
-            val present = report.modules.filter { it.present }
-            val absent = report.modules.filter { !it.present }
+            val present = it.modules.filter { m -> m.present }
+            val absent = it.modules.filter { m -> !m.present }
 
             items(count = present.size) { i ->
                 val module = present[i]
                 ModuleCard(
                     module = module,
                     expanded = expanded == module.address,
-                    clearing = state.bmwClearingAddr == module.address,
+                    clearing = state.modClearingAddr == module.address,
                     onToggle = {
                         expanded = if (expanded == module.address) null else module.address
                     },
@@ -132,7 +219,7 @@ fun ModulesScreen(state: AppState) {
                     SectionCard {
                         PanelTitle("NOT FITTED / NO ANSWER")
                         Text(
-                            absent.joinToString("   ") { "${it.code} (${it.address.hex()})" },
+                            absent.joinToString("   ") { m -> "${m.code} (${m.address.hex()})" },
                             color = TextFaint, fontSize = 12.sp, lineHeight = 18.sp
                         )
                     }
@@ -142,11 +229,25 @@ fun ModulesScreen(state: AppState) {
     }
 }
 
-private fun Int.hex(): String = "0x%02X".format(this)
+private fun Int.hex(): String = if (this > 0xFF) "0x%03X".format(this) else "0x%02X".format(this)
+
+@Composable
+private fun BrandChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        color = if (selected) TextMain else TextFaint,
+        fontSize = 13.sp,
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (selected) PanelRaised else Panel)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 7.dp)
+    )
+}
 
 @Composable
 private fun ModuleCard(
-    module: BmwModuleResult,
+    module: UdsModuleResult,
     expanded: Boolean,
     clearing: Boolean,
     onToggle: () -> Unit,
@@ -207,7 +308,7 @@ private fun ModuleCard(
                 if (module.dtcs.isEmpty() && module.error == null) {
                     Text("✓ No faults stored in this module.", color = Green, fontSize = 13.sp)
                 } else {
-                    module.dtcs.forEach { BmwDtcCard(it) }
+                    module.dtcs.forEach { UdsDtcCard(it) }
                 }
                 if (module.dtcs.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
@@ -221,7 +322,7 @@ private fun ModuleCard(
 }
 
 @Composable
-private fun BmwDtcCard(dtc: BmwDtc) {
+private fun UdsDtcCard(dtc: UdsDtc) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = PanelRaised),

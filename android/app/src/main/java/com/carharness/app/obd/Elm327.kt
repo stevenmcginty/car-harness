@@ -114,6 +114,21 @@ class Elm327Session(private val transport: ObdTransport) {
     fun udsRecords(dataHex: String, timeoutMs: Long = 8000): List<ByteArray> =
         collect(raw(dataHex, timeoutMs), dataHex)
 
+    /**
+     * Run a bus-monitor command (ATMA) for a fixed window and return the raw
+     * capture. There is no '>' while monitoring — the transports return
+     * whatever arrived once the deadline lapses.
+     */
+    fun monitor(cmd: String, windowMs: Long): String = raw(cmd, windowMs)
+
+    /**
+     * Stop a running monitor. Any single character interrupts monitoring and
+     * is discarded by the ELM — deliberately NOT a CR, which would re-run the
+     * last command (the monitor itself). Returns text up to the prompt.
+     */
+    fun stopMonitor(): String =
+        transport.exchange(byteArrayOf(0x20), 4000).toString(Charsets.US_ASCII)
+
     private fun parse(text: String, expected: Int, echo: String): List<ByteArray> {
         val records = collect(text, echo)
         val matching = records.filter { it.isNotEmpty() && (it[0].toInt() and 0xFF) == expected }

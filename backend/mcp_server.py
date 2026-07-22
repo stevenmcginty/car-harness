@@ -23,6 +23,10 @@ from serial.tools import list_ports  # noqa: E402
 from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import interfaces, registry  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
+from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
+from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
+from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
+from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
 
 mcp = FastMCP("car-harness")
 
@@ -103,6 +107,149 @@ def bmw_clear_module(confirm: bool = False, address: str | None = None, mode: st
     if mode not in ("real", "sim"):
         return {"error": "mode must be 'real' or 'sim'."}
     return bmw_scan.clear(mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Mazda module scan over a generic OBD dongle (HS-CAN, UDS)
+# --------------------------------------------------------------------------- #
+def _elm_adapter_or_error(mode: str, adapter_id: str | None):
+    """Resolve an ELM327 adapter for a real Mazda call, or return an error dict.
+
+    Returns (instance_dict_or_None, error_dict_or_None). For mode='sim' the
+    instance is None and there is no error.
+    """
+    if mode not in ("real", "sim"):
+        return None, {"error": "mode must be 'real' or 'sim'."}
+    if mode == "sim":
+        return None, None
+    if not adapter_id:
+        return None, {"error": "Pick an ELM327 adapter (adapter_id from list_adapters) or use mode='sim'."}
+    instance = adapter_registry.get_instance(adapter_id)
+    if instance is None:
+        return None, {"error": f"Unknown adapter '{adapter_id}'."}
+    return instance.model_dump(), None
+
+
+@mcp.tool()
+def mazda_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a Mazda's module fault memory over a generic OBD-II dongle (read-only).
+
+    Walks the HS-CAN physical addresses (0x7E0-0x7E7) and reads each responding
+    module's manufacturer-level UDS fault codes + identification -- deeper than
+    generic OBD-II. Tuned for 2016 SkyActiv cars (e.g. an MX-5 ND). Ignition
+    must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    Note: body/comfort modules live on Mazda's MS-CAN bus and are NOT reachable
+    through a standard OBD dongle -- that needs an MS-CAN switchable adapter.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mazda_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def mazda_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read Mazda-specific (mode-22) live values over a generic OBD dongle.
+
+    One read-only pass over the community-documented SkyActiv enhanced DIDs on
+    the PCM -- data generic OBD-II doesn't carry. Values this particular
+    car/engine doesn't support are skipped silently. Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mazda_pids.live(instance, mode)
+
+
+@mcp.tool()
+def mazda_snapshot(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Passively decode a Mazda's broadcast CAN frames over a generic dongle.
+
+    Listens to the bus with the ELM327's monitor mode (nothing is sent to any
+    module) and decodes the ND-community-verified frames: RPM, speed, pedals,
+    coolant/outside temps, wheel speeds, brake pressure, steering angle, gear,
+    fuel litres, doors, handbrake, ignition state, odometer. Values this
+    car/year doesn't broadcast are skipped. Works with ignition ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mazda_snapshot_mod.snapshot(instance, mode)
+
+
+@mcp.tool()
+def mazda_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on Mazda modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    address: hex diagnostic address like "0x7E0" (the engine/PCM); omit to clear
+        every HS-CAN module that answers. Faults return if the underlying
+        problem is still present.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mazda_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Peugeot / PSA module scan over a generic OBD dongle (diagnostic CAN, UDS)
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def peugeot_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a Peugeot's module fault memory over a generic OBD-II dongle (read-only).
+
+    Walks PSA's per-module diagnostic CAN id pairs -- BSI (0x752), engine (0x6A8),
+    airbag (0x744), ABS/ESP (0x6AD), cluster (0x75F), AdBlue/SCR (0x6A1) and more
+    -- and reads each responding module's manufacturer-level UDS fault codes +
+    identification, deeper than generic OBD-II. For AEE2010-era PSA cars (~2010+
+    Peugeot, Citroen, DS). Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    Note: pre-2004 (VAN bus) and many 2004-2010 (KWP2000) PSA cars can't be
+    module-scanned through a standard OBD dongle.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def peugeot_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on Peugeot modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    address: hex request id like "0x752" (the BSI) or "0x6A8" (the engine); omit
+        to clear every PSA module that answers. Faults return if the underlying
+        problem is still present.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_scan.clear(instance, mode, address)
 
 
 # --------------------------------------------------------------------------- #

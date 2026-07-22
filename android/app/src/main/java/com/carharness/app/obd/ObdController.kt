@@ -122,13 +122,45 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
     }
 
     /** BMW F-series full-module scan. Serialised with everything else. */
-    suspend fun bmwScan(onProgress: (String) -> Unit): BmwScanReport = mutex.withLock {
+    suspend fun bmwScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
         BmwUds.scan(session, simulated, onProgress)
     }
 
     /** Clear one BMW module's fault memory; returns that module's fresh DTCs. */
-    suspend fun bmwClear(address: Int): List<BmwDtc> = mutex.withLock {
+    suspend fun bmwClear(address: Int): List<UdsDtc> = mutex.withLock {
         BmwUds.clearDtcs(session, address)
+    }
+
+    /** Mazda HS-CAN module scan (11-bit UDS). Serialised with everything else. */
+    suspend fun mazdaScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        MazdaUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one Mazda module's fault memory; returns that module's fresh DTCs. */
+    suspend fun mazdaClear(address: Int): List<UdsDtc> = mutex.withLock {
+        MazdaUds.clearDtcs(session, address)
+    }
+
+    /** One pass over the Mazda enhanced (mode-22) values. */
+    suspend fun mazdaEnhanced(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            MazdaUds.readEnhanced(session, onProgress)
+        }
+
+    /** Passive broadcast-CAN snapshot (ATMA sniff). Read-only. */
+    suspend fun mazdaSnapshot(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            MazdaCan.snapshot(session, onProgress)
+        }
+
+    /** Peugeot / PSA module scan (per-module UDS id pairs). Serialised. */
+    suspend fun peugeotScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        PeugeotUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one Peugeot module's fault memory; returns that module's fresh DTCs. */
+    suspend fun peugeotClear(address: Int): List<UdsDtc> = mutex.withLock {
+        PeugeotUds.clearDtcs(session, address)
     }
 
     suspend fun live(keys: List<String> = Pids.dashboardKeys): List<LiveReading> = mutex.withLock {

@@ -9,32 +9,6 @@ package com.carharness.app.obd
  * Read-only apart from clearDtcs(). Coding/flashing is deliberately absent —
  * that stays E-Sys's job over the ENET cable.
  */
-
-data class BmwDtc(
-    val code: String,        // J2012-style letter code, e.g. B37F2
-    val hex: String,         // raw 3-byte BMW code, what forums search by
-    val status: String,
-    val flags: List<String>,
-    val description: String,
-)
-
-data class BmwModuleResult(
-    val address: Int,
-    val code: String,
-    val name: String,
-    val present: Boolean,
-    val ident: List<Pair<String, String>>, // label -> value
-    val dtcs: List<BmwDtc>,
-    val error: String?,
-)
-
-data class BmwScanReport(
-    val ok: Boolean,
-    val simulated: Boolean,
-    val modules: List<BmwModuleResult>,
-    val message: String,
-)
-
 object BmwUds {
 
     // Common F-series diagnostic addresses (F25/F26 era) — same table as the
@@ -61,34 +35,6 @@ object BmwUds {
         0xF187 to "Part number",
         0xF189 to "Software",
         0xF191 to "Hardware",
-    )
-
-    private val STATUS_BITS = listOf(
-        0x01 to "test failed",
-        0x02 to "failed this cycle",
-        0x04 to "pending",
-        0x08 to "confirmed",
-        0x10 to "not completed since clear",
-        0x20 to "failed since clear",
-        0x40 to "not completed this cycle",
-        0x80 to "warning light requested",
-    )
-
-    private val NRC_NAMES = mapOf(
-        0x10 to "general reject",
-        0x11 to "service not supported",
-        0x12 to "sub-function not supported",
-        0x13 to "incorrect message length",
-        0x21 to "busy, repeat request",
-        0x22 to "conditions not correct (ignition on?)",
-        0x31 to "request out of range",
-        0x33 to "security access denied",
-        0x78 to "response pending",
-        0x7F to "service not supported in active session",
-    )
-
-    class NegativeResponse(val service: Int, val nrc: Int) : Exception(
-        "Negative response to %02X: %02X (%s)".format(service, nrc, NRC_NAMES[nrc] ?: "unknown")
     )
 
     /** True when the detected protocol is the 11-bit / 500k CAN BMWs use. */
@@ -124,7 +70,7 @@ object BmwUds {
 
     /**
      * Send one UDS request and return the positive-response payload.
-     * Throws NegativeResponse on 7F, ObdException(NO_DATA) when nothing
+     * Throws UdsNegativeResponse on 7F, ObdException(NO_DATA) when nothing
      * answers. Retries a couple of times on "response pending".
      */
     private fun request(
@@ -137,7 +83,7 @@ object BmwUds {
         var pendingRetries = 2
         while (true) {
             val records = session.udsRecords(cmd, timeoutMs)
-            var negative: NegativeResponse? = null
+            var negative: UdsNegativeResponse? = null
             for (raw in records) {
                 // Some clones leave the 0xF1 tester byte in front — strip it.
                 // A UDS first byte is never legitimately 0xF1.
@@ -149,7 +95,7 @@ object BmwUds {
                 val first = r[0].toInt() and 0xFF
                 if (first == service + 0x40) return r
                 if (first == 0x7F && r.size >= 3) {
-                    negative = NegativeResponse(r[1].toInt() and 0xFF, r[2].toInt() and 0xFF)
+                    negative = UdsNegativeResponse(r[1].toInt() and 0xFF, r[2].toInt() and 0xFF)
                 }
             }
             if (negative != null) {
@@ -171,7 +117,7 @@ object BmwUds {
         return try {
             request(session, 0x3E, "00", 4000)
             true
-        } catch (_: NegativeResponse) {
+        } catch (_: UdsNegativeResponse) {
             true  // a negative response still proves an ECU is there
         } catch (_: Exception) {
             false
@@ -203,15 +149,15 @@ object BmwUds {
         return out
     }
 
-    private fun readDtcs(session: Elm327Session): List<BmwDtc> {
+    private fun readDtcs(session: Elm327Session): List<UdsDtc> {
         // reportDTCByStatusMask; wide mask first, then a narrow fallback.
         var payload: ByteArray? = null
-        var lastNegative: NegativeResponse? = null
+        var lastNegative: UdsNegativeResponse? = null
         for (mask in listOf(0xAF, 0x0C)) {
             try {
                 payload = request(session, 0x19, "02%02X".format(mask))
                 break
-            } catch (e: NegativeResponse) {
+            } catch (e: UdsNegativeResponse) {
                 lastNegative = e
                 if (e.nrc == 0x12 || e.nrc == 0x31) continue
                 throw e
@@ -222,7 +168,7 @@ object BmwUds {
         ))
 
         // Reply: 59 02 <availabilityMask> then 4-byte records [dtc x3][status].
-        val dtcs = mutableListOf<BmwDtc>()
+        val dtcs = mutableListOf<UdsDtc>()
         var i = 3
         while (i + 3 < data.size) {
             val b0 = data[i].toInt() and 0xFF
@@ -233,11 +179,13 @@ object BmwUds {
             if (b0 == 0 && b1 == 0 && b2 == 0) continue
             val code = Dtc.decodePair(b0, b1)
             dtcs.add(
-                BmwDtc(
+                UdsDtc(
                     code = code,
                     hex = "%02X%02X%02X".format(b0, b1, b2),
                     status = "%02X".format(status),
-                    flags = STATUS_BITS.filter { (bit, _) -> status and bit != 0 }.map { it.second },
+                    flags = UdsConst.STATUS_BITS
+                        .filter { (bit, _) -> status and bit != 0 }
+                        .map { it.second },
                     description = Dtc.describe(code),
                 )
             )
@@ -251,36 +199,36 @@ object BmwUds {
         session: Elm327Session,
         simulated: Boolean,
         onProgress: (String) -> Unit = {},
-    ): BmwScanReport {
+    ): UdsScanReport {
         session.ensureProtocol()
         if (!protocolSupported(session)) {
-            return BmwScanReport(
-                ok = false, simulated = simulated, modules = emptyList(),
+            return UdsScanReport(
+                ok = false, simulated = simulated, brand = "bmw", modules = emptyList(),
                 message = "This car is talking ${session.protocol.ifEmpty { "an unknown protocol" }}, " +
                     "not the 11-bit/500k CAN that BMW F-series module scanning needs.",
             )
         }
-        val modules = mutableListOf<BmwModuleResult>()
+        val modules = mutableListOf<UdsModuleResult>()
         begin(session)
         try {
             for ((addr, code, name) in ECUS) {
                 onProgress("Probing $code — $name…")
                 if (!testerPresent(session, addr)) {
-                    modules.add(BmwModuleResult(addr, code, name, false, emptyList(), emptyList(), null))
+                    modules.add(UdsModuleResult(addr, code, name, false, emptyList(), emptyList(), null))
                     continue
                 }
                 var ident: List<Pair<String, String>> = emptyList()
-                var dtcs: List<BmwDtc> = emptyList()
+                var dtcs: List<UdsDtc> = emptyList()
                 var error: String? = null
                 try {
                     ident = readIdent(session)
                     dtcs = readDtcs(session)
-                } catch (e: NegativeResponse) {
+                } catch (e: UdsNegativeResponse) {
                     error = e.message
                 } catch (e: ObdException) {
                     error = e.message
                 }
-                modules.add(BmwModuleResult(addr, code, name, true, ident, dtcs, error))
+                modules.add(UdsModuleResult(addr, code, name, true, ident, dtcs, error))
             }
         } finally {
             restore(session)
@@ -289,9 +237,10 @@ object BmwUds {
         val present = modules.filter { it.present }
         val faults = present.sumOf { it.dtcs.size }
         val simPrefix = if (simulated) "SIMULATED — no real car connected. " else ""
-        return BmwScanReport(
+        return UdsScanReport(
             ok = true,
             simulated = simulated,
+            brand = "bmw",
             modules = modules,
             message = simPrefix + "${present.size} modules answered, $faults fault" +
                 (if (faults == 1) "" else "s") +
@@ -300,7 +249,7 @@ object BmwUds {
     }
 
     /** Clear one module's fault memory, then re-read it. Returns fresh DTCs. */
-    fun clearDtcs(session: Elm327Session, dst: Int): List<BmwDtc> {
+    fun clearDtcs(session: Elm327Session, dst: Int): List<UdsDtc> {
         session.ensureProtocol()
         if (!protocolSupported(session)) {
             throw ObdException("Not on a BMW CAN connection.", ObdException.Kind.PROTOCOL)
