@@ -37,12 +37,15 @@ DPF_BLOCK = bytes.fromhex("0000000000000000002EE000000000001E00000C800000000000E
 
 
 class FakePsaCar:
-    """A tiny PSA UDS brain keyed by request (TX) id."""
+    """A tiny PSA brain keyed by request (TX) id. The ABS is deliberately a
+    KWP-flavour module (like the field-test car): it refuses every UDS read,
+    only opens on PSA's 10 C0 session, and answers 17 FF 00 / 21 80."""
 
     def __init__(self):
-        self.sessions = {}       # tx -> is-extended-session
+        self.sessions = {}       # tx -> diagnostic session open
         self.cleared = []        # tx ids that got a ClearDiagnosticInformation
         self.ext_started = []    # tx ids that got a session escalation
+        self.kwp = {ABS}         # modules speaking PSA's KWP dialect
 
     def handle(self, tx, req):
         if tx not in PRESENT or not req:
@@ -50,16 +53,34 @@ class FakePsaCar:
         svc = req[0]
         if svc == 0x3E:                                   # TesterPresent
             return bytes([0x7E, 0x00])
-        if svc == 0x10 and len(req) >= 2 and req[1] == 0x03:  # extended session
-            self.sessions[tx] = True
-            self.ext_started.append(tx)
-            return bytes([0x50, 0x03, 0x00, 0x32, 0x01, 0xF4])
+        if svc == 0x10 and len(req) >= 2:                 # session control
+            if tx in self.kwp:
+                if req[1] == 0xC0:                        # PSA/KWP session only
+                    self.sessions[tx] = True
+                    self.ext_started.append(tx)
+                    return bytes([0x50, 0xC0])
+                return bytes([0x7F, 0x10, 0x12])
+            if req[1] == 0x03:                            # UDS extended session
+                self.sessions[tx] = True
+                self.ext_started.append(tx)
+                return bytes([0x50, 0x03, 0x00, 0x32, 0x01, 0xF4])
+            return bytes([0x7F, 0x10, 0x12])
+        if svc == 0x17:                                   # KWP ReadStatusOfDTC
+            if tx in self.kwp and self.sessions.get(tx):
+                return bytes([0x57, 0x01, 0x53, 0x35, 0x60])   # C1335
+            return bytes([0x7F, 0x17, 0x11])
+        if svc == 0x21 and len(req) == 2:                 # KWP zone read
+            if tx == ABS and req[1] == 0x80 and self.sessions.get(tx):
+                return bytes([0x61, 0x80]) + b"ABS8.1 9665344180"
+            return bytes([0x7F, 0x21, 0x11])
         if svc == 0x21 and len(req) >= 4:                 # KWP block read (HDi)
             if tx == ENGINE and req[1:4] == bytes([0xCB, 0x80, 0x01]):
                 return bytes([0x61, 0xCB, 0x80, 0x01]) + DPF_BLOCK
             return bytes([0x7F, 0x21, 0x11])
         if svc == 0x22 and len(req) >= 3:                 # ReadDataByIdentifier
             did = (req[1] << 8) | req[2]
+            if tx in self.kwp:
+                return bytes([0x7F, 0x22, 0x11])          # KWP module: no UDS reads
             if tx == BSI and did == 0xF190:
                 return bytes([0x62, 0xF1, 0x90]) + FAKE_VIN.encode()
             if tx == ENGINE and did == 0xF188:
@@ -79,11 +100,11 @@ class FakePsaCar:
                     return bytes([0x62, req[1], req[2]]) + ev[did]
             return bytes([0x7F, 0x22, 0x31])              # request out of range
         if svc == 0x19:                                   # ReadDTCInformation
+            if tx in self.kwp:
+                return bytes([0x7F, 0x19, 0x11])          # KWP module: no UDS DTC
             if tx == ENGINE:
                 return bytes([0x59, 0x02, 0xFF, 0x02, 0x34, 0x00, 0x2F,
                               0x13, 0x38, 0x00, 0x08])
-            if tx == ABS:
-                return bytes([0x59, 0x02, 0xFF])          # present, no faults
             if tx == AIRBAG:
                 if self.sessions.get(AIRBAG):
                     return bytes([0x59, 0x02, 0xFF, 0x90, 0x04, 0x00, 0x08])
@@ -195,11 +216,11 @@ def main() -> int:
     check("absent module (telematics 0x764) not present",
           not uds.tester_present(client, 0x764))
 
-    bsi_ident = peugeot_scan._read_ident(client, BSI)
+    bsi_ident = peugeot_scan._read_ident(client, BSI, [])
     bsi_vin = next((i["value"] for i in bsi_ident if i["label"] == "VIN"), None)
     check("VIN read from BSI", bsi_vin == FAKE_VIN, str(bsi_vin))
 
-    eng_dtcs = peugeot_scan._read_dtcs(client, ENGINE)
+    eng_dtcs = peugeot_scan._read_dtcs(client, ENGINE, [])
     check("engine returns 2 faults", len(eng_dtcs) == 2, str(len(eng_dtcs)))
     if eng_dtcs:
         check("engine DTC decodes P0234", eng_dtcs[0]["code"] == "P0234", eng_dtcs[0]["code"])
@@ -207,10 +228,25 @@ def main() -> int:
         check("engine DTC flags include confirmed", "confirmed" in eng_dtcs[0]["flags"],
               ",".join(eng_dtcs[0]["flags"]))
 
-    abs_dtcs = peugeot_scan._read_dtcs(client, ABS)
-    check("ABS present with no faults", abs_dtcs == [])
+    # The KWP-flavour ABS (like the field-test car): UDS reads all refuse, the
+    # 10 03 session refuses, 10 C0 opens, and 17 FF 00 delivers the fault.
+    abs_trace = []
+    abs_dtcs = peugeot_scan._read_dtcs(client, ABS, abs_trace)
+    check("KWP ABS faults via 10 C0 + 17 FF 00", len(abs_dtcs) == 1, str(len(abs_dtcs)))
+    if abs_dtcs:
+        check("KWP DTC decodes C1335", abs_dtcs[0]["code"] == "C1335", abs_dtcs[0]["code"])
+        check("KWP DTC flagged as KWP", abs_dtcs[0]["flags"] == ["stored (KWP)"],
+              ",".join(abs_dtcs[0]["flags"]))
+    check("PSA session 10 C0 was opened for ABS", ABS in car.ext_started)
+    check("trace records the KWP ladder",
+          any("17 FF 00" in line for line in abs_trace), " | ".join(abs_trace))
 
-    air_dtcs = peugeot_scan._read_dtcs(client, AIRBAG)  # needs session escalation
+    abs_ident = peugeot_scan._read_ident(client, ABS, [])
+    check("KWP ABS ident via zone 21 80",
+          any("9665344180" in i["value"] for i in abs_ident),
+          str(abs_ident))
+
+    air_dtcs = peugeot_scan._read_dtcs(client, AIRBAG, [])  # needs session escalation
     check("airbag fault read after extended-session escalation", len(air_dtcs) == 1, str(len(air_dtcs)))
     if air_dtcs:
         check("airbag DTC decodes B1004", air_dtcs[0]["code"] == "B1004", air_dtcs[0]["code"])

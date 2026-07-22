@@ -1,9 +1,13 @@
 package com.carharness.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedButton
@@ -29,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.carharness.app.AppState
@@ -36,6 +42,7 @@ import com.carharness.app.ConnState
 import com.carharness.app.obd.Brands
 import com.carharness.app.obd.UdsDtc
 import com.carharness.app.obd.UdsModuleResult
+import com.carharness.app.obd.VinCheck
 
 @Composable
 fun ModulesScreen(state: AppState) {
@@ -71,27 +78,27 @@ fun ModulesScreen(state: AppState) {
     val brand = state.moduleBrand
     val brandDef = Brands.byId(brand)
 
-    LazyColumn(Modifier.fillMaxSize().padding(top = 10.dp)) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { ScreenHeader("Modules", "Deep scan, straight to each control unit") }
+
+        item { BrandSelector(brand) { state.chooseModuleBrand(it) } }
+
         item {
             SectionCard {
-                PanelTitle("MODULE SCAN")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Brands.all.forEach { b ->
-                        BrandChip(b.label, brand == b.id) { state.chooseModuleBrand(b.id) }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
                 Text(
                     brandDef?.scanHint ?: "",
-                    color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp
+                    color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = { state.runModuleScan() },
                         enabled = state.connState is ConnState.Connected && !state.modScanning,
                     ) {
-                        Text(if (state.modScanning) "Scanning…" else "Scan all modules")
+                        Text(
+                            if (state.modScanning) "Scanning…" else "Scan all modules",
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
                     val ready = state.connState is ConnState.Connected &&
                         !state.modScanning && !state.extrasBusy
@@ -99,6 +106,7 @@ fun ModulesScreen(state: AppState) {
                         OutlinedButton(
                             onClick = { state.runBrandAction(action) },
                             enabled = ready,
+                            border = BorderStroke(1.dp, BorderSoft),
                         ) {
                             Text(
                                 if (state.extrasRunningId == action.id) "Reading…"
@@ -108,8 +116,14 @@ fun ModulesScreen(state: AppState) {
                     }
                 }
                 if ((state.modScanning || state.extrasBusy) && state.modProgress.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(state.modProgress, color = Amber, fontSize = 12.sp)
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(99.dp)),
+                        color = Green,
+                        trackColor = PanelRaised,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(state.modProgress, color = TextMuted, fontSize = 12.sp)
                 }
                 if (state.connState !is ConnState.Connected) {
                     Spacer(Modifier.height(8.dp))
@@ -167,24 +181,39 @@ fun ModulesScreen(state: AppState) {
         // report under a Mazda heading (or vice versa) would mislead.
         val report = state.modReport?.takeIf { it.brand == state.moduleBrand }
         report?.let {
+            val present = it.modules.filter { m -> m.present }
+            val faults = present.sumOf { m -> m.dtcs.size }
+
             item {
                 SectionCard {
+                    PanelTitle("VEHICLE")
                     if (it.simulated) {
-                        Text("SIMULATED — no real car connected", color = Amber, fontSize = 12.sp)
-                        Spacer(Modifier.height(6.dp))
-                    }
-                    it.vin?.let { vin ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            InfoChip("VIN", vin)
-                        }
+                        StatusPill("SIMULATED — no real car connected", Amber)
                         Spacer(Modifier.height(8.dp))
                     }
-                    Text(it.message, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
+                    val make = VinCheck.makeFromVin(it.vin)
+                    if (make != null || it.vin != null) {
+                        Text(
+                            make ?: "Identified by VIN",
+                            color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        it.vin?.let { vin -> InfoChip("VIN", vin, Blue) }
+                    }
+                    if (it.vin != null) Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        InfoChip("Modules", "${present.size} answered")
+                        InfoChip(
+                            "Faults", "$faults",
+                            if (faults > 0) Red else Green
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(it.message, color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp)
                 }
             }
-
-            val present = it.modules.filter { m -> m.present }
-            val absent = it.modules.filter { m -> !m.present }
 
             items(count = present.size) { i ->
                 val module = present[i]
@@ -199,36 +228,53 @@ fun ModulesScreen(state: AppState) {
                 )
             }
 
+            val absent = it.modules.filter { m -> !m.present }
             if (absent.isNotEmpty()) {
                 item {
-                    SectionCard {
-                        PanelTitle("NOT FITTED / NO ANSWER")
-                        Text(
-                            absent.joinToString("   ") { m -> "${m.code} (${m.address.hex()})" },
-                            color = TextFaint, fontSize = 12.sp, lineHeight = 18.sp
-                        )
-                    }
+                    AbsentCard(absent, it.absentHint)
                 }
+            }
+        }
+
+        item { Spacer(Modifier.height(12.dp)) }
+    }
+}
+
+// ---------------------------------------------------------------- components
+
+@Composable
+private fun BrandSelector(selected: String, onChoose: (String) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 5.dp)
+            .background(Panel, RoundedCornerShape(14.dp))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Brands.all.forEach { b ->
+            val active = selected == b.id
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (active) Green.copy(alpha = 0.15f) else Panel)
+                    .clickable { onChoose(b.id) }
+                    .padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    b.label,
+                    color = if (active) Green else TextFaint,
+                    fontSize = 13.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                )
             }
         }
     }
 }
 
 private fun Int.hex(): String = if (this > 0xFF) "0x%03X".format(this) else "0x%02X".format(this)
-
-@Composable
-private fun BrandChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Text(
-        label,
-        color = if (selected) TextMain else TextFaint,
-        fontSize = 13.sp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(if (selected) PanelRaised else Panel)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 7.dp)
-    )
-}
 
 @Composable
 private fun ModuleCard(
@@ -238,68 +284,137 @@ private fun ModuleCard(
     onToggle: () -> Unit,
     onClear: () -> Unit,
 ) {
+    val faults = module.dtcs.size
+    val statusColor = when {
+        module.error != null -> Amber
+        faults == 0 -> Green
+        else -> Red
+    }
+    val statusLabel = when {
+        module.error != null -> "no data"
+        faults == 0 -> "OK"
+        else -> "$faults fault" + if (faults == 1) "" else "s"
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 4.dp)
             .clickable(onClick = onToggle),
         colors = CardDefaults.cardColors(containerColor = Panel),
+        border = BorderStroke(1.dp, BorderSoft),
         shape = RoundedCornerShape(14.dp),
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusDot(statusColor)
+                Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(module.code, color = TextMain, fontSize = 16.sp)
-                    Text(module.name, color = TextMuted, fontSize = 12.sp)
+                    Text(
+                        module.code, color = TextMain, fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(module.name, color = TextFaint, fontSize = 12.sp)
                 }
-                val faults = module.dtcs.size
-                val label = when {
-                    module.error != null -> "read error"
-                    faults == 0 -> "OK"
-                    else -> "$faults fault" + if (faults == 1) "" else "s"
-                }
-                val color = when {
-                    module.error != null -> Amber
-                    faults == 0 -> Green
-                    else -> Red
-                }
-                Text(label, color = color, fontSize = 13.sp)
+                StatusPill(statusLabel, statusColor)
                 Spacer(Modifier.width(8.dp))
                 Text(if (expanded) "▾" else "▸", color = TextFaint, fontSize = 13.sp)
             }
 
             if (expanded) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     InfoChip("Address", module.address.hex())
                 }
                 if (module.ident.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
                     module.ident.forEach { (label, value) ->
                         Row(Modifier.padding(vertical = 2.dp)) {
                             Text(
                                 label.uppercase(), color = TextFaint, fontSize = 10.sp,
-                                modifier = Modifier.width(90.dp)
+                                modifier = Modifier.width(92.dp),
+                                letterSpacing = 0.6.sp,
                             )
-                            Text(value, color = TextMain, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                            Text(
+                                value,
+                                color = if (label == "VIN") Blue else TextMain,
+                                fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                            )
                         }
                     }
                 }
                 module.error?.let {
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(it, color = Amber, fontSize = 12.sp, lineHeight = 17.sp)
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 if (module.dtcs.isEmpty() && module.error == null) {
-                    Text("✓ No faults stored in this module.", color = Green, fontSize = 13.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        StatusDot(Green)
+                        Spacer(Modifier.width(8.dp))
+                        Text("No faults stored in this module.", color = Green, fontSize = 13.sp)
+                    }
                 } else {
                     module.dtcs.forEach { UdsDtcCard(it) }
                 }
-                if (module.dtcs.isNotEmpty()) {
+                if (module.trace.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = onClear, enabled = !clearing) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(PanelRaised, RoundedCornerShape(10.dp))
+                            .padding(10.dp)
+                    ) {
+                        Text(
+                            "DIAGNOSTIC TRAIL", color = TextFaint, fontSize = 9.sp,
+                            letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        module.trace.forEach { line ->
+                            Text(
+                                line, color = TextFaint, fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace, lineHeight = 15.sp
+                            )
+                        }
+                    }
+                }
+                if (module.dtcs.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onClear, enabled = !clearing,
+                        border = BorderStroke(1.dp, BorderSoft),
+                    ) {
                         Text(if (clearing) "Clearing…" else "Clear this module")
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AbsentCard(absent: List<UdsModuleResult>, hint: String?) {
+    SectionCard {
+        PanelTitle(if (hint != null) "NOT REACHABLE OVER THIS DONGLE" else "NOT FITTED / NO ANSWER")
+        if (hint != null) {
+            Text(hint, color = TextMuted, fontSize = 12.sp, lineHeight = 18.sp)
+            Spacer(Modifier.height(10.dp))
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            absent.forEach { m ->
+                Box(
+                    Modifier
+                        .background(PanelRaised, RoundedCornerShape(999.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        "${m.code} · ${m.address.hex()}",
+                        color = TextFaint, fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
                 }
             }
         }
@@ -311,13 +426,19 @@ private fun UdsDtcCard(dtc: UdsDtc) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = PanelRaised),
-        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, BorderSoft),
+        shape = RoundedCornerShape(12.dp),
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(dtc.code, color = TextMain, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+                Text(
+                    dtc.code, color = TextMain, fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace
+                )
                 Spacer(Modifier.width(10.dp))
-                Text(dtc.hex, color = Amber, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                if (dtc.hex.isNotEmpty()) {
+                    Text(dtc.hex, color = Amber, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                }
             }
             Spacer(Modifier.height(4.dp))
             Text(dtc.description, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)

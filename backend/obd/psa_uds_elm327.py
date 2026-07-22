@@ -1,5 +1,5 @@
-"""UDS over a generic ELM327 for PSA / Stellantis cars (Peugeot, Citroen, DS and
-the newer Opel/Vauxhall built on the same platform).
+"""UDS *and* PSA-flavoured KWP2000 over a generic ELM327 for PSA / Stellantis
+cars (Peugeot, Citroen, DS and the newer Opel/Vauxhall on the same platform).
 
 This is the "explicit id pair" cousin of the Mazda path in uds_elm327.py. Where a
 standard OBD-II car answers a request on 0x7E0..0x7E7 with response = request+8,
@@ -8,16 +8,18 @@ that rule -- the BSI is 0x752 -> 0x652, the engine 0x6A8 -> 0x688, the airbag
 0x744 -> 0x644, and so on. So this client is told each module's response id
 explicitly (via a {tx: rx} map) instead of computing it.
 
-Everything else -- the ISO-TP reassembly, per-module flow control, negative
-(0x7F) response handling -- is the shared Elm327UdsClient. This subclass changes
-only how a module's receive filter is chosen, and adds an optional, read-safe
-extended diagnostic session (0x10 0x03) that some PSA modules want before they
-will report fault memory.
+WHAT THE FIRST FIELD TEST TAUGHT US (real car, VeePeak dongle):
 
-Scope: 11-bit ISO 15765-4 CAN, i.e. AEE2010-era cars (roughly 2010+). Pre-2004
-PSA cars use the VAN bus (unreachable by any ELM327); 2004-2010 cars often answer
-KWP2000 (service 0x18) rather than UDS. Both are out of scope here -- the same
-way the Mazda path is HS-CAN only.
+* A standard dongle sits on OBD pins 6/14 -- on PSA that is the ENGINE bus, so
+  only the powertrain modules (engine, gearbox, ABS, steering, SCR) can answer.
+  The BSI, airbag, cluster etc. live on the diagnostic CAN at OBD pins 3/8 and
+  need a pin-swap adapter; no software reaches them through a plain dongle.
+* The modules that DO answer often speak PSA's KWP dialect, not pure UDS:
+  session open is 0x10 0xC0 (not 0x10 0x03), fault read is 0x17 0xFF 0x00 (not
+  0x19 0x02), ident is 0x21 <zone> (not 0x22 <did>). Hence the ladders below.
+
+Everything else -- the ISO-TP reassembly, per-module flow control, negative
+(0x7F) response handling -- is the shared Elm327UdsClient.
 """
 
 from backend.obd.elm327 import ObdError
@@ -35,6 +37,15 @@ class PsaElm327UdsClient(Elm327UdsClient):
     def __init__(self, session, id_map: dict):
         super().__init__(session)
         self._id_map = dict(id_map)
+        self._session_open = set()  # request ids with a PSA/KWP session running
+
+    def begin(self):
+        super().begin()
+        self._session_open.clear()
+
+    def restore(self):
+        super().restore()
+        self._session_open.clear()
 
     def _aim(self, req_id: int):
         """Point the ELM at one PSA module: TX header + explicit RX filter + FC.
@@ -53,17 +64,34 @@ class PsaElm327UdsClient(Elm327UdsClient):
         self.session.at("ATFCSM1")
         self._target = req_id
 
-    def start_extended_session(self, req_id: int, timeout: float = 1.0) -> bool:
-        """Best-effort DiagnosticSessionControl -> extended (0x10 0x03).
-
-        Read-safe: it changes only the ECU's session state (which the module
-        drops on its own after a few seconds of silence) and writes nothing to
-        the car. Some PSA modules -- notably the airbag and BSI -- refuse
-        ReadDTC in the default session, so callers may escalate to this only when
-        a plain read comes back negative. Returns True on a positive 0x50 reply.
+    def open_session(self, req_id: int, trace=None, timeout: float = 1.5) -> bool:
+        """Open a diagnostic session, PSA style: 10 03 (UDS extended), then
+        10 C0 (the PSA session Diagbox-era ECUs actually want), then the bare
+        KWP StartCommunication (81). Read-safe: session state lapses on its own
+        after a few seconds of silence and writes nothing to the car.
         """
-        try:
-            reply = self.request(req_id, bytes([0x10, 0x03]), timeout=timeout)
-        except ObdError:
-            return False
-        return bool(reply) and reply[0] == 0x50
+        if req_id in self._session_open:
+            return True
+        for data, positive, label in (
+            (bytes([0x10, 0x03]), 0x50, "session 10 03"),
+            (bytes([0x10, 0xC0]), 0x50, "PSA session 10 C0"),
+            (bytes([0x81]), 0xC1, "KWP start 81"),
+        ):
+            try:
+                reply = self.request(req_id, data, timeout=timeout)
+            except ObdError:
+                if trace is not None:
+                    trace.append(f"{label} -> no answer")
+                continue
+            if reply and reply[0] == positive:
+                if trace is not None:
+                    trace.append(f"{label} -> OK")
+                self._session_open.add(req_id)
+                return True
+            if trace is not None and reply and reply[0] == 0x7F and len(reply) >= 3:
+                trace.append(f"{label} -> NRC {reply[2]:02X}")
+        return False
+
+    def mark_session_open(self, req_id: int):
+        """Record that a probe already opened this module's session."""
+        self._session_open.add(req_id)

@@ -52,7 +52,8 @@ fun FaultsScreen(state: AppState) {
         )
     }
 
-    LazyColumn(Modifier.fillMaxSize().padding(top = 10.dp)) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { ScreenHeader("Faults", "Engine fault codes over OBD-II") }
         item {
             SectionCard {
                 PanelTitle("FAULT CODES")

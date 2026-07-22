@@ -35,7 +35,8 @@ fun DesktopScreen(state: AppState) {
         if (state.desktopPaired) state.refreshDesktop()
     }
 
-    LazyColumn(Modifier.fillMaxSize().padding(top = 10.dp)) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { ScreenHeader("Desktop", "Pairing & app updates") }
         if (!state.desktopPaired) {
             item {
                 SectionCard {

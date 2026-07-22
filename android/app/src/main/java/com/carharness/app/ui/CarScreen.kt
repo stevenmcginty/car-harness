@@ -35,7 +35,8 @@ import com.carharness.app.ConnState
 
 @Composable
 fun CarScreen(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().padding(top = 10.dp)) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { ScreenHeader("Car", "Connection & live data") }
         item {
             SectionCard {
                 PanelTitle("CONNECT TO THE CAR")

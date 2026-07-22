@@ -78,13 +78,12 @@ object Brands {
         Brand(
             id = "peugeot",
             label = "Peugeot",
-            scanHint = "Scan all modules walks the Peugeot's (PSA) control units by their own " +
-                "CAN ids — BSI, engine, gearbox, ABS, airbags, cluster, AdBlue/DPF " +
-                "and more — reads each one's fault memory, and cross-checks every " +
-                "module's VIN. Health check adds DPF soot/regen (HDi diesels) and " +
-                "battery State-of-Health/charge (e-208 & other e-CMP EVs). " +
-                "For ~2010+ cars; pre-2004 (VAN) and many 2004-2010 (KWP) cars " +
-                "can't be reached over a plain dongle.",
+            scanHint = "Reads the VIN first (so you always know the car), then walks the " +
+                "PSA control units the dongle can reach — engine, gearbox, ABS/ESP, " +
+                "steering, AdBlue — speaking both UDS and Peugeot's own KWP dialect. " +
+                "Body modules (BSI, airbag, cluster, radio) sit on a separate diag " +
+                "CAN at OBD pins 3 & 8: a cheap PSA pin-swap adapter brings them in. " +
+                "Health check adds DPF soot/regen (HDi) and EV battery health (e-208).",
             actions = listOf(
                 BrandAction(
                     id = "extras",

@@ -178,7 +178,7 @@ def _read_did(client: PsaElm327UdsClient, req_id: int, did: int,
                 and payload[2] in _SESSION_NRCS
                 and attempt == 0 and req_id not in escalated):
             escalated.add(req_id)
-            if client.start_extended_session(req_id):
+            if client.open_session(req_id):
                 continue
         return None
     return None

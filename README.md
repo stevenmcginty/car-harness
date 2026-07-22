@@ -97,6 +97,14 @@ The **Simulate** toggle returns clearly-labelled fake results (VIN
   a mismatch means a control unit swapped in from another car. An engine
   ECU that ignores UDS is re-probed on the standard OBD channel with the
   Mode 01 request it must answer whenever the ignition is on.
+  Peugeot/PSA scans speak both UDS and PSA's KWP dialect per module
+  (session `10 C0`, faults `17 FF 00`, ident zone `21 80`) and read the
+  Mode 09 VIN *first*, so the car is identified even when a module refuses
+  everything else. Body modules (BSI, airbag, cluster...) live on the diag
+  CAN at OBD pins 3/8 -- a standard dongle only reaches the engine bus, so
+  the report says which modules need a PSA pin-swap adapter instead of
+  listing them as absent. Each scanned module carries a request->reply
+  "diagnostic trail" for field debugging.
 - **Desktop tab** -- pair with this app: on the PC click **Pair phone...**,
   then on the phone **Find my PC** (UDP discovery on port 8766) and type the
   6-digit code. Once paired, the phone can run scans *through the desktop's

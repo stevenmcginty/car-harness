@@ -1543,7 +1543,7 @@
     return false;
   }
 
-  function buildModuleRow(m, onClearRequested) {
+  function buildModuleRow(m, onClearRequested, absentHint) {
     var row = document.createElement("div");
     row.className = "module-row" + (m.present ? "" : " is-absent");
 
@@ -1563,7 +1563,7 @@
     var tag = document.createElement("span");
     if (!m.present) {
       tag.className = "tag";
-      tag.textContent = "not fitted";
+      tag.textContent = absentHint ? "needs pins-3/8 adapter" : "not fitted";
     } else if (m.error) {
       tag.className = "tag dtc-tag is-pending";
       tag.textContent = "no fault read";
@@ -1593,6 +1593,15 @@
       err.className = "dtc-desc";
       err.textContent = m.error;
       row.appendChild(err);
+    }
+
+    // Request→reply trail captured during the scan (PSA ladders etc.) — the
+    // evidence that turns "no fault read" into an actionable bug report.
+    if (m.present && m.trace && m.trace.length) {
+      var trace = document.createElement("pre");
+      trace.className = "module-trace";
+      trace.textContent = m.trace.join("\n");
+      row.appendChild(trace);
     }
 
     m.dtcs.forEach(function (d) {
@@ -1643,7 +1652,7 @@
     (data.modules || []).forEach(function (m) {
       el.brandModules.appendChild(buildModuleRow(m, function (mm) {
         runBrandClear(mm.address, mm.code + " — " + mm.name);
-      }));
+      }, data.absentHint));
     });
   }
 

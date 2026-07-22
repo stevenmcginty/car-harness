@@ -70,7 +70,8 @@ fun ServiceScreen(state: AppState) {
         )
     }
 
-    LazyColumn(Modifier.fillMaxSize().padding(top = 10.dp)) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        item { ScreenHeader("Service", "Resets & maintenance procedures") }
         item {
             SectionCard {
                 PanelTitle("SERVICE RESETS")

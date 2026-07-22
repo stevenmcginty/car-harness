@@ -21,6 +21,7 @@ data class UdsModuleResult(
     val ident: List<Pair<String, String>>, // label -> value
     val dtcs: List<UdsDtc>,
     val error: String?,
+    val trace: List<String> = emptyList(), // request→reply trail for field debugging
 )
 
 data class UdsScanReport(
@@ -30,6 +31,7 @@ data class UdsScanReport(
     val modules: List<UdsModuleResult>,
     val message: String,
     val vin: String? = null, // consensus VIN across modules — identifies the car
+    val absentHint: String? = null, // why the silent modules are silent, if known
 )
 
 /**
@@ -52,6 +54,22 @@ object VinCheck {
         } else ""
         val vin = vins.groupingBy { it.second }.eachCount().maxByOrNull { it.value }?.key
         return vin to warning
+    }
+
+    /** Manufacturer from the VIN's WMI — enough to headline "what car is this". */
+    fun makeFromVin(vin: String?): String? {
+        val wmi = vin?.take(3)?.uppercase() ?: return null
+        return when (wmi) {
+            "VF3", "VR3" -> "Peugeot"
+            "VF7", "VR7" -> "Citroën"
+            "VR1" -> "DS Automobiles"
+            "W0L", "W0V" -> "Opel / Vauxhall"
+            "VXK" -> "Vauxhall"
+            "WBA", "WBS", "WBY", "WBW" -> "BMW"
+            "WMW" -> "MINI"
+            "JMZ", "JM1", "JM0", "3MD", "JM7" -> "Mazda"
+            else -> null
+        }
     }
 }
 

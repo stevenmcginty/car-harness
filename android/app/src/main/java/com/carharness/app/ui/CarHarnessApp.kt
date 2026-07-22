@@ -1,7 +1,9 @@
 package com.carharness.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,14 +11,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,35 +31,58 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.carharness.app.AppState
+import com.carharness.app.R
 import com.carharness.app.obd.DtcRecord
 import com.carharness.app.obd.ScanResult
 
-val Bg = Color(0xFF0B0F14)
-val Panel = Color(0xFF131A22)
-val PanelRaised = Color(0xFF17202B)
-val BorderSoft = Color(0xFF1B2530)
-val TextMain = Color(0xFFE6EDF3)
-val TextMuted = Color(0xFF93A3B3)
-val TextFaint = Color(0xFF5C6B7A)
-val Green = Color(0xFF35C766)
-val Amber = Color(0xFFE8A53D)
-val Red = Color(0xFFD5695F)
+// ---------------------------------------------------------------- design tokens
+// A quiet graphite-blue workshop theme: deep neutral surfaces, one signal
+// green for "good/primary", amber for attention, red for faults, blue for
+// identity/info. Text runs a strict 3-step hierarchy (main/muted/faint).
+
+val Bg = Color(0xFF0A0D12)
+val Panel = Color(0xFF11161E)
+val PanelRaised = Color(0xFF18202B)
+val BorderSoft = Color(0xFF212C3A)
+val TextMain = Color(0xFFEAF0F6)
+val TextMuted = Color(0xFF9AA8B6)
+val TextFaint = Color(0xFF5F6D7C)
+val Green = Color(0xFF46D586)
+val GreenInk = Color(0xFF052E17)   // text on a green fill
+val Amber = Color(0xFFEDB04C)
+val Red = Color(0xFFEF6F63)
+val Blue = Color(0xFF64A8F5)
 
 private val scheme = darkColorScheme(
     primary = Green,
-    onPrimary = Color(0xFF07220F),
+    onPrimary = GreenInk,
     background = Bg,
     surface = Panel,
     surfaceVariant = PanelRaised,
     onBackground = TextMain,
     onSurface = TextMain,
-    secondary = Amber,
+    secondary = Blue,
+    outline = BorderSoft,
     error = Red,
+)
+
+private data class TabDef(val label: String, val icon: Int)
+
+private val TABS = listOf(
+    TabDef("Car", R.drawable.ic_car),
+    TabDef("Faults", R.drawable.ic_faults),
+    TabDef("Modules", R.drawable.ic_modules),
+    TabDef("Service", R.drawable.ic_service),
+    TabDef("Desktop", R.drawable.ic_desktop),
 )
 
 @Composable
@@ -64,27 +92,36 @@ fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
         Scaffold(
             containerColor = Bg,
             bottomBar = {
-                NavigationBar(containerColor = Panel) {
-                    NavigationBarItem(
-                        selected = tab == 0, onClick = { tab = 0 },
-                        icon = { Text("🚗", fontSize = 20.sp) }, label = { Text("Car") }
+                Column {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(BorderSoft)
                     )
-                    NavigationBarItem(
-                        selected = tab == 1, onClick = { tab = 1 },
-                        icon = { Text("⚠️", fontSize = 20.sp) }, label = { Text("Faults") }
-                    )
-                    NavigationBarItem(
-                        selected = tab == 2, onClick = { tab = 2 },
-                        icon = { Text("🧩", fontSize = 20.sp) }, label = { Text("Modules") }
-                    )
-                    NavigationBarItem(
-                        selected = tab == 3, onClick = { tab = 3 },
-                        icon = { Text("🔧", fontSize = 20.sp) }, label = { Text("Service") }
-                    )
-                    NavigationBarItem(
-                        selected = tab == 4, onClick = { tab = 4 },
-                        icon = { Text("🖥️", fontSize = 20.sp) }, label = { Text("Desktop") }
-                    )
+                    NavigationBar(containerColor = Panel, tonalElevation = 0.dp) {
+                        TABS.forEachIndexed { i, def ->
+                            NavigationBarItem(
+                                selected = tab == i,
+                                onClick = { tab = i },
+                                icon = {
+                                    Icon(
+                                        painterResource(def.icon),
+                                        contentDescription = def.label,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                },
+                                label = { Text(def.label, fontSize = 11.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Green,
+                                    selectedTextColor = TextMain,
+                                    indicatorColor = Green.copy(alpha = 0.14f),
+                                    unselectedIconColor = TextFaint,
+                                    unselectedTextColor = TextFaint,
+                                ),
+                            )
+                        }
+                    }
                 }
             }
         ) { padding ->
@@ -109,11 +146,12 @@ fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
 @Composable
 fun SectionCard(content: @Composable () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
         colors = CardDefaults.cardColors(containerColor = Panel),
-        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, BorderSoft),
+        shape = RoundedCornerShape(18.dp),
     ) {
-        Column(Modifier.padding(14.dp)) { content() }
+        Column(Modifier.padding(16.dp)) { content() }
     }
 }
 
@@ -121,10 +159,11 @@ fun SectionCard(content: @Composable () -> Unit) {
 fun PanelTitle(text: String) {
     Text(
         text,
-        color = TextMuted,
-        fontSize = 12.sp,
-        letterSpacing = 1.2.sp,
-        modifier = Modifier.padding(bottom = 8.dp)
+        color = TextFaint,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.6.sp,
+        modifier = Modifier.padding(bottom = 10.dp)
     )
 }
 
@@ -132,12 +171,63 @@ fun PanelTitle(text: String) {
 fun InfoChip(label: String, value: String, valueColor: Color = TextMain) {
     Card(
         colors = CardDefaults.cardColors(containerColor = PanelRaised),
+        border = BorderStroke(1.dp, BorderSoft),
         shape = RoundedCornerShape(999.dp),
     ) {
-        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-            Text(label.uppercase(), color = TextFaint, fontSize = 10.sp)
-            Spacer(Modifier.width(6.dp))
-            Text(value, color = valueColor, fontSize = 12.sp)
+        Row(
+            Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label.uppercase(),
+                color = TextFaint, fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp
+            )
+            Spacer(Modifier.width(7.dp))
+            Text(
+                value, color = valueColor, fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+    }
+}
+
+/** Small tinted status pill: "OK", "2 faults", "no data", … */
+@Composable
+fun StatusPill(text: String, color: Color) {
+    Box(
+        Modifier
+            .background(color.copy(alpha = 0.14f), RoundedCornerShape(999.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(text, color = color, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+/** A round status dot used at the front of list rows. */
+@Composable
+fun StatusDot(color: Color) {
+    Box(
+        Modifier
+            .size(9.dp)
+            .background(color, CircleShape)
+    )
+}
+
+/** Big page header: one per tab, above the first card. */
+@Composable
+fun ScreenHeader(title: String, subtitle: String? = null) {
+    Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
+        Text(
+            title,
+            color = TextMain,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = (-0.3).sp,
+        )
+        if (subtitle != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(subtitle, color = TextFaint, fontSize = 13.sp)
         }
     }
 }
@@ -152,20 +242,22 @@ fun DtcCard(record: DtcRecord) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = PanelRaised),
-        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, BorderSoft),
+        shape = RoundedCornerShape(12.dp),
     ) {
         Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     record.code,
                     color = TextMain,
                     fontSize = 17.sp,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
                 )
                 Spacer(Modifier.width(10.dp))
-                Text(record.status.uppercase(), color = tagColor, fontSize = 10.sp)
+                StatusPill(record.status, tagColor)
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(5.dp))
             Text(record.description, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
         }
     }
@@ -174,11 +266,11 @@ fun DtcCard(record: DtcRecord) {
 @Composable
 fun ScanResultView(result: ScanResult) {
     if (result.simulated) {
-        Text("SIMULATED — no real car connected", color = Amber, fontSize = 12.sp)
-        Spacer(Modifier.height(6.dp))
+        StatusPill("SIMULATED — no real car connected", Amber)
+        Spacer(Modifier.height(8.dp))
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        result.vin?.let { InfoChip("VIN", it) }
+        result.vin?.let { InfoChip("VIN", it, Blue) }
     }
     Spacer(Modifier.height(6.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -198,7 +290,11 @@ fun ScanResultView(result: ScanResult) {
     Spacer(Modifier.height(8.dp))
     val all = result.stored + result.pending + result.permanent
     if (all.isEmpty()) {
-        Text("✓ No fault codes.", color = Green, fontSize = 14.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StatusDot(Green)
+            Spacer(Modifier.width(8.dp))
+            Text("No fault codes.", color = Green, fontSize = 14.sp)
+        }
     } else {
         all.forEach { DtcCard(it) }
     }

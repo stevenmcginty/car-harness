@@ -1,25 +1,29 @@
-"""Peugeot / PSA module scan over a generic OBD-II dongle (diagnostic CAN, UDS).
+"""Peugeot / PSA module scan over a generic OBD-II dongle (UDS + PSA KWP).
 
 Generic OBD-II (backend/obd/service.py) only sees the engine's emissions data.
-This walks the manufacturer-level modules on a PSA car's diagnostic CAN bus and
-reads each responding module's UDS fault memory + identification -- the same idea
+This walks the manufacturer-level modules a PSA car exposes to the dongle and
+reads each responding module's fault memory + identification -- the same idea
 as the BMW ENET scan and the Mazda dongle scan, but using PSA's own per-module
 CAN id pairs instead of the standard 0x7E0+8 block.
 
-WHY PSA IS DIFFERENT: on a normal OBD-II car a request to 0x7E0 is answered on
-0x7E8 (request+8). PSA does not follow that rule -- every module has its own
-request/response pair (BSI 0x752 -> 0x652, engine 0x6A8 -> 0x688, airbag
-0x744 -> 0x644, ...). The transport that knows those pairs is
-backend/obd/psa_uds_elm327.py; the UDS service/parse layer is the shared
-backend/core/uds.py (same code the BMW and Mazda paths use).
+FIELD-TEST REALITY (see backend/obd/psa_uds_elm327.py for the full story):
 
-SCOPE: 11-bit ISO 15765-4 CAN, i.e. AEE2010-era cars (roughly 2010+). Pre-2004
-PSA cars use the VAN bus (no ELM327 can reach it) and 2004-2010 cars often speak
-KWP2000 rather than UDS -- both are out of scope, the same way the Mazda path is
-HS-CAN only. This module is read-only apart from clear(), which the API layer
-guards behind an explicit confirm.
+* The VIN is read FIRST over plain OBD Mode 09 PID 02 -- mandatory on ~2001+
+  cars -- so the report always identifies the car even if PSA diagnostics
+  refuse everything else.
+* A standard dongle reaches only the powertrain bus (OBD pins 6/14): engine,
+  gearbox, ABS/ESP, steering, SCR. The body modules (BSI, airbag, cluster...)
+  sit on the diagnostic CAN at OBD pins 3/8 -- reachable only with a PSA
+  pin-swap adapter. Their silence is wiring, not car trouble, and the report
+  says so instead of listing them as mysteriously absent.
+* Modules ladder UDS first, then PSA's KWP dialect: session 10 C0, fault read
+  17 FF 00, ident zone 21 80. Each module carries a request->reply trace so a
+  failed field scan shows exactly which rung broke.
+
+Read-only apart from clear(), which the API layer guards behind a confirm.
 """
 
+import re
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -59,6 +63,14 @@ PEUGEOT_ECU_TABLE = [
 # right receive filter per module (PSA response != request+8).
 PEUGEOT_ID_MAP = {tx: rx for tx, rx, _, _, _ in PEUGEOT_ECU_TABLE}
 
+# Powertrain-bus modules: the set a standard dongle CAN reach on pins 6/14.
+ENGINE_BUS = {0x6A8, 0x6A9, 0x6AD, 0x6B5, 0x6A1}
+
+# The engine also owns the standard OBD slot; 01 00 there is the one request an
+# emissions ECU must answer with the ignition on.
+ENGINE = 0x6A8
+OBD_ENGINE = 0x7E0
+
 # Standard UDS identification DIDs (0x22). Modules support different subsets;
 # we read best-effort and keep whatever answers as printable text.
 IDENT_DIDS = [
@@ -68,54 +80,190 @@ IDENT_DIDS = [
     (0xF18C, "ECU serial"),
 ]
 
+# KWP ident zones read with service 0x21 when the 0x22 DIDs all refuse.
+KWP_ZONES = [(0x80, "Ident (zone 80)")]
+
 # UDS NRCs that mean "I might answer in a different session" -- when a plain
-# ReadDTC returns one of these we escalate to an extended session and retry once.
+# ReadDTC returns one of these we open the PSA session ladder and retry once.
 _SESSION_NRCS = (0x11, 0x22, 0x7E, 0x7F)
+
+# reportDTCByStatusMask masks, most-PSA-likely first: 0x09 is what PSA's own
+# tooling asks for (arduino-psa-diag), then the OEM-style masks.
+_DTC_MASKS = (0x09, 0xAF, 0x0C, 0xFF)
+
+_VIN_RE = re.compile(r"[A-HJ-NPR-Z0-9]{17}")
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _read_ident(client: PsaElm327UdsClient, req_id: int) -> List[dict]:
-    """Best-effort module identification via ReadDataByIdentifier (0x22)."""
+def _nrc_text(exc: uds.UdsNegativeResponse) -> str:
+    return f"NRC {exc.nrc:02X} ({uds.NRC_NAMES.get(exc.nrc, 'unknown')})"
+
+
+def _printable(body: bytes) -> str:
+    text = "".join(chr(b) for b in body if 32 <= b < 127).strip()
+    if text and len(text) >= (len(body) + 1) // 2:
+        return text
+    return body.hex().upper()
+
+
+def _probe(client: PsaElm327UdsClient, req_id: int, trace: List[str]) -> bool:
+    """Presence ladder: 3E 00, then an ident read, then the PSA session open --
+    some ECUs never answer a naked TesterPresent, some only wake for 10 C0.
+    Any reply, positive or negative, proves an ECU lives at the id pair."""
+    for data, opens_session in (
+        (bytes([0x3E, 0x00]), False),
+        (bytes([0x22, 0xF1, 0x90]), False),
+        (bytes([0x10, 0xC0]), True),
+    ):
+        try:
+            reply = client.request(req_id, data, timeout=1.2)
+        except (ObdError, TransportError):
+            continue
+        if reply:
+            if opens_session and reply[0] == 0x50:
+                client.mark_session_open(req_id)
+            return True
+    trace.append("3E 00 / 22 F190 / 10 C0 -> silence")
+    return False
+
+
+def _read_ident(client: PsaElm327UdsClient, req_id: int, trace: List[str]) -> List[dict]:
+    """Best-effort identification: UDS DIDs first, KWP zone 80 as fallback."""
     out: List[dict] = []
+    refused = 0
     for did, label in IDENT_DIDS:
         try:
             payload = client.request(req_id, bytes([0x22, did >> 8, did & 0xFF]), timeout=2.0)
         except (ObdError, TransportError):
+            refused += 1
+            if did == 0xF190:
+                trace.append("22 F190 -> no answer")
             continue
-        # Positive RDBI reply is 0x62 <did_hi> <did_lo> <data...>; anything else
-        # (incl. a 0x7F negative for an unsupported DID) we simply skip.
         if len(payload) < 4 or payload[0] != 0x62:
+            refused += 1
+            if did == 0xF190 and payload and payload[0] == 0x7F and len(payload) >= 3:
+                trace.append(f"22 F190 -> NRC {payload[2]:02X}")
             continue
-        body = payload[3:]
-        text = "".join(chr(b) for b in body if 32 <= b < 127).strip()
-        # Prefer readable text; fall back to hex only if it clearly isn't ASCII.
-        value = text if text and len(text) >= (len(body) + 1) // 2 else body.hex().upper()
+        value = _printable(payload[3:])
         if value:
             out.append({"label": label, "value": value})
+
+    # Every UDS DID refused: a KWP-flavour module. Open its PSA session and
+    # read the classic ident zone instead.
+    if not out and refused == len(IDENT_DIDS) and client.open_session(req_id, trace):
+        for zone, label in KWP_ZONES:
+            try:
+                payload = client.request(req_id, bytes([0x21, zone]), timeout=2.0)
+            except (ObdError, TransportError):
+                continue
+            if len(payload) < 3 or payload[0] != 0x61:
+                continue
+            value = _printable(payload[2:])
+            if value:
+                trace.append(f"21 {zone:02X} -> OK")
+                out.append({"label": label, "value": value})
+                found = _VIN_RE.search(value.upper())
+                if found:
+                    out.append({"label": "VIN", "value": found.group(0)})
     return out
 
 
-def _read_dtcs(client: PsaElm327UdsClient, req_id: int) -> List[dict]:
-    """ReadDTC, escalating to an extended session if the default one refuses.
+def _read_dtcs_uds(client: PsaElm327UdsClient, req_id: int, trace: List[str]) -> List[dict]:
+    last_error = None
+    payload = None
+    for mask in _DTC_MASKS:
+        try:
+            reply = client.request(req_id, bytes([0x19, 0x02, mask]), timeout=3.0)
+        except (ObdError, TransportError) as exc:
+            trace.append(f"19 02 {mask:02X} -> no answer")
+            raise exc
+        if reply and reply[0] == 0x59:
+            trace.append(f"19 02 {mask:02X} -> OK")
+            payload = reply
+            break
+        if reply and reply[0] == 0x7F and len(reply) >= 3:
+            last_error = uds.UdsNegativeResponse(0x19, reply[2])
+            if reply[2] in (0x12, 0x31):
+                continue
+            trace.append(f"19 02 {mask:02X} -> {_nrc_text(last_error)}")
+            raise last_error
+    if payload is None:
+        if last_error is not None:
+            trace.append(f"19 02 -> {_nrc_text(last_error)}")
+            raise last_error
+        raise ObdError("Fault read failed.", kind="no_data")
 
-    Many PSA modules answer ReadDTCInformation straight away; the airbag and BSI
-    often want an extended diagnostic session first. Starting that session is
-    read-safe (it writes nothing and lapses on its own), so we only reach for it
-    when the module explicitly says the service is unavailable in this session.
-    """
+    records = payload[3:]
+    dtcs = []
+    for i in range(0, len(records) - 3, 4):
+        b0, b1, b2, status = records[i : i + 4]
+        if b0 == b1 == b2 == 0:
+            continue
+        entry = uds.decode_dtc(b0, b1, b2)
+        entry["status"] = f"{status:02X}"
+        entry["flags"] = uds.status_flags(status)
+        dtcs.append(entry)
+    return dtcs
+
+
+def _read_dtcs_kwp(client: PsaElm327UdsClient, req_id: int, trace: List[str]) -> List[dict]:
+    """KWP ReadStatusOfDTC: 17 FF 00 -> 57 <n> then (hi, lo, status) per DTC."""
+    client.open_session(req_id, trace)
     try:
-        return uds.read_dtcs(client, req_id)
+        payload = client.request(req_id, bytes([0x17, 0xFF, 0x00]), timeout=3.0)
+    except (ObdError, TransportError) as exc:
+        trace.append("17 FF 00 -> no answer")
+        raise exc
+    if not payload or payload[0] != 0x57:
+        if payload and payload[0] == 0x7F and len(payload) >= 3:
+            exc = uds.UdsNegativeResponse(0x17, payload[2])
+            trace.append(f"17 FF 00 -> {_nrc_text(exc)}")
+            raise exc
+        raise ObdError("KWP fault read failed.", kind="no_data")
+    trace.append("17 FF 00 -> OK (KWP)")
+
+    # 0x57 <count> <triples> is the book format; some ECUs skip the count.
+    if len(payload) >= 2 and (len(payload) - 2) % 3 == 0:
+        offset = 2
+    elif (len(payload) - 1) % 3 == 0:
+        offset = 1
+    else:
+        offset = 2
+    dtcs = []
+    for i in range(offset, len(payload) - 2, 3):
+        hi, lo, status = payload[i], payload[i + 1], payload[i + 2]
+        if hi == 0 and lo == 0:
+            continue
+        entry = uds.decode_dtc(hi, lo, 0x00)
+        entry["hex"] = f"{hi:02X}{lo:02X}"
+        entry["status"] = f"{status:02X}"
+        entry["flags"] = ["stored (KWP)"]
+        dtcs.append(entry)
+    return dtcs
+
+
+def _read_dtcs(client: PsaElm327UdsClient, req_id: int, trace: List[str]) -> List[dict]:
+    """Fault memory, laddered: UDS with PSA's preferred mask first; on a
+    session refusal open the PSA session ladder and retry; if the module
+    doesn't speak 19 02 at all, fall back to the KWP fault read."""
+    try:
+        return _read_dtcs_uds(client, req_id, trace)
     except uds.UdsNegativeResponse as exc:
-        if exc.nrc in _SESSION_NRCS and client.start_extended_session(req_id):
-            return uds.read_dtcs(client, req_id)
-        raise
+        if exc.nrc in _SESSION_NRCS and client.open_session(req_id, trace):
+            try:
+                return _read_dtcs_uds(client, req_id, trace)
+            except uds.UdsNegativeResponse as exc2:
+                trace.append(f"19 02 after session -> {_nrc_text(exc2)}")
+        return _read_dtcs_kwp(client, req_id, trace)
+    except (ObdError, TransportError):
+        return _read_dtcs_kwp(client, req_id, trace)
 
 
 def scan(adapter: Optional[dict], mode: str = "real") -> dict:
-    """Walk the Peugeot's diagnostic-CAN modules and read each one's fault memory.
+    """Walk the Peugeot's reachable modules and read each one's fault memory.
 
     ``adapter`` is a saved ELM327 adapter-instance dict (None for sim). Read-only.
     """
@@ -139,32 +287,63 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
                 "timestamp": _now(),
             }
 
+        # The car's identity first, while the receive filter is still open:
+        # Mode 09 VIN works on any ~2001+ car no matter what PSA does next.
+        obd_vin = obd_service._read_vin(session)
+
         client = PsaElm327UdsClient(session, PEUGEOT_ID_MAP)
         client.begin()
         modules: List[dict] = []
-        vin: Optional[str] = None
         try:
             for req_id, resp_id, code, name, desc in PEUGEOT_ECU_TABLE:
+                trace: List[str] = []
                 mod = {
                     "address": f"0x{req_id:03X}", "response": f"0x{resp_id:03X}",
                     "code": code, "name": name, "description": desc,
                     "present": False, "ident": [], "dtcs": [], "error": None,
+                    "trace": trace,
                 }
-                if not uds.tester_present(client, req_id):
+                target = req_id
+                via_standard_obd = False
+                present = _probe(client, req_id, trace)
+                if not present and req_id == ENGINE:
+                    # Mode 01 PID 00 on the standard OBD slot: the one request
+                    # an emissions ECU must answer with the ignition on.
+                    try:
+                        reply = client.request(OBD_ENGINE, bytes([0x01, 0x00]), timeout=2.0)
+                        present = bool(reply)
+                    except (ObdError, TransportError):
+                        present = False
+                    if present:
+                        target = OBD_ENGINE
+                        via_standard_obd = True
+                        trace.append("answered on standard OBD 7E0")
+                if not present:
                     modules.append(mod)
                     continue
                 mod["present"] = True
                 try:
-                    mod["ident"] = _read_ident(client, req_id)
-                    mod["dtcs"] = _read_dtcs(client, req_id)
+                    mod["ident"] = _read_ident(client, target, trace)
+                    mod["dtcs"] = _read_dtcs(client, target, trace)
                 except uds.UdsNegativeResponse as exc:
                     mod["error"] = str(exc)
                 except (ObdError, TransportError) as exc:
-                    mod["error"] = str(exc)
-                if vin is None:
-                    for item in mod["ident"]:
-                        if item["label"] == "VIN" and len(item["value"]) >= 11:
-                            vin = item["value"][:17]
+                    if via_standard_obd:
+                        # Engine on the plain OBD channel may not speak UDS
+                        # fault services -- generic Mode 03 codes still do.
+                        try:
+                            from backend.obd import dtc as obd_dtc
+                            codes = obd_dtc.read_codes(session, 0x03)
+                            mod["dtcs"] = [
+                                {"code": c, "hex": "", "failureType": "",
+                                 "status": "", "flags": ["confirmed"]}
+                                for c in codes
+                            ]
+                            trace.append("fell back to OBD Mode 03")
+                        except Exception:
+                            mod["error"] = str(exc)
+                    else:
+                        mod["error"] = str(exc)
                 modules.append(mod)
         finally:
             client.restore()
@@ -186,17 +365,40 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
                 + " -- a control unit from another car is fitted (crash repair or "
                 "clocking risk)."
             )
+        vin = (vins[0][1] if vins else None) or obd_vin
+
+        # Body modules silent while only powertrain-bus modules answered = the
+        # dongle is on the engine bus (OBD pins 6/14) and this car keeps its
+        # body diagnostics on pins 3/8. That's wiring, not car trouble.
+        engine_reachable = {f"0x{i:03X}" for i in ENGINE_BUS}
+        body_silent = bool(present) and all(
+            m["address"] in engine_reachable for m in present
+        ) and any(m["address"] == "0x752" and not m["present"] for m in modules)
+        bus_note = ""
+        absent_hint = None
+        if body_silent:
+            bus_note = (
+                " The body modules (BSI, airbag, cluster, radio...) aren't missing -- "
+                "on Peugeot/Citroen they sit on a separate diagnostic CAN wired to "
+                "OBD pins 3 & 8, which a standard dongle can't reach. A cheap 'PSA "
+                "pin 3/8' adapter between dongle and socket brings them all in."
+            )
+            absent_hint = (
+                "On the pins-3/8 diagnostic CAN -- reachable with a PSA pin-swap "
+                "adapter, not over a standard dongle. Not a fault."
+            )
 
         return {
             "ok": True, "simulated": False,
             "vehicle": {"vin": vin, "protocol": session.protocol or "ISO 15765-4 (CAN 11/500)",
                         "adapter": (adapter or {}).get("name")},
             "modules": modules,
+            "absentHint": absent_hint,
             "message": (
-                f"{len(present)} module(s) answered on the diagnostic CAN, {faults} fault"
-                f"{'s' if faults != 1 else ''} stored.{vin_warning} Read-only scan -- nothing "
-                "was changed on the car. Modules on other PSA buses (or older KWP/VAN cars) "
-                "aren't reachable through a standard OBD dongle."
+                (f"VIN {vin}. " if vin else "")
+                + f"{len(present)} module(s) answered, {faults} fault"
+                f"{'s' if faults != 1 else ''} stored.{vin_warning}{bus_note} "
+                "Read-only scan -- nothing was changed on the car."
             ),
             "timestamp": _now(),
         }
@@ -250,13 +452,23 @@ def clear(adapter: Optional[dict], mode: str = "real", address: Optional[str] = 
                 targets = [wanted]
             else:
                 targets = [rid for rid, _, _, _, _ in PEUGEOT_ECU_TABLE
-                           if uds.tester_present(client, rid)]
+                           if _probe(client, rid, [])]
             for rid in targets:
+                # Ladder matches the read side: UDS clear, then the KWP clear
+                # PSA's own tooling sends (14 FF 00) after opening the session.
                 try:
                     uds.clear_dtcs(client, rid)
                     cleared.append(f"0x{rid:03X}")
                 except Exception as exc:
-                    errors.append(f"0x{rid:03X}: {exc}")
+                    try:
+                        client.open_session(rid)
+                        reply = client.request(rid, bytes([0x14, 0xFF, 0x00]), timeout=5.0)
+                        if reply and reply[0] == 0x54:
+                            cleared.append(f"0x{rid:03X}")
+                        else:
+                            errors.append(f"0x{rid:03X}: {exc}")
+                    except Exception:
+                        errors.append(f"0x{rid:03X}: {exc}")
         finally:
             client.restore()
 
@@ -283,7 +495,7 @@ def _simulated_scan() -> dict:
         return {
             "address": addr, "response": resp, "code": code, "name": name,
             "description": desc, "present": present,
-            "ident": ident or [], "dtcs": dtcs or [], "error": None,
+            "ident": ident or [], "dtcs": dtcs or [], "error": None, "trace": [],
         }
 
     modules = [
@@ -315,6 +527,7 @@ def _simulated_scan() -> dict:
         "vehicle": {"vin": "SIMULATED00PEUGEOT", "protocol": "ISO 15765-4 (CAN 11/500)",
                     "adapter": "Simulated"},
         "modules": modules,
-        "message": "SIMULATED -- 5 modules answered, 4 faults stored. No real car connected.",
+        "message": "SIMULATED -- VIN SIMULATED00PEUGEOT. 5 modules answered, 4 faults stored. "
+                   "No real car connected.",
         "timestamp": _now(),
     }
