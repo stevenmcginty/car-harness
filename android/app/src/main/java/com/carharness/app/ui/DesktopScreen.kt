@@ -187,5 +187,7 @@ fun DesktopScreen(state: AppState) {
                 }
             }
         }
+
+        item { UpdateCard() }
     }
 }
