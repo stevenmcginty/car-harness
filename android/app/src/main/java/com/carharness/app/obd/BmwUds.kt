@@ -40,6 +40,7 @@ object BmwUds {
     )
 
     private val IDENT_DIDS = listOf(
+        0xF190 to "VIN",
         0xF187 to "Part number",
         0xF189 to "Software",
         0xF191 to "Hardware",
@@ -134,12 +135,22 @@ object BmwUds {
 
     // ------------------------------------------------------------- services
 
-    /** True if anything UDS-shaped answers at the currently-targeted address.
-     *  Ladder: plain TesterPresent, then real ident reads — BMW's own tooling
-     *  opens contact with ReadDataByIdentifier, and some ECUs (the DME
-     *  foremost) never answer a naked 3E 00 at all. */
-    private fun answersHere(session: Elm327Session): Boolean {
-        for ((service, data) in listOf(0x3E to "00", 0x22 to "F190", 0x22 to "F150")) {
+    // Gateway-channel probes: TesterPresent, then real ident reads — BMW's own
+    // tooling opens contact with ReadDataByIdentifier, and some ECUs (the DME
+    // foremost) never answer a naked 3E 00 at all.
+    private val UDS_PROBES = listOf(0x3E to "00", 0x22 to "F190", 0x22 to "F150")
+
+    // Standard-channel probes: Mode 01 PID 00 first — the one request an
+    // emissions ECU MUST answer with the ignition on, even if it ignores UDS
+    // on this channel entirely (plenty of DMEs do).
+    private val OBD_PROBES = listOf(0x01 to "00", 0x22 to "F190", 0x3E to "00")
+
+    /** True if anything answers at the currently-targeted address. */
+    private fun answersHere(
+        session: Elm327Session,
+        probes: List<Pair<Int, String>> = UDS_PROBES,
+    ): Boolean {
+        for ((service, data) in probes) {
             try {
                 request(session, service, data, 2500)
                 return true
@@ -177,6 +188,28 @@ object BmwUds {
                 if (value.isNotEmpty()) out.add(label to value)
             } catch (_: Exception) {
                 // DID not supported on this module — normal, skip it.
+            }
+        }
+        return out
+    }
+
+    /** Mode 09 identity on the standard channel — the emissions-mandated VIN
+     *  and calibration id. Works on engines that ignore UDS there entirely. */
+    private fun obdIdent(session: Elm327Session): List<Pair<String, String>> {
+        val out = mutableListOf<Pair<String, String>>()
+        for ((pid, label) in listOf("02" to "VIN", "04" to "Software")) {
+            try {
+                val text = request(session, 0x09, pid, 4000).drop(3)
+                    .map { it.toInt() and 0xFF }
+                    .filter { it in 33..126 }
+                    .map { it.toChar() }
+                    .joinToString("")
+                    .trim()
+                if (text.length >= 4) {
+                    out.add(label to text.take(if (label == "VIN") 17 else 40))
+                }
+            } catch (_: Exception) {
+                // PID not supported — normal on some engines, skip it.
             }
         }
         return out
@@ -299,7 +332,7 @@ object BmwUds {
                     onProgress("Probing $code — $name (standard OBD channel)…")
                     present = try {
                         targetStandard(session)
-                        answersHere(session)
+                        answersHere(session, OBD_PROBES)
                     } catch (_: Exception) {
                         false
                     }
@@ -314,6 +347,11 @@ object BmwUds {
                 var error: String? = null
                 try {
                     ident = readIdent(session)
+                    if (viaStandardObd) {
+                        // Engine that ignores UDS here still owns Mode 09.
+                        val have = ident.map { it.first }.toSet()
+                        ident = ident + obdIdent(session).filter { it.first !in have }
+                    }
                     dtcs = readDtcs(session)
                 } catch (e: Exception) {
                     if (e !is UdsNegativeResponse && e !is ObdException) throw e
@@ -337,15 +375,23 @@ object BmwUds {
 
         val present = modules.filter { it.present }
         val faults = present.sumOf { it.dtcs.size }
+        val (vin, vinWarning) = VinCheck.consensus(modules)
+        val engineHint = if (modules.any { it.address == ENGINE && !it.present }) {
+            " The engine ECU only wakes with the ignition ON — turn the key / press " +
+                "Start (engine can stay off) and rescan if it's missing."
+        } else ""
         val simPrefix = if (simulated) "SIMULATED — no real car connected. " else ""
         return UdsScanReport(
             ok = true,
             simulated = simulated,
             brand = "bmw",
             modules = modules,
-            message = simPrefix + "${present.size} modules answered, $faults fault" +
+            vin = vin,
+            message = simPrefix + (vin?.let { "VIN $it. " } ?: "") +
+                "${present.size} modules answered, $faults fault" +
                 (if (faults == 1) "" else "s") +
-                " stored. Read-only scan — nothing was changed on the car.",
+                " stored." + vinWarning + engineHint +
+                " Read-only scan — nothing was changed on the car.",
         )
     }
 
@@ -388,12 +434,26 @@ object BmwUds {
                 if (dst != ENGINE) throw e
                 // Engine that only answers on the standard OBD channel.
                 targetStandard(session)
-                request(session, 0x14, "FFFFFF", 8000)
+                try {
+                    request(session, 0x14, "FFFFFF", 8000)
+                } catch (_: Exception) {
+                    // OBD-only engine: the generic Mode 04 emissions clear it
+                    // must support ("no data" back just means an empty reply).
+                    try {
+                        session.query(0x04, null, 10000)
+                    } catch (e2: ObdException) {
+                        if (e2.kind != ObdException.Kind.NO_DATA) throw e2
+                    }
+                }
             }
             return try {
                 readDtcs(session)
             } catch (_: Exception) {
-                emptyList()
+                try {
+                    obdStoredCodes(session)
+                } catch (_: Exception) {
+                    emptyList()
+                }
             }
         } finally {
             restore(session)

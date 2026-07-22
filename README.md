@@ -89,6 +89,12 @@ The **Simulate** toggle returns clearly-labelled fake results (VIN
   over the same ELM327 dongle using BMW's 6F1 extended addressing, and shows
   each module's part number, software/hardware version and its own fault
   memory -- with per-module clear. Read-only otherwise; no coding/flashing.
+  Every scan (BMW / Mazda / Peugeot) now identifies the car up front: the
+  VIN is read from the modules themselves (UDS DID F190, falling back to
+  the emissions-mandated Mode 09 read) and cross-checked between modules --
+  a mismatch means a control unit swapped in from another car. An engine
+  ECU that ignores UDS is re-probed on the standard OBD channel with the
+  Mode 01 request it must answer whenever the ignition is on.
 - **Desktop tab** -- pair with this app: on the PC click **Pair phone...**,
   then on the phone **Find my PC** (UDP discovery on port 8766) and type the
   6-digit code. Once paired, the phone can run scans *through the desktop's

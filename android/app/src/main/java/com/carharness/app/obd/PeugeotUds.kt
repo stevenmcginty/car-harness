@@ -56,6 +56,9 @@ object PeugeotUds {
     // UDS NRCs that mean "I might answer in a different session" — escalate once.
     private val SESSION_NRCS = setOf(0x11, 0x22, 0x7E, 0x7F)
 
+    private const val ENGINE = 0x6A8      // CMM's PSA request id
+    private const val OBD_ENGINE = 0x7E0  // standard OBD slot the engine also owns
+
     private var target: Int? = null
 
     /** PSA module diagnostics need the 11-bit / 500k CAN protocol. */
@@ -138,14 +141,48 @@ object PeugeotUds {
 
     // ------------------------------------------------------------- services
 
-    private fun testerPresent(session: Elm327Session, reqId: Int): Boolean = try {
-        request(session, reqId, 0x3E, "00", 4000)
-        true
-    } catch (_: UdsNegativeResponse) {
-        true  // a negative response still proves an ECU is there
-    } catch (_: Exception) {
-        false
+    /** True if anything UDS-shaped lives at this id pair. Ladder: some ECUs
+     *  never answer a naked TesterPresent, so try an ident read too. */
+    private fun testerPresent(session: Elm327Session, reqId: Int): Boolean {
+        for ((service, data) in listOf(0x3E to "00", 0x22 to "F190")) {
+            try {
+                request(session, reqId, service, data, 4000)
+                return true
+            } catch (_: UdsNegativeResponse) {
+                return true  // a negative response still proves an ECU is there
+            } catch (_: Exception) {
+            }
+        }
+        return false
     }
+
+    /** Engine probe on the standard OBD slot (0x7E0 -> 0x7E8): Mode 01 PID 00
+     *  is the one request an emissions ECU must answer with the ignition on,
+     *  even on a car whose PSA-specific pair doesn't match our table. */
+    private fun engineAnswersStandard(session: Elm327Session): Boolean {
+        for ((service, data) in listOf(0x01 to "00", 0x22 to "F190", 0x3E to "00")) {
+            try {
+                request(session, OBD_ENGINE, service, data, 4000)
+                return true
+            } catch (_: UdsNegativeResponse) {
+                return true
+            } catch (_: Exception) {
+            }
+        }
+        return false
+    }
+
+    /** Generic OBD Mode 03 stored codes as UdsDtc rows (engine fallback). */
+    private fun obdStoredCodes(session: Elm327Session): List<UdsDtc> =
+        Dtc.readCodes(session, 0x03).map { code ->
+            UdsDtc(
+                code = code,
+                hex = "",
+                status = "",
+                flags = listOf("confirmed"),
+                description = Dtc.describe(code),
+            )
+        }
 
     private fun readIdent(session: Elm327Session, reqId: Int): List<Pair<String, String>> {
         val out = mutableListOf<Pair<String, String>>()
@@ -248,7 +285,22 @@ object PeugeotUds {
         try {
             for (ecu in ECUS) {
                 onProgress("Probing ${ecu.code}…")
-                if (!testerPresent(session, ecu.req)) {
+                var reqId = ecu.req
+                var viaStandardObd = false
+                var present = testerPresent(session, reqId)
+                if (!present && ecu.req == ENGINE) {
+                    onProgress("Probing ${ecu.code} (standard OBD channel)…")
+                    present = try {
+                        engineAnswersStandard(session)
+                    } catch (_: Exception) {
+                        false
+                    }
+                    if (present) {
+                        reqId = OBD_ENGINE
+                        viaStandardObd = true
+                    }
+                }
+                if (!present) {
                     modules.add(UdsModuleResult(ecu.req, ecu.code, ecu.name, false, emptyList(), emptyList(), null))
                     continue
                 }
@@ -256,12 +308,21 @@ object PeugeotUds {
                 var dtcs: List<UdsDtc> = emptyList()
                 var error: String? = null
                 try {
-                    ident = readIdent(session, ecu.req)
-                    dtcs = readDtcs(session, ecu.req)
-                } catch (e: UdsNegativeResponse) {
-                    error = e.message
-                } catch (e: ObdException) {
-                    error = e.message
+                    ident = readIdent(session, reqId)
+                    dtcs = readDtcs(session, reqId)
+                } catch (e: Exception) {
+                    if (e !is UdsNegativeResponse && e !is ObdException) throw e
+                    if (viaStandardObd) {
+                        // Engine on the plain OBD channel may not speak UDS
+                        // fault services — generic Mode 03 codes still do.
+                        try {
+                            dtcs = obdStoredCodes(session)
+                        } catch (_: Exception) {
+                            error = e.message
+                        }
+                    } else {
+                        error = e.message
+                    }
                 }
                 modules.add(UdsModuleResult(ecu.req, ecu.code, ecu.name, true, ident, dtcs, error))
             }
@@ -273,25 +334,16 @@ object PeugeotUds {
         val faults = present.sumOf { it.dtcs.size }
         val simPrefix = if (simulated) "SIMULATED — no real car connected. " else ""
 
-        // Dealer check: every module that knows its VIN should agree. A module
-        // reporting a different VIN was swapped in from another car (crash
-        // repair, or the cluster/BSI dance used to disguise mileage).
-        val vins = modules.flatMap { m ->
-            m.ident.filter { it.first == "VIN" && it.second.length >= 11 }
-                .map { m.code to it.second.take(17) }
-        }
-        val distinct = vins.map { it.second }.distinct()
-        val vinWarning = if (distinct.size > 1) {
-            " ⚠ VIN MISMATCH: " + vins.joinToString(", ") { "${it.first}=${it.second}" } +
-                " — a control unit from another car is fitted (crash repair or clocking risk)."
-        } else ""
+        val (vin, vinWarning) = VinCheck.consensus(modules)
 
         return UdsScanReport(
             ok = true,
             simulated = simulated,
             brand = "peugeot",
             modules = modules,
-            message = simPrefix + "${present.size} module(s) answered on the diagnostic CAN, " +
+            vin = vin,
+            message = simPrefix + (vin?.let { "VIN $it. " } ?: "") +
+                "${present.size} module(s) answered on the diagnostic CAN, " +
                 "$faults fault" + (if (faults == 1) "" else "s") +
                 " stored." + vinWarning +
                 " Read-only scan — nothing was changed on the car. Modules on other " +

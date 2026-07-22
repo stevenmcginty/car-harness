@@ -125,14 +125,23 @@ object MazdaUds {
 
     // ------------------------------------------------------------- services
 
-    /** True if anything UDS-shaped lives at this address. */
-    private fun testerPresent(session: Elm327Session, reqId: Int): Boolean = try {
-        request(session, reqId, 0x3E, "00", 4000)
-        true
-    } catch (_: UdsNegativeResponse) {
-        true  // a negative response still proves an ECU is there
-    } catch (_: Exception) {
-        false
+    /** True if anything UDS-shaped lives at this address. Ladder: some ECUs
+     *  never answer a naked TesterPresent, so try an ident read too, and the
+     *  0x7Ex OBD block also gets the Mode 01 request an emissions ECU must
+     *  answer with the ignition on even if it ignores UDS. */
+    private fun testerPresent(session: Elm327Session, reqId: Int): Boolean {
+        val probes = mutableListOf(0x3E to "00", 0x22 to "F190")
+        if (reqId in 0x7E0..0x7E7) probes.add(0x01 to "00")
+        for ((service, data) in probes) {
+            try {
+                request(session, reqId, service, data, 4000)
+                return true
+            } catch (_: UdsNegativeResponse) {
+                return true  // a negative response still proves an ECU is there
+            } catch (_: Exception) {
+            }
+        }
+        return false
     }
 
     private fun readIdent(session: Elm327Session, reqId: Int): List<Pair<String, String>> {
@@ -249,15 +258,19 @@ object MazdaUds {
 
         val present = modules.filter { it.present }
         val faults = present.sumOf { it.dtcs.size }
+        val (vin, vinWarning) = VinCheck.consensus(modules)
         val simPrefix = if (simulated) "SIMULATED — no real car connected. " else ""
         return UdsScanReport(
             ok = true,
             simulated = simulated,
             brand = "mazda",
             modules = modules,
-            message = simPrefix + "${present.size} module(s) answered on HS-CAN, $faults fault" +
+            vin = vin,
+            message = simPrefix + (vin?.let { "VIN $it. " } ?: "") +
+                "${present.size} module(s) answered on HS-CAN, $faults fault" +
                 (if (faults == 1) "" else "s") +
-                " stored. Read-only scan — nothing was changed on the car. Body/comfort " +
+                " stored." + vinWarning +
+                " Read-only scan — nothing was changed on the car. Body/comfort " +
                 "modules on MS-CAN aren't reachable through a standard OBD dongle.",
         )
     }

@@ -221,6 +221,12 @@ fun ModulesScreen(state: AppState) {
                         Text("SIMULATED — no real car connected", color = Amber, fontSize = 12.sp)
                         Spacer(Modifier.height(6.dp))
                     }
+                    it.vin?.let { vin ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            InfoChip("VIN", vin)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Text(it.message, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
                 }
             }

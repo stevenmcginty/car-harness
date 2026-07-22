@@ -97,6 +97,7 @@ class DemoTransport : ObdTransport {
         if (dst !in bmwPresent) return "NO DATA"
         return when {
             cmd == "3E00" -> "7E00"
+            cmd.startsWith("22F190") -> isoTp("62F190" + ascii("SIMULATEDBMW00CAR"))
             cmd.startsWith("22F187") -> isoTp("62F187" + ascii(bmwPresent[dst]!!))
             cmd.startsWith("22F189") -> isoTp("62F189" + ascii("08.11.%02X".format(dst)))
             cmd.startsWith("22F191") -> isoTp("62F191" + ascii("06"))

@@ -29,7 +29,31 @@ data class UdsScanReport(
     val brand: String,       // "bmw" | "mazda" — which scan produced this
     val modules: List<UdsModuleResult>,
     val message: String,
+    val vin: String? = null, // consensus VIN across modules — identifies the car
 )
+
+/**
+ * Scan-level VIN: every module that reports DID F190 should agree. The
+ * consensus identifies the car at the top of the report; a disagreement is a
+ * dealer red flag — a control unit swapped in from another car (crash repair,
+ * or the cluster/gateway dance used to disguise mileage).
+ */
+object VinCheck {
+    /** Returns (consensus VIN or null, mismatch warning or ""). */
+    fun consensus(modules: List<UdsModuleResult>): Pair<String?, String> {
+        val vins = modules.flatMap { m ->
+            m.ident.filter { it.first == "VIN" && it.second.length >= 11 }
+                .map { m.code to it.second.take(17) }
+        }
+        val distinct = vins.map { it.second }.distinct()
+        val warning = if (distinct.size > 1) {
+            " ⚠ VIN MISMATCH: " + vins.joinToString(", ") { "${it.first}=${it.second}" } +
+                " — a control unit from another car is fitted (crash repair or clocking risk)."
+        } else ""
+        val vin = vins.groupingBy { it.second }.eachCount().maxByOrNull { it.value }?.key
+        return vin to warning
+    }
+}
 
 /** One live value read from a manufacturer-specific DID (mode 22). */
 data class EnhancedReading(
