@@ -1,0 +1,8 @@
+{
+  "id": "peugeot",
+  "name": "Peugeot",
+  "transport": "elm327",
+  "description": "Peugeot / PSA (also Citroen, DS) over a generic OBD-II dongle. UDS on the diagnostic CAN bus for AEE2010-era cars (~2010+). Each module has its own PSA-specific CAN id pair (BSI 752/652, engine 6A8/688, airbag 744/644, ...), not the standard request+8. Pre-2004 VAN-bus cars are unreachable by any ELM327; 2004-2010 KWP2000 cars are out of scope.",
+  "probe": "profile.py",
+  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"]
+}
