@@ -22,8 +22,8 @@ A modular car-diagnostics desktop app + Android companion app.
   Adding a manufacturer adds its resets. See
   `docs/private/service-resets-research.md` for the provenance.
 
-It is built to grow: manufacturer **profiles** (BMW, Mazda and Peugeot/PSA
-today; the next brand is a folder drop-in) and installable/removable **job
+It is built to grow: manufacturer **profiles** (BMW, Mazda, Peugeot/PSA and
+VW/Audi today; the next brand is a folder drop-in) and installable/removable **job
 modules** are both discovered from the filesystem. A profile folder's
 capability files become its API routes and its desktop panel automatically --
 the manufacturer dropdown at the top of the desktop app drives everything.
@@ -91,7 +91,7 @@ The **Simulate** toggle returns clearly-labelled fake results (VIN
   over the same ELM327 dongle using BMW's 6F1 extended addressing, and shows
   each module's part number, software/hardware version and its own fault
   memory -- with per-module clear. Read-only otherwise; no coding/flashing.
-  Every scan (BMW / Mazda / Peugeot) now identifies the car up front: the
+  Every scan (BMW / Mazda / Peugeot / VW-Audi) now identifies the car up front: the
   VIN is read from the modules themselves (UDS DID F190, falling back to
   the emissions-mandated Mode 09 read) and cross-checked between modules --
   a mismatch means a control unit swapped in from another car. An engine
@@ -154,7 +154,7 @@ Base URL: `http://127.0.0.1:8765`
 | GET | `/api/obd/pids?adapter=<id>` | Which live-data keys the car supports |
 | GET | `/api/{brand}/scan` | Walk the brand's modules, read each one's fault memory (generic: any profile folder) |
 | POST | `/api/{brand}/clear` | Clear one module (or all) -- confirm-gated |
-| GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check) |
+| GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check, VW/Audi extras) |
 | GET | `/api/{brand}/snapshot` | Passive broadcast-CAN capture (Mazda) |
 | GET | `/api/{brand}/discover` | Find the car on a native cable (BMW ENET) |
 | GET | `/api/{brand}/resets` | The brand's service-reset catalogue |

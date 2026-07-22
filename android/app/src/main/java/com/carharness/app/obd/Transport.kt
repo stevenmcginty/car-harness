@@ -49,6 +49,26 @@ class DemoTransport : ObdTransport {
         0x76D, 0x6AF, 0x765, 0x6A1, 0x6C1, 0x6B4,
     )
 
+    // The Golf demo shares the ISO powertrain ids (0x7E0..) with the Mazda demo,
+    // so answering purely by ATSH id can't tell a VW engine probe from a Mazda
+    // one. A VW scan always aims at a VW-only module (the gateway 0x710 leads
+    // VwUds.ECUS) before it reaches the shared engine id, so we remember when a
+    // VW-only id is addressed and route the shared ids to the Golf demo until the
+    // ELM is re-aimed off the VW map (restore()'s ATSH7DF, or a Mazda/PSA
+    // module). vwActive is therefore false throughout every non-VW scan.
+    private val vwCleared = mutableSetOf<Int>()
+    private val vwExtended = mutableSetOf<Int>()
+    private var vwActive = false
+
+    // Every id a VW/Audi scan aims at (VwUds.ECUS request ids).
+    private val vwTargets = setOf(
+        0x7E0, 0x7E1, 0x7E2, 0x710, 0x714, 0x713, 0x715, 0x712, 0x70E, 0x746,
+        0x711, 0x70C, 0x70F, 0x732, 0x70B, 0x70A, 0x752, 0x72A, 0x773, 0x7E5, 0x7E6,
+    )
+    // VW ids that also belong to another demo brand (engine block ↔ Mazda,
+    // 0x752 ↔ PSA): addressing one keeps whichever brand is already active.
+    private val vwSharedIds = setOf(0x7E0, 0x7E1, 0x7E2, 0x7E5, 0x7E6, 0x752)
+
     override fun open() {}
     override fun close() {}
 
@@ -64,10 +84,23 @@ class DemoTransport : ObdTransport {
             cmd.startsWith("ATCEA") -> { cea = cmd.removePrefix("ATCEA").toIntOrNull(16); "OK" }
             cmd == "ATCRA" -> { cra = null; "OK" }
             cmd.startsWith("ATCRA") -> { cra = cmd.removePrefix("ATCRA").toIntOrNull(16); "OK" }
-            cmd.startsWith("ATSH") -> { atsh = cmd.removePrefix("ATSH").toIntOrNull(16); "OK" }
+            cmd.startsWith("ATSH") -> {
+                val id = cmd.removePrefix("ATSH").toIntOrNull(16)
+                atsh = id
+                if (id != null) {
+                    if (id in vwTargets && id !in vwSharedIds) {
+                        vwActive = true         // a VW-only id: a VW scan is running
+                    } else if (id !in vwSharedIds) {
+                        vwActive = false        // a non-VW id: not a VW scan
+                    }
+                    // a shared id (0x7E0.. / 0x752): leave vwActive as last set
+                }
+                "OK"
+            }
             cmd == "ATMA" -> mazdaMonitor(cra)
             cmd.startsWith("AT") -> "OK"
             cea != null -> bmwReply(cea!!, cmd)
+            vwActive && (atsh ?: 0) in vwTargets -> vwReply(atsh!!, cmd)
             (atsh ?: 0) in mazdaTargets -> mazdaReply(atsh!!, cmd)
             (atsh ?: 0) in psaTargets -> psaReply(atsh!!, cmd)
             cmd == "0100" -> "4100BE3FA813"
@@ -213,6 +246,42 @@ class DemoTransport : ObdTransport {
         val block = "0000000000000000002EE00000000000" +  // bytes 0..15
             "1E00000C800000000000EB0000DC01C2"             // bytes 16..31
         return isoTp("61CB8001$block")
+    }
+
+    // ------------------------------------------------ simulated VW/Audi modules
+    // Mirrors backend/profiles/vw scan.py _simulated_scan(): a Golf-7-ish car —
+    // gateway, engine (2 DTCs), cluster (VIN), ABS and airbag (1 DTC, only after
+    // the extended session) present. The VIN agrees across engine and cluster,
+    // so there's no false mismatch warning.
+
+    private val vwPresent = setOf(0x710, 0x7E0, 0x714, 0x713, 0x715)
+
+    private fun vwReply(reqId: Int, cmd: String): String {
+        if (reqId !in vwPresent) return "NO DATA"
+        return when {
+            cmd == "3E00" -> "7E00"
+            cmd == "1003" -> { vwExtended.add(reqId); "5003003201F4" }
+            cmd == "22F190" && (reqId == 0x7E0 || reqId == 0x714) ->
+                isoTp("62F190" + ascii("SIMULATEDVWGOLF00"))
+            cmd == "22F187" && reqId == 0x7E0 -> isoTp("62F187" + ascii("04E906027AB"))
+            cmd == "22F187" && reqId == 0x710 -> isoTp("62F187" + ascii("5Q0907530AB"))
+            cmd == "22F189" && reqId == 0x7E0 -> isoTp("62F189" + ascii("0004"))
+            cmd.startsWith("22") && cmd.length == 6 -> "7F2231"
+            cmd.startsWith("1902") -> vwDtcs(reqId)
+            cmd == "14FFFFFF" -> { vwCleared.add(reqId); "54" }
+            else -> "NO DATA"
+        }
+    }
+
+    private fun vwDtcs(reqId: Int): String {
+        // The airbag refuses in the default session — the client must escalate.
+        if (reqId == 0x715 && reqId !in vwExtended) return "7F197F"
+        if (reqId in vwCleared) return "5902FF"
+        return when (reqId) {
+            0x7E0 -> isoTp("5902FF" + "0300002F" + "01710008") // engine: P0300 + P0171
+            0x715 -> isoTp("5902FF" + "90040008")              // airbag: B1004
+            else -> "5902FF"
+        }
     }
 
     /** Enhanced (mode-22) demo answers so "Live extras" works hardware-free.

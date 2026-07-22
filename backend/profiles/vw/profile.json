@@ -1,0 +1,22 @@
+{
+  "id": "vw",
+  "name": "VW / Audi",
+  "transport": "elm327",
+  "description": "VW / Audi (also Škoda, SEAT) over a generic OBD-II dongle. UDS on 11-bit/500k CAN for the UDS era only -- VW/Škoda/SEAT from ~2012 (MQB, Golf 7 on), Audi from ~2008 (B8 on). Powertrain answers on the standard request+8 block; body/chassis/comfort modules answer on VAG's own request+0x6A block (gateway 710/77A, cluster 714/77E, ABS 713/77D, ...). Pre-~2012 VAG (TP2.0/K-line) can't be module-scanned over a plain dongle.",
+  "probe": "profile.py",
+  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"],
+  "panel": {
+    "title": "All modules (OBD dongle)",
+    "hint": "Module scan for UDS-era VW/Audi over the ordinary OBD dongle — each module's own fault memory read the way VCDS lists them, deeper than generic OBD-II. Works on VW/Škoda/SEAT ≈2012+ (MQB, Golf 7 on) and Audi ≈2008+ (B8 on); earlier cars use VW's TP2.0/K-line and can't be scanned by a plain dongle. Pick the adapter top-right, ignition ON, then scan. SFD on 2020+ cars does not affect these read-only checks.",
+    "scanBusy": "Walking the VW/Audi modules by their VCDS addresses… (absent modules time out quietly)",
+    "actions": [
+      {
+        "id": "live",
+        "label": "Live extras",
+        "busy": "Reading the VW/Audi-specific values…",
+        "title": "VW / Audi live extras",
+        "hint": "Reads VW/Audi-specific values the generic list doesn't carry — coolant/oil/battery/ambient via VAG's remapped OBD set, plus best-effort diesel DPF soot & regen data (community-sourced DIDs & scaling — verify against the car)."
+      }
+    ]
+  }
+}

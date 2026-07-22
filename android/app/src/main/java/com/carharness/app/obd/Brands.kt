@@ -100,6 +100,33 @@ object Brands {
             scan = { ctrl, onStep -> ctrl.peugeotScan(onStep) },
             clear = { ctrl, addr -> ctrl.peugeotClear(addr) },
         ),
+        Brand(
+            id = "vw",
+            label = "VW/Audi",
+            scanHint = "Reads the VIN first (so you always know the car), then walks the VAG " +
+                "control units — engine, gearbox/DSG, gateway, cluster, ABS, airbag, " +
+                "steering and more — as pure UDS, reading each one's own fault memory. " +
+                "The gateway routes every module to the OBD port, so no pin-swap adapter " +
+                "is needed. UDS-era only: VW/Škoda/SEAT ~2012+ (MQB) and Audi ~2008+ (B8); " +
+                "pre-2012 (TP2.0/K-line) cars can't be module-scanned over a plain dongle. " +
+                "SFD on 2020+ cars blocks writes only — these read-only checks are unaffected. " +
+                "Live extras adds coolant/oil/battery plus raw diesel-DPF and EV values.",
+            actions = listOf(
+                BrandAction(
+                    id = "extras",
+                    label = "Live extras",
+                    cardTitle = "VW LIVE EXTRAS",
+                    emptyHint = "This car didn't answer any of the VAG-specific values. " +
+                        "Make sure the ignition is ON — coverage also varies by model " +
+                        "year and engine.",
+                    refreshHint = "One-shot read-only pass — tap Live extras again to refresh. " +
+                        "Values this car doesn't support are skipped.",
+                    run = { ctrl, onStep -> ctrl.vwEnhanced(onStep) },
+                ),
+            ),
+            scan = { ctrl, onStep -> ctrl.vwScan(onStep) },
+            clear = { ctrl, addr -> ctrl.vwClear(addr) },
+        ),
     )
 
     fun byId(id: String): Brand? = all.firstOrNull { it.id == id }

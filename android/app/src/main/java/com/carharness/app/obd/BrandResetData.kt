@@ -5,8 +5,9 @@ package com.carharness.app.obd
  * backend/profiles/<brand>/resets.py — KEEP BOTH IN SYNC. Provenance and
  * confidence grades come from docs/private/service-resets-research.md.
  *
- * BMW/Mazda UDS resets are filled from the CBS / SkyActiv research; Peugeot is
- * dash procedures because PSA's UDS reset zone isn't publicly documented.
+ * BMW/Mazda UDS resets are filled from the CBS / SkyActiv research; Peugeot and
+ * VW/Audi are dash procedures because neither PSA's BSI reset zone nor VAG's
+ * 'Resetting ESI' cluster adaptation is publicly documented.
  */
 object BrandResetData {
 
@@ -183,6 +184,68 @@ object BrandResetData {
                 "If the DPF itself was replaced, also run the 'changing FAP' step so the soot " +
                     "counters are reset.",
                 "Switch the ignition off then on to store.",
+            ),
+        ),
+    )
+
+    // VW / Audi (VAG) — dash / menu procedures. The UDS 'Resetting ESI'
+    // adaptation on cluster 0x714 isn't publicly documented (research §6), so
+    // every VAG reset ships as a procedure. Mirror of backend/profiles/vw/resets.py
+    // — KEEP BOTH IN SYNC.
+    val VW: List<ServiceReset> = listOf(
+        ServiceReset(
+            id = "vw-sri-button",
+            brand = "vw",
+            name = "Oil / inspection service reset (button cluster)",
+            description = "Resets the Service Reminder Interval on VAG cars with a trip-reset " +
+                "(0.0) button in the cluster. There's no public dongle command for the UDS " +
+                "'Resetting ESI' adaptation, so this is the built-in button-through-ignition " +
+                "procedure.",
+            uds = false,
+            confidence = "verified",
+            source = "Golf 6/7 oil-service reset guides (scegliauto, seventrumpet, erwinsalarda, " +
+                "carworklog MK7, golfmk7 forum)",
+            models = "Most 2008–2019 VAG with a button cluster — Golf 6/7 CONFIRMED; same family " +
+                "on Polo, Passat, Tiguan, T-Roc, Škoda, SEAT",
+            cautions = listOf(
+                "Directly confirmed on Golf 6/7. On other models the wording and hold-time vary " +
+                    "— check the owner's manual wording matches before relying on it.",
+                "Reset AFTER the oil + filter change, not before.",
+            ),
+            procedure = listOf(
+                "Ignition OFF.",
+                "Press and hold the trip-reset (0.0) button in the cluster.",
+                "Switch the ignition ON, keeping the button held.",
+                "\"RESET OIL CHANGE SERVICE?\" appears — for the longer INSPECTION service " +
+                    "instead, keep holding ~10–20 s until \"RESET INSPECT. SERVICE?\" shows.",
+                "Release the button.",
+                "Press the button again to confirm — \"SERVICE WAS RESET\" is shown.",
+                "Ignition OFF.",
+            ),
+        ),
+        ServiceReset(
+            id = "vw-sri-menu",
+            brand = "vw",
+            name = "Service reset via digital cockpit / MMI menu",
+            description = "Cars with a full TFT digital cockpit or central touchscreen (Golf 8 " +
+                "and most 2019+ VAG, Audi MMI) reset the service reminder from the on-screen " +
+                "menu rather than the trip button.",
+            uds = false,
+            confidence = "community",
+            source = "Ross-Tech SRI reset wiki; VAG digital-cockpit / MMI service menu " +
+                "(family pattern, per-model wording varies)",
+            models = "Golf 8+ and 2019+ VAG with digital cockpit; Audi MMI (A3 8Y, A4 B9, Q3, …)",
+            cautions = listOf(
+                "The exact menu wording and path vary by model and MMI/cockpit generation — " +
+                    "confirm against the car's own menu.",
+                "Some early builds still honour the button-through-ignition method.",
+            ),
+            procedure = listOf(
+                "Ignition ON, engine off.",
+                "Open the infotainment / cluster menu: Car (or Vehicle) → Service (& Inspection).",
+                "Select the service item you replaced (e.g. Oil change / Inspection).",
+                "Choose Reset and confirm.",
+                "Ignition OFF, then back ON and check the service message is gone.",
             ),
         ),
     )

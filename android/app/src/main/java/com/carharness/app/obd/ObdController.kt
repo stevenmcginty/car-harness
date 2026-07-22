@@ -169,6 +169,22 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             PeugeotUds.readEnhanced(session, onProgress)
         }
 
+    /** VW / Audi (VAG) module scan (per-module UDS id pairs, +8 / +0x6A). Serialised. */
+    suspend fun vwScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        VwUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one VW/Audi module's fault memory; returns that module's fresh DTCs. */
+    suspend fun vwClear(address: Int): List<UdsDtc> = mutex.withLock {
+        VwUds.clearDtcs(session, address)
+    }
+
+    /** One pass over the VW/Audi live extras (VAG mode-22 DIDs). */
+    suspend fun vwEnhanced(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            VwUds.readEnhanced(session, onProgress)
+        }
+
     /**
      * Run one service reset over the dongle — CHANGES THE CAR (uds resets only).
      * Serialised with everything else. Dispatches on the reset's brand so the

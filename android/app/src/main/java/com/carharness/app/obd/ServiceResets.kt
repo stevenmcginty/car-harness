@@ -35,7 +35,7 @@ sealed class ResetStep {
 
 data class ServiceReset(
     val id: String,
-    val brand: String,             // "bmw" | "mazda" | "peugeot"
+    val brand: String,             // "bmw" | "mazda" | "peugeot" | "vw"
     val name: String,
     val description: String,
     val uds: Boolean,              // true = runnable over the dongle
@@ -60,6 +60,7 @@ object ServiceResets {
         "bmw" -> BMW
         "mazda" -> MAZDA
         "peugeot" -> PEUGEOT
+        "vw" -> VW
         else -> emptyList() // unknown brand must not silently show BMW's resets
     }
 
@@ -97,4 +98,5 @@ object ServiceResets {
     val BMW: List<ServiceReset> get() = BrandResetData.BMW
     val MAZDA: List<ServiceReset> get() = BrandResetData.MAZDA
     val PEUGEOT: List<ServiceReset> get() = BrandResetData.PEUGEOT
+    val VW: List<ServiceReset> get() = BrandResetData.VW
 }

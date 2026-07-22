@@ -15,7 +15,8 @@ so those work unchanged over an ELM327 instead of over HSFZ.
 
 Ported from the proven Android recipe (android/.../obd/BmwUds.kt), adapted from
 BMW's extended addressing (6F1 / ATCEA) to the standard 11-bit request/response
-pairs Mazda uses (request 0x7E0-0x7E7, response = request + 8).
+pairs Mazda uses (request 0x7E0-0x7E7, response = request + 8, unless an
+explicit id_map says otherwise -- see Elm327UdsClient).
 """
 
 import re
@@ -88,9 +89,12 @@ class Elm327UdsClient:
     OBD stack expects (functional header, auto receive, adaptive timing on).
     """
 
-    def __init__(self, session):
+    def __init__(self, session, id_map=None):
         self.session = session
         self._target = None  # request id the ELM is currently pointed at
+        # id_map: request CAN id -> response CAN id, for modules that don't
+        # answer on request + 8 (optional; unset modules fall back to +8).
+        self.id_map = dict(id_map) if id_map else {}
 
     # ------------------------------------------------------------------ #
     def begin(self):
@@ -111,12 +115,13 @@ class Elm327UdsClient:
         """Point the ELM at one module: TX header + RX filter + flow control.
 
         Standard OBD-II 11-bit pairing: a request on 0x7E0..0x7E7 is answered on
-        request + 8 (0x7E8..0x7EF). Flow control 30 00 00 = clear-to-send, no
-        block-size limit, no separation time.
+        request + 8 (0x7E8..0x7EF), unless id_map gives an explicit override for
+        modules that don't follow that pairing. Flow control 30 00 00 =
+        clear-to-send, no block-size limit, no separation time.
         """
         if self._target == req_id:
             return
-        resp_id = req_id + 8
+        resp_id = self.id_map.get(req_id, req_id + 8)
         self.session.at(f"ATSH{req_id:03X}")
         self.session.at(f"ATFCSH{req_id:03X}")
         self.session.at(f"ATCRA{resp_id:03X}")

@@ -68,6 +68,10 @@ object VinCheck {
             "WBA", "WBS", "WBY", "WBW" -> "BMW"
             "WMW" -> "MINI"
             "JMZ", "JM1", "JM0", "3MD", "JM7" -> "Mazda"
+            "WVW", "WV1", "WV2", "WVG", "1VW", "3VW", "9BW" -> "Volkswagen"
+            "WAU", "WA1", "WUA", "TRU" -> "Audi"
+            "TMB" -> "Škoda"
+            "VSS" -> "SEAT"
             else -> null
         }
     }
