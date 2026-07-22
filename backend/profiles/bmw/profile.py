@@ -1,12 +1,11 @@
-"""BMW profile: turns the ENET/DoIP probe into an API ConnectionStatus.
+"""BMW profile: turns the ENET identification probe into an API ConnectionStatus.
 
-status("real") runs a genuine, read-only DoIP Vehicle Identification probe and
-reports exactly how far it got. status("sim") returns a clearly-labelled fake so
-the UI can be demoed with no car present -- simulated data must NEVER leak into
-real mode.
+status("real") runs a genuine, read-only identification probe -- HSFZ for
+F-series, DoIP for G-series -- and reports exactly how far it got. status("sim")
+returns a clearly-labelled fake so the UI can be demoed with no car present --
+simulated data must NEVER leak into real mode.
 
-Transport: BMW F/G-series speak DoIP (ISO 13400) over an ENET (Ethernet->OBD)
-cable. The probe is identification-only; it cannot write to the car.
+The probe is identification-only; it cannot write to the car.
 """
 
 from datetime import datetime, timezone
@@ -128,22 +127,27 @@ def _real() -> ConnectionStatus:
     else:
         link_state, link_detail = (
             "ok",
-            f"DoIP discovery sent from {probe.get('bind_ip')} to "
+            f"ENET discovery (HSFZ + DoIP) sent from {probe.get('bind_ip')} to "
             f"{', '.join(probe.get('targets', []))}.",
         )
     steps.append(StepStatus(key="link", label="Link to car", state=link_state, detail=link_detail))
 
-    # 3) Car responding -- did a DoIP announcement come back?
+    # 3) Car responding -- did an HSFZ or DoIP identification come back?
     if doip_ok:
         doip_state = "ok"
-        doip_detail = f"DoIP vehicle announcement received from {probe.get('raw_from_ip')}."
+        doip_detail = (
+            f"{probe.get('protocol') or 'ENET'} identification received from "
+            f"{probe.get('raw_from_ip')}"
+            + (" (F-series)." if probe.get("protocol") == "HSFZ" else
+               " (G-series)." if probe.get("protocol") == "DoIP" else ".")
+        )
     else:
         doip_state = "fail"
         if not adapter_ok:
-            doip_detail = probe.get("detail") or "No DoIP response (no ENET adapter present)."
+            doip_detail = probe.get("detail") or "No response (no ENET adapter present)."
         else:
             doip_detail = probe.get("detail") or (
-                "No DoIP response before the 2.0s timeout."
+                "No HSFZ or DoIP response before the timeout."
             )
             doip_detail += (
                 " Check the ignition is on and the OBD cable is fully seated. If Windows "
@@ -158,9 +162,9 @@ def _real() -> ConnectionStatus:
     else:
         vin_state = "fail"
         vin_detail = (
-            "Car responded but no VIN was present in the announcement."
+            "Car responded but no VIN was present in the identification."
             if doip_ok
-            else "The vehicle will be identified once the car answers DoIP."
+            else "The vehicle will be identified once the car answers."
         )
     steps.append(StepStatus(key="vin", label="Vehicle identified", state=vin_state, detail=vin_detail))
 
@@ -169,8 +173,8 @@ def _real() -> ConnectionStatus:
     if doip_ok and vin:
         overall = "connected"
         message = (
-            f"Connected to vehicle {vin}. Read-only identification only - nothing was "
-            "written to the car."
+            f"Connected to vehicle {vin} over {probe.get('protocol') or 'ENET'}. "
+            "Read-only identification only - nothing was written to the car."
         )
         vehicle = Vehicle(
             vin=vin,
@@ -181,9 +185,9 @@ def _real() -> ConnectionStatus:
     elif adapter_ok:
         overall = "partial"
         message = (
-            "ENET adapter is up but the car did not answer the DoIP discovery. Turn the "
-            "ignition on, reseat the OBD cable, and make sure Python is allowed through "
-            "Windows Firewall, then retry."
+            "ENET adapter is up but the car answered neither HSFZ (F-series) nor DoIP "
+            "(G-series). Turn the ignition on, reseat the OBD cable, and make sure "
+            "Python is allowed through Windows Firewall, then retry."
         )
     else:
         overall = "disconnected"

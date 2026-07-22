@@ -141,6 +141,35 @@
       <div id="live-grid" class="live-grid" hidden></div>
     </section>
 
+    <section class="panel bmw-panel" aria-label="BMW module scan">
+      <div class="panel-header">
+        <h2>BMW — All modules (ENET cable)</h2>
+        <div class="panel-actions">
+          <button id="bmw-scan-btn" class="btn btn-primary" type="button">Scan all modules</button>
+        </div>
+      </div>
+
+      <div id="bmw-sim-banner" class="banner banner-amber" hidden role="status">
+        <svg class="banner-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.01" />
+        </svg>
+        <span>SIMULATED — no real car connected</span>
+      </div>
+
+      <p id="bmw-hint" class="obd-hint">
+        Deep scan over the yellow ENET cable — every module's fault memory (airbag, ABS,
+        iDrive, gearbox…), not just the engine. Plug the cable into the car's OBD port and
+        the laptop's USB-Ethernet adapter, ignition ON, give the link ~30s to settle, then scan.
+        BMW F-Series (≈2011–2018); read-only unless you clear.
+      </p>
+
+      <div id="bmw-result" hidden>
+        <div id="bmw-chips" class="obd-chips"></div>
+        <p id="bmw-message" class="status-message"></p>
+        <div id="bmw-modules" class="bmw-modules"></div>
+      </div>
+    </section>
+
     <section class="panel modules-panel" aria-label="Jobs">
       <div class="panel-header">
         <h2>Jobs</h2>

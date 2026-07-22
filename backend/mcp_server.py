@@ -22,6 +22,7 @@ from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import interfaces, registry  # noqa: E402
+from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 
 mcp = FastMCP("car-harness")
 
@@ -56,6 +57,52 @@ def get_connection_status(
     if instance is None:
         return {"error": f"Unknown adapter '{adapter_id}'."}
     return probe_module.status(mode, adapter=instance.model_dump()).model_dump()
+
+
+# --------------------------------------------------------------------------- #
+# BMW deep scan over the ENET cable (HSFZ, F-series)
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def bmw_discover() -> dict:
+    """Find a BMW on the ENET cable (read-only).
+
+    Tries HSFZ identification (F-series, e.g. a 2015 F26 X4) then DoIP
+    (G-series). Returns {found, protocol, ip, vin, detail}. Needs the yellow
+    ENET cable in the car's OBD port and the laptop's USB-Ethernet adapter;
+    the link-local address takes ~30s to settle after plugging in.
+    """
+    return bmw_scan.discover()
+
+
+@mcp.tool()
+def bmw_scan_modules(mode: str = "real") -> dict:
+    """Read every module's fault memory over the ENET cable (read-only).
+
+    Walks the common F-series ECU addresses through the gateway -- engine,
+    gearbox, airbag, ABS, steering, body, cluster, head unit, climate -- and
+    reads each one's manufacturer-level fault codes (far deeper than generic
+    OBD-II). Ignition must be ON. mode="sim" returns a clearly-labelled fake.
+    Takes 30-60s for real; absent modules just time out quietly.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    return bmw_scan.scan(mode)
+
+
+@mcp.tool()
+def bmw_clear_module(confirm: bool = False, address: str | None = None, mode: str = "real") -> dict:
+    """Clear fault memory on one BMW module (or all present) -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    address: hex diagnostic address like "0x63" (head unit); omit to clear
+        every module that answers. Faults return if the underlying problem
+        is still present.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    return bmw_scan.clear(mode, address)
 
 
 # --------------------------------------------------------------------------- #

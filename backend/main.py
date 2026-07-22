@@ -25,6 +25,7 @@ from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import interfaces, pairing, registry  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
+from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
@@ -283,6 +284,43 @@ def obd_pids(adapter: str | None = None, mode: str = "real") -> dict:
         return obd_service.supported_pids(instance, mode)
     except obd_service.ObdServiceError as exc:
         return {"ok": False, "simulated": False, "keys": [], "message": str(exc)}
+
+
+# --------------------------------------------------------------------------- #
+# BMW ENET deep scan: every module's fault memory over the ENET cable
+# (HSFZ, F-series). Read-only except /clear, which demands confirm: true.
+# --------------------------------------------------------------------------- #
+@app.get("/api/bmw/discover")
+def bmw_discover() -> dict:
+    return bmw_scan.discover()
+
+
+@app.get("/api/bmw/scan")
+def bmw_full_scan(mode: str = "real") -> dict:
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return bmw_scan.scan(mode)
+
+
+@app.post("/api/bmw/clear")
+async def bmw_clear(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"mode": "real"|"sim", "confirm": true, "address": "0x63"?}.',
+        )
+    body = body or {}
+    if body.get("confirm") is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="Clearing module fault memory changes the car. Send confirm: true.",
+        )
+    mode = body.get("mode") or "real"
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return bmw_scan.clear(mode, body.get("address"))
 
 
 # --------------------------------------------------------------------------- #

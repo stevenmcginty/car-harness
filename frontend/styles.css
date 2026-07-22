@@ -1212,3 +1212,53 @@ select:disabled {
   font-size: 12.5px;
   line-height: 1.55;
 }
+
+/* ---------- BMW deep scan (ENET) ---------- */
+
+.bmw-modules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.bmw-module {
+  background: var(--panel-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+.bmw-module.is-absent {
+  opacity: 0.45;
+}
+
+.bmw-module-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bmw-module-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.bmw-module-addr {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.bmw-module-head .btn {
+  margin-left: auto;
+}
+
+.bmw-module .dtc-card {
+  margin-top: 8px;
+}
+
+.dtc-tag.is-good {
+  background: var(--green-dim, rgba(52, 199, 89, 0.14));
+  color: var(--green);
+}

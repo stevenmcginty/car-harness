@@ -94,6 +94,12 @@
     liveToggle: document.getElementById("live-toggle"),
     liveMessage: document.getElementById("live-message"),
     liveGrid: document.getElementById("live-grid"),
+    bmwScanBtn: document.getElementById("bmw-scan-btn"),
+    bmwSimBanner: document.getElementById("bmw-sim-banner"),
+    bmwResult: document.getElementById("bmw-result"),
+    bmwChips: document.getElementById("bmw-chips"),
+    bmwMessage: document.getElementById("bmw-message"),
+    bmwModules: document.getElementById("bmw-modules"),
     pairBtn: document.getElementById("pair-btn"),
     pairModal: document.getElementById("pair-modal"),
     pairModalClose: document.getElementById("pair-modal-close"),
@@ -110,6 +116,7 @@
     liveInFlight: false
   };
   var pair = { open: false, info: null, devices: [], error: "" };
+  var bmw = { scanInFlight: false, clearInFlight: false };
 
   // ---------- Helpers ----------
 
@@ -173,10 +180,11 @@
         reconnectTimer = null;
       }
     } else {
-      // Backend lost: everything on screen is stale. Reset both panels so the
+      // Backend lost: everything on screen is stale. Reset the panels so the
       // banner never contradicts old results, then poll until it comes back.
       renderStatusOffline();
       resetObdPanel();
+      resetBmwPanel();
       startReconnectPoll();
     }
   }
@@ -1411,6 +1419,171 @@
     }
   }
 
+  // ---------- BMW deep scan (ENET cable) ----------
+
+  function resetBmwPanel() {
+    el.bmwResult.hidden = true;
+    el.bmwSimBanner.hidden = true;
+    el.bmwChips.innerHTML = "";
+    el.bmwModules.innerHTML = "";
+    el.bmwMessage.textContent = "";
+  }
+
+  function buildBmwModuleRow(m) {
+    var row = document.createElement("div");
+    row.className = "bmw-module" + (m.present ? "" : " is-absent");
+
+    var head = document.createElement("div");
+    head.className = "bmw-module-head";
+
+    var title = document.createElement("span");
+    title.className = "bmw-module-name";
+    title.textContent = m.code + " — " + m.name;
+    head.appendChild(title);
+
+    var addr = document.createElement("span");
+    addr.className = "bmw-module-addr";
+    addr.textContent = m.address;
+    head.appendChild(addr);
+
+    var tag = document.createElement("span");
+    if (!m.present) {
+      tag.className = "tag";
+      tag.textContent = "not fitted";
+    } else if (m.error) {
+      tag.className = "tag dtc-tag is-pending";
+      tag.textContent = "no fault read";
+    } else if (m.dtcs.length) {
+      tag.className = "tag dtc-tag is-stored";
+      tag.textContent = m.dtcs.length + " fault" + (m.dtcs.length === 1 ? "" : "s");
+    } else {
+      tag.className = "tag dtc-tag is-good";
+      tag.textContent = "OK";
+    }
+    head.appendChild(tag);
+
+    if (m.present && m.dtcs.length) {
+      var clearBtn = document.createElement("button");
+      clearBtn.type = "button";
+      clearBtn.className = "btn btn-danger btn-small";
+      clearBtn.textContent = "Clear";
+      clearBtn.addEventListener("click", function () {
+        runBmwClear(m.address, m.code + " — " + m.name);
+      });
+      head.appendChild(clearBtn);
+    }
+    row.appendChild(head);
+
+    if (m.error) {
+      var err = document.createElement("p");
+      err.className = "dtc-desc";
+      err.textContent = m.error;
+      row.appendChild(err);
+    }
+
+    m.dtcs.forEach(function (d) {
+      var card = document.createElement("div");
+      card.className = "dtc-card";
+
+      var cardHead = document.createElement("div");
+      cardHead.className = "dtc-card-head";
+
+      var code = document.createElement("span");
+      code.className = "dtc-code";
+      code.textContent = d.hex;
+      cardHead.appendChild(code);
+
+      var status = document.createElement("span");
+      status.className = "tag dtc-tag is-stored";
+      status.textContent = d.code;
+      cardHead.appendChild(status);
+
+      card.appendChild(cardHead);
+
+      var desc = document.createElement("p");
+      desc.className = "dtc-desc";
+      desc.textContent = (d.flags || []).join(", ") || "status 0x" + d.status;
+      card.appendChild(desc);
+
+      row.appendChild(card);
+    });
+
+    return row;
+  }
+
+  function renderBmwScan(data) {
+    el.bmwResult.hidden = false;
+    el.bmwSimBanner.hidden = !(data && data.simulated);
+    el.bmwChips.innerHTML = "";
+    el.bmwModules.innerHTML = "";
+    el.bmwMessage.textContent = (data && data.message) || "";
+
+    if (!data || !data.ok) return;
+
+    var v = data.vehicle || {};
+    if (v.vin) el.bmwChips.appendChild(chip("VIN", v.vin, "is-mono"));
+    if (v.protocol) el.bmwChips.appendChild(chip("Protocol", v.protocol));
+    if (v.ip) el.bmwChips.appendChild(chip("Car IP", v.ip, "is-mono"));
+
+    (data.modules || []).forEach(function (m) {
+      el.bmwModules.appendChild(buildBmwModuleRow(m));
+    });
+  }
+
+  function runBmwScan() {
+    if (bmw.scanInFlight) return;
+    bmw.scanInFlight = true;
+    el.bmwScanBtn.disabled = true;
+    var original = el.bmwScanBtn.textContent;
+    el.bmwScanBtn.textContent = "Scanning…";
+    el.bmwResult.hidden = false;
+    el.bmwChips.innerHTML = "";
+    el.bmwModules.innerHTML = "";
+    el.bmwMessage.textContent =
+      "Walking every module through the gateway… (30–60s, absent modules time out quietly)";
+
+    apiFetch("/api/bmw/scan?mode=" + obdMode())
+      .then(function (data) {
+        renderBmwScan(data);
+      })
+      .catch(function () {
+        renderBmwScan({ ok: false, message: "Couldn't reach the backend to scan." });
+      })
+      .then(function () {
+        bmw.scanInFlight = false;
+        el.bmwScanBtn.disabled = false;
+        el.bmwScanBtn.textContent = original;
+      });
+  }
+
+  function runBmwClear(address, label) {
+    if (bmw.clearInFlight) return;
+    if (
+      !window.confirm(
+        "Clear the fault memory of " + label + "?\n\nFaults will return if the " +
+          "underlying problem is still present."
+      )
+    ) {
+      return;
+    }
+    bmw.clearInFlight = true;
+    apiFetch("/api/bmw/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: obdMode(), confirm: true, address: address })
+    })
+      .then(function (data) {
+        el.bmwMessage.textContent = (data && data.message) || "";
+        if (data && data.ok) runBmwScan();
+      })
+      .catch(function () {
+        el.bmwMessage.textContent = "Couldn't reach the backend to clear.";
+      })
+      .then(function () {
+        bmw.clearInFlight = false;
+      });
+  }
+
   // ---------- Phone pairing ----------
 
   function openPairModal() {
@@ -1562,6 +1735,7 @@
   el.simulateToggle.addEventListener("change", function () {
     state.simulate = el.simulateToggle.checked;
     resetObdPanel();
+    resetBmwPanel();
     if (obd.liveOn) {
       el.liveToggle.checked = false;
       setLive(false);
@@ -1613,6 +1787,7 @@
 
   el.obdScanBtn.addEventListener("click", runObdScan);
   el.obdClearBtn.addEventListener("click", runObdClear);
+  el.bmwScanBtn.addEventListener("click", runBmwScan);
   el.liveToggle.addEventListener("change", function () {
     setLive(el.liveToggle.checked);
   });
