@@ -1,0 +1,12 @@
+{
+  "id": "entrynav_flash",
+  "name": "EntryNav Firmware Flash",
+  "profile": "bmw",
+  "description": "Reflash the HU_ENTRY head unit on the X4 (F26) via E-Sys.",
+  "version": "0.0.1",
+  "builtin": true,
+  "installed": true,
+  "entry": "module.py",
+  "requires": ["E-Sys"],
+  "status": "placeholder"
+}

@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Local state -- machine-specific config and pairing data, never shared
+adapters.json
+paired_devices.json
+modules_store/*
+!modules_store/.gitkeep
+
+# Android build machinery and caches
+android/local.properties
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/.idea/

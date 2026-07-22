@@ -1,0 +1,8 @@
+{
+  "id": "bmw",
+  "name": "BMW",
+  "transport": "enet-doip",
+  "description": "BMW F/G-series over ENET (DoIP).",
+  "probe": "profile.py",
+  "adapters": ["enet-doip", "elm327-serial", "elm327-bluetooth"]
+}

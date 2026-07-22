@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "car-harness": {
+      "command": "C:\\Users\\steve\\Desktop\\car-harness\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\Users\\steve\\Desktop\\car-harness\\backend\\mcp_server.py"]
+    }
+  }
+}

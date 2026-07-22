@@ -1,0 +1,152 @@
+# car-harness
+
+A modular car-diagnostics desktop app + Android companion app.
+
+- **Generic OBD-II on all cars (Torque-style).** Read the VIN, fault codes
+  (stored / pending / permanent, with plain-English descriptions), clear codes,
+  and stream live data (RPM, speed, coolant, and more) over any ELM327-style
+  adapter: USB/serial, Classic Bluetooth, Bluetooth LE (e.g. Veepeak OBDCheck
+  BLE) or WiFi.
+- A **real, read-only BMW ENET/DoIP connection probe**: it genuinely talks to
+  a BMW (F/G-series) over an ENET cable using DoIP (ISO 13400) and honestly
+  reports how far it got. When no car is present it says so -- it never fakes
+  a "connected" state.
+- An **Android app** (`android/`, prebuilt `CarHarness.apk`) that scans cars
+  directly from the phone with the same adapters, and **pairs with the
+  desktop** over WiFi to drive the desktop's cables for the bigger jobs.
+
+It is built to grow: manufacturer **profiles** (BMW today; Peugeot, Vauxhall,
+... later) and installable/removable **job modules** are both discovered from
+the filesystem.
+
+## What it does
+
+- **Read-only probe.** The probe sends a DoIP *Vehicle Identification Request*
+  and reads back the car's *Vehicle Announcement* (VIN, logical address, EID,
+  GID). That is all. There is **no** routing activation, **no** UDS diagnostic
+  session, **no** TCP diagnostic connection -- so the probe **cannot change
+  anything on the car**.
+- **Honest status.** In real mode the connection status reflects only the actual
+  probe result. A separate **sim** mode returns clearly-labelled fake data (VIN
+  `SIMULATED000000BMW`) for demos; simulated data never appears in real mode.
+- **Pluggable.** Manufacturer profiles live under `backend/profiles/<id>/` and
+  job modules under each profile's `modules/` folder (built-in) or in
+  `modules_store/` (user-imported, and removable to reclaim disk).
+
+## How to run
+
+**Easiest (Windows):** double-click **`start.bat`**. It creates a `.venv`,
+installs the dependencies, opens your browser at http://127.0.0.1:8765 and
+starts the server.
+
+**From a terminal:**
+
+```bat
+cd C:\Users\steve\Desktop\car-harness
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python run.py
+```
+
+Then open http://127.0.0.1:8765. The server listens on all interfaces so the
+phone app can reach it over the LAN -- but every non-localhost request is
+rejected unless the phone has paired (see below), so the desktop UI at
+127.0.0.1 stays the only unauthenticated door.
+
+## Generic OBD-II scanning (all cars)
+
+1. Add your adapter once via **Add adapter...** (ELM327 USB / Bluetooth /
+   Bluetooth LE / WiFi) and select it in the header.
+2. Ignition ON (engine can stay off). BLE dongles like the Veepeak answer by
+   themselves, but the *car* only answers with the ignition on.
+3. **Read fault codes** -- VIN, battery voltage, protocol, MIL state and the
+   codes with descriptions. **Clear codes** asks for confirmation first
+   (clearing also resets MOT readiness monitors).
+4. Flip **Live data - Stream** for a Torque-style dashboard (RPM, speed,
+   coolant, load, throttle, MAF, oil temp...). Only PIDs the car reports as
+   supported are shown.
+
+The **Simulate** toggle returns clearly-labelled fake results (VIN
+`SIMULATED0CAR0001`); simulated data never appears in real mode.
+
+## Phone app
+
+`CarHarness.apk` in the project root (source in `android/`, rebuild with
+`gradle assembleDebug`). Install it on the phone, then:
+
+- **Car tab** -- connect straight to a dongle from the phone (Demo / BLE /
+  Classic Bluetooth / WiFi) and get the same live dashboard.
+- **Faults tab** -- read + clear codes with the same descriptions database.
+- **Desktop tab** -- pair with this app: on the PC click **Pair phone...**,
+  then on the phone **Find my PC** (UDP discovery on port 8766) and type the
+  6-digit code. Once paired, the phone can run scans *through the desktop's
+  adapters* -- the path to the deeper, proprietary-cable jobs. Un-pair either
+  side at any time (desktop: Pair phone... -> Un-pair).
+
+Pairing security: codes are one-time and expire after 5 minutes; the phone
+gets a bearer token whose SHA-256 (never the token itself) is stored in
+`paired_devices.json`.
+
+## Diagnosing a BMW over ENET
+
+1. Plug the ENET cable into the car's OBD-II port and the laptop's Ethernet
+   port. Turn the ignition on.
+2. BMW ENET provides no DHCP, so the laptop's Ethernet adapter falls back to a
+   link-local address in `169.254.x.x`. That address is how the app detects the
+   ENET adapter. Give Windows a few seconds to assign it.
+3. Open the app and check the connection page.
+
+## Windows Firewall note
+
+The first time the probe sends its UDP broadcast, **Windows Firewall may pop up
+asking whether to allow Python**. You must click **Allow** (private networks is
+enough) -- otherwise the outgoing discovery datagram is blocked and the probe
+can never reach the car. If you dismissed the prompt earlier, allow
+`python.exe` for private networks in Windows Defender Firewall settings.
+
+## API
+
+Base URL: `http://127.0.0.1:8765`
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/profiles` | Manufacturer profiles and their modules |
+| GET | `/api/status?profile=bmw&mode=real` | Connection status (`mode=sim` for a labelled fake) |
+| GET | `/api/interfaces` | Network adapters and which are ENET candidates |
+| GET | `/api/modules` | All job modules |
+| POST | `/api/modules/import` | Import a module (.zip upload or JSON `{"path": ...}`) |
+| DELETE | `/api/modules/{id}` | Remove a non-built-in module and reclaim its bytes |
+| GET | `/api/obd/scan?adapter=<id>&mode=real` | VIN + fault codes over an ELM327 adapter (`mode=sim` for a labelled fake) |
+| POST | `/api/obd/clear` | Clear codes -- JSON `{"adapter", "mode", "confirm": true}` |
+| GET | `/api/obd/live?adapter=<id>&pids=rpm,speed` | Live data readings (default dashboard set if `pids` omitted) |
+| GET | `/api/obd/pids?adapter=<id>` | Which live-data keys the car supports |
+| POST | `/api/pair/start` | (localhost only) new 6-digit phone-pairing code |
+| POST | `/api/pair/claim` | Phone exchanges the code for a bearer token |
+| GET | `/api/pair/devices` | Paired phones |
+| DELETE | `/api/pair/devices/{id}` | Un-pair a phone |
+
+## Layout
+
+```
+backend/
+  main.py              FastAPI app (API under /api, serves frontend/ at /)
+  core/
+    models.py          API response models
+    interfaces.py      network-adapter detection (psutil)
+    doip.py            the real, read-only DoIP probe (ISO 13400)
+    registry.py        discovers profiles + modules from disk
+  profiles/
+    bmw/
+      profile.json     profile metadata
+      profile.py       BMW status(mode) probe
+      modules/
+        entrynav_flash/  built-in placeholder job module
+modules_store/         user-imported modules live here (removable)
+frontend/              static single-page UI (served at /, owned by the UI app)
+requirements.txt
+run.py                 python run.py
+start.bat              double-click launcher (Windows)
+```
+
+> The `frontend/` folder is owned by a separate front-end app. The backend just
+> serves whatever static files land there; if it is empty the API still works.

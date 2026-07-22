@@ -1,0 +1,1214 @@
+/* Car Harness — v1 UI
+   Dark, technical, diagnostic-instrument look. No external assets. */
+
+:root {
+  --bg: #0b0f14;
+  --bg-alt: #0e141b;
+  --panel: #131a22;
+  --panel-raised: #17202b;
+  --border: #24313f;
+  --border-soft: #1b2530;
+  --text: #e6edf3;
+  --text-muted: #93a3b3;
+  --text-faint: #5c6b7a;
+
+  --green: #35c766;
+  --green-dim: #1d3d29;
+  --amber: #e8a53d;
+  --amber-dim: #453416;
+  --red: #d5695f;
+  --red-dim: #3c2320;
+  --grey: #6e7f90;
+  --grey-dim: #1c2530;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+
+  --radius: 10px;
+  --radius-lg: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+}
+
+/* ---------- Header ---------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 24px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  display: inline-flex;
+  color: var(--green);
+}
+
+.header h1 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+select {
+  background: var(--panel-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+}
+
+select:disabled {
+  color: var(--text-faint);
+}
+
+.toggle-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-field input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  position: relative;
+  width: 34px;
+  height: 19px;
+  border-radius: 999px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  transition: background 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.toggle-field input:checked + .toggle-track {
+  background: var(--amber-dim);
+  border-color: var(--amber);
+}
+
+.toggle-field input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(15px);
+  background: var(--amber);
+}
+
+.toggle-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ---------- Main / panels ---------- */
+
+.main {
+  flex: 1;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.panel-header h2 {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-field input {
+  accent-color: var(--green);
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- Buttons ---------- */
+
+.btn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+  background: var(--panel-raised);
+  color: var(--text);
+}
+
+.btn:hover {
+  border-color: var(--text-faint);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #204a30;
+}
+
+.btn-secondary {
+  background: var(--panel-raised);
+  border-color: var(--border);
+}
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.btn-danger {
+  background: var(--red-dim);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #4a2b28;
+}
+
+/* ---------- Banners ---------- */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.banner-icon {
+  flex-shrink: 0;
+}
+
+.banner-waiting {
+  background: var(--grey-dim);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.banner-amber {
+  background: var(--amber-dim);
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  font-weight: 600;
+}
+
+/* ---------- Overall badge ---------- */
+
+.overall-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 0 26px;
+}
+
+.overall-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border: 1px solid transparent;
+}
+
+.overall-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.overall-badge.state-connected {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.overall-badge.state-partial {
+  background: var(--amber-dim);
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.overall-badge.state-disconnected {
+  background: var(--red-dim);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.overall-badge.state-offline {
+  background: var(--grey-dim);
+  border-color: var(--border);
+  color: var(--grey);
+}
+
+.status-message {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  min-height: 1.2em;
+}
+
+/* ---------- Ladder ---------- */
+
+.ladder {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.ladder-step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: var(--panel-raised);
+}
+
+.ladder-step + .ladder-step {
+  border-top: 1px solid var(--border-soft);
+}
+
+.step-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.step-icon.icon-ok {
+  color: var(--green);
+}
+
+.step-icon.icon-fail {
+  color: var(--grey);
+}
+
+.step-icon.icon-pending .spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--amber);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.step-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.step-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Vehicle card ---------- */
+
+.vehicle-card {
+  margin-top: 18px;
+  padding: 16px 18px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+
+.vehicle-vin-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.vehicle-vin-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.vehicle-vin {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.03em;
+  word-break: break-all;
+}
+
+.vehicle-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.vehicle-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.meta-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.meta-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* ---------- Modules panel ---------- */
+
+.modules-empty {
+  color: var(--text-faint);
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+.modules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.module-card {
+  padding: 14px 16px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.module-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.module-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tag {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.tag-builtin {
+  background: var(--grey-dim);
+  color: var(--grey);
+  border: 1px solid var(--border);
+}
+
+.module-description {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.module-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--grey-dim);
+  color: var(--grey);
+  border: 1px solid var(--border);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.module-size {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.module-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---------- Footer ---------- */
+
+.footer {
+  padding: 12px 24px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border-soft);
+}
+
+/* ---------- Adapter modal / wizard ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  overflow-y: auto;
+  background: rgba(4, 7, 10, 0.72);
+}
+
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.modal-close:hover {
+  background: var(--panel-raised);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.wizard-progress {
+  list-style: none;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 14px 20px 0;
+}
+
+.wizard-progress li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+}
+
+.wizard-progress li .wizard-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.wizard-progress li.is-active {
+  color: var(--green);
+}
+
+.wizard-progress li.is-active .wizard-step-num {
+  border-color: var(--green);
+  background: var(--green-dim);
+  color: var(--green);
+}
+
+.wizard-progress li.is-done .wizard-step-num {
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.modal-body {
+  padding: 18px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.modal-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Wizard content blocks */
+
+.wizard-section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
+.wizard-section + .wizard-section {
+  margin-top: 22px;
+}
+
+.wizard-hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+.wizard-note {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  margin: 8px 0 0;
+}
+
+/* Existing adapters list */
+
+.adapter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.adapter-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+
+.adapter-list-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.adapter-list-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.adapter-list-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.adapter-list-test {
+  font-size: 11.5px;
+}
+
+.adapter-list-test.is-ok {
+  color: var(--green);
+}
+
+.adapter-list-test.is-fail {
+  color: var(--red);
+}
+
+/* Type choice cards */
+
+.type-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.type-choice {
+  text-align: left;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.type-choice:hover {
+  border-color: var(--text-faint);
+}
+
+.type-choice.is-selected {
+  border-color: var(--green);
+  background: var(--green-dim);
+}
+
+.type-choice-name {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.type-choice-desc {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Dynamic config form */
+
+.wizard-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-row-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.form-row-label .req {
+  color: var(--red);
+  margin-left: 3px;
+}
+
+.form-row-help {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.form-input {
+  background: var(--panel-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  width: 100%;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--green);
+}
+
+.form-input.is-invalid {
+  border-color: var(--red);
+}
+
+.form-comport-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.form-comport-row .form-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.wizard-error {
+  font-size: 12.5px;
+  color: var(--red);
+  margin: 4px 0 0;
+}
+
+/* Test result panel */
+
+.test-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  margin-top: 14px;
+  font-size: 12.5px;
+}
+
+.test-result-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.test-result-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.test-result.is-ok {
+  background: var(--green-dim);
+  border: 1px solid var(--green);
+  color: var(--green);
+}
+
+.test-result.is-fail {
+  background: var(--red-dim);
+  border: 1px solid var(--red);
+  color: var(--red);
+}
+
+.test-result-detail {
+  overflow-wrap: anywhere;
+}
+
+.wizard-empty {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  padding: 8px 0;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 640px) {
+  .header {
+    padding: 14px 16px;
+  }
+
+  .main {
+    padding: 16px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  .vehicle-vin {
+    font-size: 16px;
+  }
+
+  .modal-overlay {
+    padding: 16px 10px;
+  }
+
+  .modal {
+    max-height: calc(100vh - 32px);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* OBD-II panel (all cars)                                             */
+/* ------------------------------------------------------------------ */
+
+.obd-hint {
+  margin: 0 0 14px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.obd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.obd-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 11px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  font-size: 12.5px;
+}
+
+.obd-chip-label {
+  color: var(--text-faint);
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+}
+
+.obd-chip-value {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.obd-chip.is-mono .obd-chip-value {
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+.obd-chip.is-bad {
+  border-color: var(--red);
+}
+.obd-chip.is-bad .obd-chip-value {
+  color: var(--red);
+}
+.obd-chip.is-good .obd-chip-value {
+  color: var(--green);
+}
+
+.dtc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.dtc-card {
+  background: var(--panel-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.dtc-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dtc-code {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.dtc-tag {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.dtc-tag.is-stored {
+  background: var(--red-dim);
+  color: var(--red);
+}
+.dtc-tag.is-pending {
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+.dtc-tag.is-permanent {
+  background: var(--grey-dim);
+  color: var(--grey);
+}
+
+.dtc-desc {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.dtc-none {
+  margin: 4px 0 0;
+  color: var(--green);
+  font-size: 14px;
+}
+
+.obd-live-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.obd-live-header h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.live-message {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.live-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.live-cell {
+  background: var(--panel-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.live-top {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.live-value {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.live-unit {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.live-label {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ------------------------------------------------------------------ */
+/* Phone pairing modal                                                 */
+/* ------------------------------------------------------------------ */
+
+.pair-code {
+  font-family: var(--font-mono);
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  text-align: center;
+  padding: 18px 10px 18px 20px;
+  margin: 14px 0;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+.pair-meta {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+}

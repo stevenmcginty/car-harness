@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+psutil
+python-multipart
+pyserial
+bleak
+mcp
