@@ -57,9 +57,10 @@ data class ResetOutcome(val ok: Boolean, val message: String, val log: List<Stri
 object ServiceResets {
 
     fun forBrand(brand: String): List<ServiceReset> = when (brand) {
+        "bmw" -> BMW
         "mazda" -> MAZDA
         "peugeot" -> PEUGEOT
-        else -> BMW
+        else -> emptyList() // unknown brand must not silently show BMW's resets
     }
 
     /**

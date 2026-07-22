@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.carharness.app.AppState
 import com.carharness.app.ConnState
+import com.carharness.app.obd.Brands
 import com.carharness.app.obd.ServiceReset
 
 @Composable
@@ -74,9 +75,9 @@ fun ServiceScreen(state: AppState) {
             SectionCard {
                 PanelTitle("SERVICE RESETS")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ResetBrandChip("BMW", brand == "bmw") { state.chooseModuleBrand("bmw") }
-                    ResetBrandChip("Mazda", brand == "mazda") { state.chooseModuleBrand("mazda") }
-                    ResetBrandChip("Peugeot", brand == "peugeot") { state.chooseModuleBrand("peugeot") }
+                    Brands.all.forEach { b ->
+                        ResetBrandChip(b.label, brand == b.id) { state.chooseModuleBrand(b.id) }
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(

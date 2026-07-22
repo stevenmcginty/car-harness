@@ -137,7 +137,15 @@ class Elm327UdsClient:
         self._aim(dst)
         cmd = data.hex().upper()
         text = self.session._raw(cmd.encode("ascii") + b"\r", timeout)
-        for record in reassemble(text, cmd):
-            if record:
-                return bytes(record)
+        records = [bytes(r) for r in reassemble(text, cmd) if r]
+        if records:
+            # Prefer a record that actually answers this service (positive SID
+            # or 0x7F negative); a stray broadcast frame that slipped past the
+            # receive filter must not shadow the real reply. Reassembled
+            # multi-frame payloads land last, so take the last match.
+            expected = data[0] | 0x40
+            matching = [r for r in records if r[0] == expected or r[0] == 0x7F]
+            if matching:
+                return matching[-1]
+            return records[-1]
         raise ObdError(f"No usable reply to {cmd}.", kind="no_data")

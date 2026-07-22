@@ -22,9 +22,11 @@ A modular car-diagnostics desktop app + Android companion app.
   Adding a manufacturer adds its resets. See
   `docs/private/service-resets-research.md` for the provenance.
 
-It is built to grow: manufacturer **profiles** (BMW today; Peugeot, Vauxhall,
-... later) and installable/removable **job modules** are both discovered from
-the filesystem.
+It is built to grow: manufacturer **profiles** (BMW, Mazda and Peugeot/PSA
+today; the next brand is a folder drop-in) and installable/removable **job
+modules** are both discovered from the filesystem. A profile folder's
+capability files become its API routes and its desktop panel automatically --
+the manufacturer dropdown at the top of the desktop app drives everything.
 
 ## What it does
 
@@ -128,39 +130,70 @@ Base URL: `http://127.0.0.1:8765`
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/profiles` | Manufacturer profiles and their modules |
+| GET | `/api/profiles` | Manufacturer profiles: metadata, `features` (what each brand can do) and the `panel` text the UI renders |
 | GET | `/api/status?profile=bmw&mode=real` | Connection status (`mode=sim` for a labelled fake) |
 | GET | `/api/interfaces` | Network adapters and which are ENET candidates |
 | GET | `/api/modules` | All job modules |
 | POST | `/api/modules/import` | Import a module (.zip upload or JSON `{"path": ...}`) |
 | DELETE | `/api/modules/{id}` | Remove a non-built-in module and reclaim its bytes |
+| GET | `/api/adapter-types` | Built-in adapter kinds and their config fields |
+| GET/POST | `/api/adapters` | List / test-and-save configured adapter instances |
+| POST | `/api/adapters/test` | Test an adapter config without saving |
+| GET | `/api/serial-ports` | Available COM ports |
 | GET | `/api/obd/scan?adapter=<id>&mode=real` | VIN + fault codes over an ELM327 adapter (`mode=sim` for a labelled fake) |
 | POST | `/api/obd/clear` | Clear codes -- JSON `{"adapter", "mode", "confirm": true}` |
 | GET | `/api/obd/live?adapter=<id>&pids=rpm,speed` | Live data readings (default dashboard set if `pids` omitted) |
 | GET | `/api/obd/pids?adapter=<id>` | Which live-data keys the car supports |
+| GET | `/api/{brand}/scan` | Walk the brand's modules, read each one's fault memory (generic: any profile folder) |
+| POST | `/api/{brand}/clear` | Clear one module (or all) -- confirm-gated |
+| GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check) |
+| GET | `/api/{brand}/snapshot` | Passive broadcast-CAN capture (Mazda) |
+| GET | `/api/{brand}/discover` | Find the car on a native cable (BMW ENET) |
+| GET | `/api/{brand}/resets` | The brand's service-reset catalogue |
+| POST | `/api/{brand}/reset` | Run one service reset -- confirm-gated |
 | POST | `/api/pair/start` | (localhost only) new 6-digit phone-pairing code |
 | POST | `/api/pair/claim` | Phone exchanges the code for a bearer token |
 | GET | `/api/pair/devices` | Paired phones |
 | DELETE | `/api/pair/devices/{id}` | Un-pair a phone |
 
+The `/api/{brand}/…` routes are **generic**: they dispatch to whatever
+capability files exist under `backend/profiles/<brand>/` (`scan.py`,
+`pids.py`, `snapshot.py`, `resets.py`). The desktop UI's manufacturer panel is
+built the same way -- from the profile's own `panel` metadata -- so adding a
+manufacturer is a folder drop-in, with no route or UI code to write. The
+Android app mirrors this with a single brand registry
+(`android/.../obd/Brands.kt`).
+
 ## Layout
 
 ```
 backend/
-  main.py              FastAPI app (API under /api, serves frontend/ at /)
+  main.py              FastAPI app (API under /api, serves frontend/ at /);
+                       brand routes are generic /api/{brand}/… dispatch
   core/
     models.py          API response models
     interfaces.py      network-adapter detection (psutil)
     doip.py            the real, read-only DoIP probe (ISO 13400)
+    hsfz.py            BMW F-series HSFZ transport (UDS over ENET)
     registry.py        discovers profiles + modules from disk
-  profiles/
-    bmw/
-      profile.json     profile metadata
-      profile.py       BMW status(mode) probe
-      modules/
-        entrynav_flash/  built-in placeholder job module
+    brands.py          discovers each profile's capabilities (scan/live/…)
+    pairing.py         phone pairing: codes, tokens, UDP discovery
+  obd/                 generic OBD-II engine (ELM327 driver, transports, DTCs)
+  adapters/            adapter types (ELM327 serial/BT/BLE/WiFi, ENET, …)
+  profiles/            one folder per manufacturer -- the drop-in unit
+    <brand>/
+      profile.json     metadata + the "panel" text the desktop UI renders
+      profile.py       status(mode) connection probe
+      scan.py          module scan + clear            -> /api/<brand>/scan
+      pids.py          brand live values (optional)   -> /api/<brand>/live
+      snapshot.py      broadcast capture (optional)   -> /api/<brand>/snapshot
+      resets.py        service resets (optional)      -> /api/<brand>/resets
+      modules/         built-in job modules
+  tools/               self-tests; run them all:
+                       .venv\Scripts\python -m backend.tools.run_all
 modules_store/         user-imported modules live here (removable)
 frontend/              static single-page UI (served at /, owned by the UI app)
+android/               Compose companion app (brand registry: obd/Brands.kt)
 requirements.txt
 run.py                 python run.py
 start.bat              double-click launcher (Windows)

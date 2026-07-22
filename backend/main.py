@@ -3,6 +3,18 @@
 Serves the REST API under /api and (defensively) mounts the front-end static
 site at /. The API is registered first so it always works even when frontend/
 is missing or empty. Runs on 127.0.0.1:8765.
+
+Manufacturer routes are GENERIC: /api/{brand}/scan, /live, /snapshot, /clear,
+/resets, /reset and /discover dispatch through backend.core.brands to whatever
+capability files exist under backend/profiles/<brand>/ -- adding a manufacturer
+is a folder drop-in, not an edit here. Profiles whose profile.json transport is
+"elm327" get the picked adapter passed in; native-cable profiles (BMW ENET)
+find the car themselves.
+
+Anything that talks to hardware (or disk, in the middleware) runs off the
+event loop: sync `def` handlers use FastAPI's threadpool, and the async write
+handlers wrap their blocking calls in run_in_threadpool -- one slow BLE
+connect must never freeze the whole API.
 """
 
 import shutil
@@ -17,40 +29,29 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi.concurrency import run_in_threadpool  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
-from backend.core import interfaces, pairing, registry  # noqa: E402
+from backend.core import brands, interfaces, pairing, registry  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
-from backend.profiles.bmw import resets as bmw_resets  # noqa: E402
-from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
-from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
-from backend.profiles.mazda import resets as mazda_resets  # noqa: E402
-from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
-from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
-from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
-from backend.profiles.peugeot import resets as peugeot_resets  # noqa: E402
-from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
-
-# Brand -> its resets module. Each exposes list_resets() and
-# perform(adapter, mode, reset_id, confirm). New manufacturers register here.
-_RESETS_BY_BRAND = {
-    "bmw": bmw_resets,
-    "mazda": mazda_resets,
-    "peugeot": peugeot_resets,
-}
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
-app = FastAPI(title="car-harness", version="0.2.0")
+app = FastAPI(title="car-harness", version="0.3.0")
 
 
 @app.on_event("startup")
 def _startup():
     pairing.start_discovery_responder()
+
+
+@app.on_event("shutdown")
+def _shutdown():
+    obd_service.close_all()  # release COM ports / BLE links cleanly
 
 
 # --------------------------------------------------------------------------- #
@@ -70,7 +71,9 @@ async def _phone_auth(request: Request, call_next):
         return await call_next(request)
     auth = request.headers.get("authorization", "")
     token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-    if pairing.token_valid(token):
+    # token_valid reads (and touches) paired_devices.json -- keep that disk
+    # I/O off the event loop.
+    if await run_in_threadpool(pairing.token_valid, token):
         return await call_next(request)
     return JSONResponse(
         status_code=401,
@@ -83,7 +86,10 @@ async def _phone_auth(request: Request, call_next):
 # --------------------------------------------------------------------------- #
 @app.get("/api/profiles")
 def get_profiles() -> dict:
-    return {"profiles": registry.list_profiles()}
+    profiles = registry.list_profiles()
+    for p in profiles:
+        p["features"] = brands.features(p["id"])
+    return {"profiles": profiles}
 
 
 @app.get("/api/status", response_model=ConnectionStatus)
@@ -128,7 +134,7 @@ async def import_module_endpoint(request: Request) -> dict:
         tmp_file = tmp_dir / (getattr(upload, "filename", None) or "module.zip")
         try:
             tmp_file.write_bytes(await upload.read())
-            record = registry.import_module(str(tmp_file))
+            record = await run_in_threadpool(registry.import_module, str(tmp_file))
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         finally:
@@ -147,7 +153,7 @@ async def import_module_endpoint(request: Request) -> dict:
     if not path:
         raise HTTPException(status_code=400, detail='JSON body must include a "path".')
     try:
-        return registry.import_module(path)
+        return await run_in_threadpool(registry.import_module, path)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -198,7 +204,9 @@ async def test_adapter(request: Request) -> dict:
     config = (body or {}).get("config") or {}
     if not type_id:
         raise HTTPException(status_code=400, detail='JSON body must include a "typeId".')
-    return adapter_registry.test_config(type_id, config).model_dump()
+    # A BLE test can scan for tens of seconds -- never on the event loop.
+    result = await run_in_threadpool(adapter_registry.test_config, type_id, config)
+    return result.model_dump()
 
 
 @app.post("/api/adapters")
@@ -219,7 +227,8 @@ async def create_adapter(request: Request) -> dict:
     if not name:
         raise HTTPException(status_code=400, detail='JSON body must include a "name".')
     try:
-        return adapter_registry.save_instance(type_id, name, config).model_dump()
+        saved = await run_in_threadpool(adapter_registry.save_instance, type_id, name, config)
+        return saved.model_dump()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -278,7 +287,7 @@ async def obd_clear(request: Request) -> dict:
     mode = body.get("mode") or "real"
     instance = _obd_adapter_or_400(body.get("adapter"), mode)
     try:
-        return obd_service.clear(instance, mode)
+        return await run_in_threadpool(obd_service.clear, instance, mode)
     except obd_service.ObdServiceError as exc:
         return {"ok": False, "simulated": False, "message": str(exc)}
 
@@ -303,167 +312,6 @@ def obd_pids(adapter: str | None = None, mode: str = "real") -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# BMW ENET deep scan: every module's fault memory over the ENET cable
-# (HSFZ, F-series). Read-only except /clear, which demands confirm: true.
-# --------------------------------------------------------------------------- #
-@app.get("/api/bmw/discover")
-def bmw_discover() -> dict:
-    return bmw_scan.discover()
-
-
-@app.get("/api/bmw/scan")
-def bmw_full_scan(mode: str = "real") -> dict:
-    if mode not in ("real", "sim"):
-        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
-    return bmw_scan.scan(mode)
-
-
-@app.post("/api/bmw/clear")
-async def bmw_clear(request: Request) -> dict:
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail='Send JSON {"mode": "real"|"sim", "confirm": true, "address": "0x63"?}.',
-        )
-    body = body or {}
-    if body.get("confirm") is not True:
-        raise HTTPException(
-            status_code=400,
-            detail="Clearing module fault memory changes the car. Send confirm: true.",
-        )
-    mode = body.get("mode") or "real"
-    if mode not in ("real", "sim"):
-        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
-    return bmw_scan.clear(mode, body.get("address"))
-
-
-# --------------------------------------------------------------------------- #
-# Mazda module scan over a generic OBD dongle (HS-CAN, UDS). Read-only except
-# /clear, which demands confirm: true. Needs an ELM327-style adapter (there is
-# no native Mazda cable); mode=sim returns clearly-labelled fakes.
-# --------------------------------------------------------------------------- #
-@app.get("/api/mazda/scan")
-def mazda_full_scan(adapter: str | None = None, mode: str = "real") -> dict:
-    instance = _obd_adapter_or_400(adapter, mode)
-    return mazda_scan.scan(instance, mode)
-
-
-@app.get("/api/mazda/live")
-def mazda_live(adapter: str | None = None, mode: str = "real") -> dict:
-    """Mazda-specific mode-22 values (one pass). Read-only."""
-    instance = _obd_adapter_or_400(adapter, mode)
-    return mazda_pids.live(instance, mode)
-
-
-@app.get("/api/mazda/snapshot")
-def mazda_snapshot(adapter: str | None = None, mode: str = "real") -> dict:
-    """Passive broadcast-CAN snapshot (ATMA sniff). Read-only."""
-    instance = _obd_adapter_or_400(adapter, mode)
-    return mazda_snapshot_mod.snapshot(instance, mode)
-
-
-@app.post("/api/mazda/clear")
-async def mazda_clear(request: Request) -> dict:
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail='Send JSON {"adapter": "...", "mode": "real"|"sim", "confirm": true, "address": "0x7E0"?}.',
-        )
-    body = body or {}
-    if body.get("confirm") is not True:
-        raise HTTPException(
-            status_code=400,
-            detail="Clearing module fault memory changes the car. Send confirm: true.",
-        )
-    mode = body.get("mode") or "real"
-    instance = _obd_adapter_or_400(body.get("adapter"), mode)
-    return mazda_scan.clear(instance, mode, body.get("address"))
-
-
-# --------------------------------------------------------------------------- #
-# Peugeot / PSA module scan over a generic OBD dongle (diagnostic CAN, UDS).
-# Read-only except /clear, which demands confirm: true. Needs an ELM327-style
-# adapter (no native PSA cable here); mode=sim returns clearly-labelled fakes.
-# --------------------------------------------------------------------------- #
-@app.get("/api/peugeot/scan")
-def peugeot_full_scan(adapter: str | None = None, mode: str = "real") -> dict:
-    instance = _obd_adapter_or_400(adapter, mode)
-    return peugeot_scan.scan(instance, mode)
-
-
-@app.get("/api/peugeot/live")
-def peugeot_live(adapter: str | None = None, mode: str = "real") -> dict:
-    """Peugeot health check: PSA-specific mode-22 values + mileage cross-check."""
-    instance = _obd_adapter_or_400(adapter, mode)
-    return peugeot_pids.live(instance, mode)
-
-
-@app.post("/api/peugeot/clear")
-async def peugeot_clear(request: Request) -> dict:
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail='Send JSON {"adapter": "...", "mode": "real"|"sim", "confirm": true, "address": "0x752"?}.',
-        )
-    body = body or {}
-    if body.get("confirm") is not True:
-        raise HTTPException(
-            status_code=400,
-            detail="Clearing module fault memory changes the car. Send confirm: true.",
-        )
-    mode = body.get("mode") or "real"
-    instance = _obd_adapter_or_400(body.get("adapter"), mode)
-    return peugeot_scan.clear(instance, mode, body.get("address"))
-
-
-# --------------------------------------------------------------------------- #
-# Service resets (per manufacturer): oil / brake / inspection counters.
-# GET the catalog (no car needed); POST to run one (confirm-gated, may change
-# the car). BMW CBS + Mazda UDS resets go over the ELM327 dongle; procedure-only
-# entries (e.g. PSA spanner) return their steps instead of touching the car.
-# --------------------------------------------------------------------------- #
-@app.get("/api/{brand}/resets")
-def get_resets(brand: str) -> dict:
-    module = _RESETS_BY_BRAND.get(brand)
-    if module is None:
-        raise HTTPException(status_code=404, detail=f"No service resets for '{brand}'.")
-    return module.list_resets()
-
-
-@app.post("/api/{brand}/reset")
-async def run_reset(brand: str, request: Request) -> dict:
-    module = _RESETS_BY_BRAND.get(brand)
-    if module is None:
-        raise HTTPException(status_code=404, detail=f"No service resets for '{brand}'.")
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail='Send JSON {"reset_id": "...", "adapter": "...", "mode": "real"|"sim", "confirm": true}.',
-        )
-    body = body or {}
-    reset_id = body.get("reset_id")
-    if not reset_id:
-        raise HTTPException(status_code=400, detail='JSON body must include a "reset_id".')
-    mode = body.get("mode") or "real"
-    # Procedure lookups and sim runs need no adapter; a real UDS run does.
-    adapter = None
-    if mode == "real":
-        instance = _obd_adapter_or_400(body.get("adapter"), mode)
-        adapter = instance
-    elif mode != "sim":
-        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
-    return module.perform(adapter, mode, reset_id, bool(body.get("confirm")))
-
-
-# --------------------------------------------------------------------------- #
 # Phone pairing.
 # --------------------------------------------------------------------------- #
 @app.post("/api/pair/start")
@@ -482,7 +330,9 @@ async def pair_claim(request: Request) -> dict:
         raise HTTPException(status_code=400, detail='Send JSON {"code": "123456", "deviceName": "..."}.')
     body = body or {}
     try:
-        return pairing.claim(str(body.get("code") or ""), str(body.get("deviceName") or ""))
+        return await run_in_threadpool(
+            pairing.claim, str(body.get("code") or ""), str(body.get("deviceName") or "")
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
 
@@ -502,6 +352,121 @@ def pair_remove(device_id: str) -> dict:
 @app.get("/api/ping")
 def ping() -> dict:
     return {"app": "car-harness", "version": app.version}
+
+
+# --------------------------------------------------------------------------- #
+# Manufacturer routes -- GENERIC over backend/profiles/<brand>/.
+#
+# Registered LAST among /api routes so every literal path above (obd, pair,
+# adapters, ...) wins before {brand} can match. A brand only resolves if
+# backend/profiles/<brand>/profile.json exists; everything else is 404.
+#
+# Read-only except /clear and /reset, which demand confirm: true.
+# --------------------------------------------------------------------------- #
+def _brand_capability_or_404(brand: str, name: str):
+    module = brands.brand_module(brand, name)
+    if module is None:
+        raise HTTPException(
+            status_code=404, detail=f"No '{name}' capability for '{brand}'."
+        )
+    return module
+
+
+@app.get("/api/{brand}/discover")
+def brand_discover(brand: str) -> dict:
+    """Find the car on a brand's native cable (BMW ENET). Read-only."""
+    module = _brand_capability_or_404(brand, "scan")
+    if not hasattr(module, "discover"):
+        raise HTTPException(status_code=404, detail=f"'{brand}' has no discover step.")
+    return module.discover()
+
+
+@app.get("/api/{brand}/scan")
+def brand_scan(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """Walk the brand's modules and read each one's own fault memory."""
+    module = _brand_capability_or_404(brand, "scan")
+    if brands.needs_adapter(brand):
+        instance = _obd_adapter_or_400(adapter, mode)
+        return module.scan(instance, mode)
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return module.scan(mode)
+
+
+@app.get("/api/{brand}/live")
+def brand_live(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """Brand-specific live values (Mazda mode-22 extras, Peugeot health check)."""
+    module = _brand_capability_or_404(brand, "pids")
+    instance = _obd_adapter_or_400(adapter, mode)
+    return module.live(instance, mode)
+
+
+@app.get("/api/{brand}/snapshot")
+def brand_snapshot(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """Passive broadcast-CAN capture (ATMA sniff). Read-only."""
+    module = _brand_capability_or_404(brand, "snapshot")
+    instance = _obd_adapter_or_400(adapter, mode)
+    return module.snapshot(instance, mode)
+
+
+@app.post("/api/{brand}/clear")
+async def brand_clear(brand: str, request: Request) -> dict:
+    module = _brand_capability_or_404(brand, "scan")
+    if not hasattr(module, "clear"):
+        raise HTTPException(status_code=404, detail=f"'{brand}' has no clear.")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"adapter": "..."?, "mode": "real"|"sim", "confirm": true, "address": "0x..."?}.',
+        )
+    body = body or {}
+    if body.get("confirm") is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="Clearing module fault memory changes the car. Send confirm: true.",
+        )
+    mode = body.get("mode") or "real"
+    if brands.needs_adapter(brand):
+        instance = _obd_adapter_or_400(body.get("adapter"), mode)
+        return await run_in_threadpool(module.clear, instance, mode, body.get("address"))
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return await run_in_threadpool(module.clear, mode, body.get("address"))
+
+
+@app.get("/api/{brand}/resets")
+def get_resets(brand: str) -> dict:
+    """The brand's service-reset catalogue (no car needed to browse it)."""
+    module = _brand_capability_or_404(brand, "resets")
+    return module.list_resets()
+
+
+@app.post("/api/{brand}/reset")
+async def run_reset(brand: str, request: Request) -> dict:
+    module = _brand_capability_or_404(brand, "resets")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"reset_id": "...", "adapter": "...", "mode": "real"|"sim", "confirm": true}.',
+        )
+    body = body or {}
+    reset_id = body.get("reset_id")
+    if not reset_id:
+        raise HTTPException(status_code=400, detail='JSON body must include a "reset_id".')
+    mode = body.get("mode") or "real"
+    # Procedure lookups and sim runs need no adapter; a real UDS run does.
+    adapter = None
+    if mode == "real":
+        adapter = _obd_adapter_or_400(body.get("adapter"), mode)
+    elif mode != "sim":
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return await run_in_threadpool(
+        module.perform, adapter, mode, reset_id, bool(body.get("confirm"))
+    )
 
 
 # --------------------------------------------------------------------------- #

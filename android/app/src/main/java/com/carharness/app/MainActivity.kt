@@ -3,6 +3,7 @@ package com.carharness.app
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +20,14 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
             if (results.values.all { it }) {
                 pendingBtAction?.invoke()
+            } else {
+                // Without feedback a denied tap looks like a broken button.
+                Toast.makeText(
+                    this,
+                    "Bluetooth permission needed to reach the dongle — allow it in " +
+                        "Settings > Apps > Car Harness > Permissions.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
             pendingBtAction = null
         }

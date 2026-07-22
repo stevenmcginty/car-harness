@@ -51,34 +51,42 @@ class Elm327Session:
     # lifecycle
     # ------------------------------------------------------------------ #
     def open(self):
-        """Connect the transport and run the ELM init sequence."""
+        """Connect the transport and run the ELM init sequence.
+
+        If the transport connects but the init fails (no ELM327 banner, link
+        error mid-init), the transport is closed before raising -- otherwise a
+        serial port / BLE GATT link would leak on every half-failed connect.
+        """
         import time
 
         self.transport_info = self.transport.open()
+        try:
+            # ATZ with retries: 'STOPPED' means we interrupted a running command
+            # (e.g. the wake-CR made it repeat its last one) and an empty reply
+            # means it was mid-reset -- both settle after a moment.
+            reply = ""
+            for _attempt in range(3):
+                reply = self._raw(b"ATZ\r", timeout=7.0)
+                if "ELM327" in reply.upper():
+                    break
+                time.sleep(1.0)
+            if "ELM327" not in reply.upper():
+                got = reply.strip() or "nothing"
+                raise ObdError(
+                    f"The dongle answered the reset with {got!r} instead of an "
+                    "ELM327 banner.",
+                    kind="link",
+                )
+            m = re.search(r"ELM327\s+(v[\w.]+)", reply, re.IGNORECASE)
+            self.firmware = m.group(1) if m else "ELM327"
 
-        # ATZ with retries: 'STOPPED' means we interrupted a running command
-        # (e.g. the wake-CR made it repeat its last one) and an empty reply
-        # means it was mid-reset -- both settle after a moment.
-        reply = ""
-        for _attempt in range(3):
-            reply = self._raw(b"ATZ\r", timeout=7.0)
-            if "ELM327" in reply.upper():
-                break
-            time.sleep(1.0)
-        if "ELM327" not in reply.upper():
-            got = reply.strip() or "nothing"
-            raise ObdError(
-                f"The dongle answered the reset with {got!r} instead of an "
-                "ELM327 banner.",
-                kind="link",
-            )
-        m = re.search(r"ELM327\s+(v[\w.]+)", reply, re.IGNORECASE)
-        self.firmware = m.group(1) if m else "ELM327"
-
-        # echo off, linefeeds off, spaces off, headers off, auto protocol.
-        for cmd in (b"ATE0\r", b"ATL0\r", b"ATS0\r", b"ATH0\r", b"ATSP0\r"):
-            self._raw(cmd, timeout=3.0)
-        self.opened = True
+            # echo off, linefeeds off, spaces off, headers off, auto protocol.
+            for cmd in (b"ATE0\r", b"ATL0\r", b"ATS0\r", b"ATH0\r", b"ATSP0\r"):
+                self._raw(cmd, timeout=3.0)
+            self.opened = True
+        except Exception:
+            self.close()
+            raise
 
     def close(self):
         self.opened = False

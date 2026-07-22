@@ -140,6 +140,15 @@ class Elm327Session(private val transport: ObdTransport) {
     }
 
     private fun collect(text: String, echo: String): List<ByteArray> {
+        // A completely empty reply means the DONGLE never answered (dead link
+        // or BLE timeout) -- distinct from NO DATA, where the dongle answered
+        // but the car didn't. Monitor/AT paths don't come through here.
+        if (text.isBlank()) {
+            throw ObdException(
+                "The dongle didn't answer — the command timed out.",
+                ObdException.Kind.LINK
+            )
+        }
         val upper = text.uppercase()
         for (token in LINK_ERROR_TOKENS) {
             if (upper.contains(token)) {

@@ -94,26 +94,23 @@
     liveToggle: document.getElementById("live-toggle"),
     liveMessage: document.getElementById("live-message"),
     liveGrid: document.getElementById("live-grid"),
-    bmwScanBtn: document.getElementById("bmw-scan-btn"),
-    bmwSimBanner: document.getElementById("bmw-sim-banner"),
-    bmwResult: document.getElementById("bmw-result"),
-    bmwChips: document.getElementById("bmw-chips"),
-    bmwMessage: document.getElementById("bmw-message"),
-    bmwModules: document.getElementById("bmw-modules"),
-    mazdaScanBtn: document.getElementById("mazda-scan-btn"),
-    mazdaLiveBtn: document.getElementById("mazda-live-btn"),
-    mazdaSnapBtn: document.getElementById("mazda-snap-btn"),
-    mazdaSimBanner: document.getElementById("mazda-sim-banner"),
-    mazdaResult: document.getElementById("mazda-result"),
-    mazdaChips: document.getElementById("mazda-chips"),
-    mazdaMessage: document.getElementById("mazda-message"),
-    mazdaModules: document.getElementById("mazda-modules"),
-    mazdaExtras: document.getElementById("mazda-extras"),
-    mazdaExtrasMessage: document.getElementById("mazda-extras-message"),
-    mazdaExtrasChips: document.getElementById("mazda-extras-chips"),
-    serviceBrandBmw: document.getElementById("service-brand-bmw"),
-    serviceBrandMazda: document.getElementById("service-brand-mazda"),
-    serviceBrandPeugeot: document.getElementById("service-brand-peugeot"),
+    brandPanel: document.getElementById("brand-panel"),
+    brandTitle: document.getElementById("brand-title"),
+    brandActions: document.getElementById("brand-actions"),
+    brandScanBtn: document.getElementById("brand-scan-btn"),
+    brandSimBanner: document.getElementById("brand-sim-banner"),
+    brandHint: document.getElementById("brand-hint"),
+    brandResult: document.getElementById("brand-result"),
+    brandChips: document.getElementById("brand-chips"),
+    brandMessage: document.getElementById("brand-message"),
+    brandModules: document.getElementById("brand-modules"),
+    brandExtras: document.getElementById("brand-extras"),
+    brandExtrasTitle: document.getElementById("brand-extras-title"),
+    brandExtrasHint: document.getElementById("brand-extras-hint"),
+    brandExtrasMessage: document.getElementById("brand-extras-message"),
+    brandExtrasChips: document.getElementById("brand-extras-chips"),
+    serviceBrandLabel: document.getElementById("service-brand-label"),
+    jobsBrandLabel: document.getElementById("jobs-brand-label"),
     serviceMessage: document.getElementById("service-message"),
     serviceList: document.getElementById("service-list"),
     pairBtn: document.getElementById("pair-btn"),
@@ -122,7 +119,7 @@
     pairModalBody: document.getElementById("pair-modal-body")
   };
 
-  // OBD-II + pairing state.
+  // OBD-II + pairing + brand-panel state.
   var obd = {
     scanInFlight: false,
     clearInFlight: false,
@@ -132,9 +129,8 @@
     liveInFlight: false
   };
   var pair = { open: false, info: null, devices: [], error: "" };
-  var bmw = { scanInFlight: false, clearInFlight: false };
-  var mazda = { scanInFlight: false, clearInFlight: false, liveInFlight: false };
-  var service = { brand: "", loading: false, runningId: null };
+  var brand = { scanInFlight: false, clearInFlight: false, extrasInFlight: false };
+  var service = { loading: false, runningId: null };
 
   // ---------- Helpers ----------
 
@@ -202,8 +198,7 @@
       // banner never contradicts old results, then poll until it comes back.
       renderStatusOffline();
       resetObdPanel();
-      resetBmwPanel();
-      resetMazdaPanel();
+      resetBrandPanel();
       startReconnectPoll();
     }
   }
@@ -214,14 +209,29 @@
       fetch("/api/ping")
         .then(function (res) {
           if (!res.ok) return;
-          setBackendReachable(true);
-          refreshAll();
-          loadAdapters();
+          return res.json().then(function (info) {
+            setFooterVersion(info);
+            setBackendReachable(true);
+            refreshAll();
+            loadAdapters();
+          });
         })
         .catch(function () {
           /* still down; keep polling */
         });
     }, 3000);
+  }
+
+  function setFooterVersion(info) {
+    if (info && info.version) {
+      el.footerStatus.textContent = "Car Harness — v" + info.version;
+    }
+  }
+
+  function loadVersion() {
+    apiFetch("/api/ping")
+      .then(setFooterVersion)
+      .catch(function () {});
   }
 
   // ---------- Rendering: header / profiles ----------
@@ -344,7 +354,7 @@
     renderSimulatedBanner(false);
   }
 
-  // ---------- Rendering: modules ----------
+  // ---------- Rendering: job modules ----------
 
   function renderModules(modules) {
     el.modulesList.innerHTML = "";
@@ -428,6 +438,9 @@
           state.currentProfileId = state.profiles[0].id;
         }
         renderProfileOptions();
+        renderBrandPanel();
+        renderBrandLabels();
+        loadServiceResets();
       })
       .catch(function () {
         renderProfileOptions();
@@ -1438,30 +1451,112 @@
     }
   }
 
-  // ---------- BMW deep scan (ENET cable) ----------
+  // ---------- Manufacturer brand panel (generic over /api/{brand}/…) ----------
+  //
+  // One panel serves every manufacturer. Everything it shows -- title, hint,
+  // action buttons, busy text -- comes from the profile's own metadata
+  // (profile.json "panel" + "features"), so a new brand needs no UI code.
 
-  function resetBmwPanel() {
-    el.bmwResult.hidden = true;
-    el.bmwSimBanner.hidden = true;
-    el.bmwChips.innerHTML = "";
-    el.bmwModules.innerHTML = "";
-    el.bmwMessage.textContent = "";
+  function brandFeatures(p) {
+    return (p && p.features) || {};
+  }
+
+  function brandNeedsAdapter(p) {
+    var f = brandFeatures(p);
+    return f.needsAdapter !== false; // missing/undefined -> assume dongle
+  }
+
+  function resetBrandPanel() {
+    brand.scanInFlight = false;
+    brand.clearInFlight = false;
+    brand.extrasInFlight = false;
+    el.brandResult.hidden = true;
+    el.brandSimBanner.hidden = true;
+    el.brandChips.innerHTML = "";
+    el.brandModules.innerHTML = "";
+    el.brandMessage.textContent = "";
+    el.brandExtras.hidden = true;
+    el.brandExtrasChips.innerHTML = "";
+    el.brandExtrasMessage.textContent = "";
+    el.brandExtrasHint.hidden = true;
+    el.brandScanBtn.disabled = false;
+    el.brandScanBtn.textContent = "Scan all modules";
+  }
+
+  // Rebuild the panel for the selected manufacturer (dropdown change, load).
+  function renderBrandPanel() {
+    var p = currentProfile();
+    var f = brandFeatures(p);
+    if (!p || !f.scan) {
+      el.brandPanel.hidden = true;
+      return;
+    }
+    var panel = p.panel || {};
+    el.brandPanel.hidden = false;
+    el.brandTitle.textContent = "";
+    var titleText = document.createTextNode(p.name + " — " + (panel.title || "All modules"));
+    el.brandTitle.appendChild(titleText);
+    var transportTag = document.createElement("span");
+    transportTag.className = "tag transport-tag";
+    transportTag.textContent = brandNeedsAdapter(p) ? "OBD dongle" : "Native cable";
+    el.brandTitle.appendChild(transportTag);
+
+    el.brandHint.textContent = panel.hint || p.description || "";
+
+    // Action buttons: the scan button stays; extras come from panel metadata.
+    el.brandActions.querySelectorAll(".brand-extra-btn").forEach(function (btn) {
+      btn.remove();
+    });
+    (panel.actions || []).forEach(function (a) {
+      if (a.id !== "live" && a.id !== "snapshot") return;
+      if (a.id === "live" && !f.live) return;
+      if (a.id === "snapshot" && !f.snapshot) return;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-secondary brand-extra-btn";
+      btn.textContent = a.label || titleCase(a.id);
+      btn.addEventListener("click", function () {
+        runBrandExtras(a, btn);
+      });
+      el.brandActions.appendChild(btn);
+    });
+
+    resetBrandPanel();
+
+    // Subtle swap cue when changing manufacturer (no-op with reduced motion).
+    el.brandPanel.classList.remove("panel-swap");
+    void el.brandPanel.offsetWidth;
+    el.brandPanel.classList.add("panel-swap");
+  }
+
+  function renderBrandLabels() {
+    var p = currentProfile();
+    var suffix = p ? " — " + p.name : "";
+    el.serviceBrandLabel.textContent = suffix;
+    el.jobsBrandLabel.textContent = suffix;
+  }
+
+  function guardAdapterPicked(p, showMessage) {
+    if (!brandNeedsAdapter(p)) return true;
+    if (state.simulate || state.currentAdapterId) return true;
+    showMessage("Pick an ELM327-style adapter (top right) first, or turn on Simulate.");
+    return false;
   }
 
   function buildModuleRow(m, onClearRequested) {
     var row = document.createElement("div");
-    row.className = "bmw-module" + (m.present ? "" : " is-absent");
+    row.className = "module-row" + (m.present ? "" : " is-absent");
 
     var head = document.createElement("div");
-    head.className = "bmw-module-head";
+    head.className = "module-row-head";
 
     var title = document.createElement("span");
-    title.className = "bmw-module-name";
+    title.className = "module-row-name";
     title.textContent = m.code + " — " + m.name;
     head.appendChild(title);
 
     var addr = document.createElement("span");
-    addr.className = "bmw-module-addr";
+    addr.className = "module-row-addr";
     addr.textContent = m.address;
     head.appendChild(addr);
 
@@ -1530,55 +1625,67 @@
     return row;
   }
 
-  function renderBmwScan(data) {
-    el.bmwResult.hidden = false;
-    el.bmwSimBanner.hidden = !(data && data.simulated);
-    el.bmwChips.innerHTML = "";
-    el.bmwModules.innerHTML = "";
-    el.bmwMessage.textContent = (data && data.message) || "";
+  function renderBrandScan(data) {
+    el.brandResult.hidden = false;
+    el.brandSimBanner.hidden = !(data && data.simulated);
+    el.brandChips.innerHTML = "";
+    el.brandModules.innerHTML = "";
+    el.brandMessage.textContent = (data && data.message) || "";
 
     if (!data || !data.ok) return;
 
     var v = data.vehicle || {};
-    if (v.vin) el.bmwChips.appendChild(chip("VIN", v.vin, "is-mono"));
-    if (v.protocol) el.bmwChips.appendChild(chip("Protocol", v.protocol));
-    if (v.ip) el.bmwChips.appendChild(chip("Car IP", v.ip, "is-mono"));
+    if (v.vin) el.brandChips.appendChild(chip("VIN", v.vin, "is-mono"));
+    if (v.protocol) el.brandChips.appendChild(chip("Protocol", v.protocol));
+    if (v.ip) el.brandChips.appendChild(chip("Car IP", v.ip, "is-mono"));
+    if (v.adapter) el.brandChips.appendChild(chip("Adapter", v.adapter));
 
     (data.modules || []).forEach(function (m) {
-      el.bmwModules.appendChild(buildModuleRow(m, function (mm) {
-        runBmwClear(mm.address, mm.code + " — " + mm.name);
+      el.brandModules.appendChild(buildModuleRow(m, function (mm) {
+        runBrandClear(mm.address, mm.code + " — " + mm.name);
       }));
     });
   }
 
-  function runBmwScan() {
-    if (bmw.scanInFlight) return;
-    bmw.scanInFlight = true;
-    el.bmwScanBtn.disabled = true;
-    var original = el.bmwScanBtn.textContent;
-    el.bmwScanBtn.textContent = "Scanning…";
-    el.bmwResult.hidden = false;
-    el.bmwChips.innerHTML = "";
-    el.bmwModules.innerHTML = "";
-    el.bmwMessage.textContent =
-      "Walking every module through the gateway… (30–60s, absent modules time out quietly)";
+  function runBrandScan() {
+    var p = currentProfile();
+    if (!p || brand.scanInFlight) return;
+    if (
+      !guardAdapterPicked(p, function (msg) {
+        el.brandResult.hidden = false;
+        el.brandMessage.textContent = msg;
+      })
+    ) {
+      return;
+    }
+    var panel = p.panel || {};
+    brand.scanInFlight = true;
+    el.brandScanBtn.disabled = true;
+    var original = el.brandScanBtn.textContent;
+    el.brandScanBtn.textContent = "Scanning…";
+    el.brandResult.hidden = false;
+    el.brandChips.innerHTML = "";
+    el.brandModules.innerHTML = "";
+    el.brandMessage.textContent =
+      panel.scanBusy || "Walking the modules… (absent modules time out quietly)";
 
-    apiFetch("/api/bmw/scan?mode=" + obdMode())
+    apiFetch(obdUrl("/api/" + encodeURIComponent(p.id) + "/scan"))
       .then(function (data) {
-        renderBmwScan(data);
+        renderBrandScan(data);
       })
       .catch(function () {
-        renderBmwScan({ ok: false, message: "Couldn't reach the backend to scan." });
+        renderBrandScan({ ok: false, message: "Couldn't reach the backend to scan." });
       })
       .then(function () {
-        bmw.scanInFlight = false;
-        el.bmwScanBtn.disabled = false;
-        el.bmwScanBtn.textContent = original;
+        brand.scanInFlight = false;
+        el.brandScanBtn.disabled = false;
+        el.brandScanBtn.textContent = original;
       });
   }
 
-  function runBmwClear(address, label) {
-    if (bmw.clearInFlight) return;
+  function runBrandClear(address, label) {
+    var p = currentProfile();
+    if (!p || brand.clearInFlight) return;
     if (
       !window.confirm(
         "Clear the fault memory of " + label + "?\n\nFaults will return if the " +
@@ -1587,43 +1694,74 @@
     ) {
       return;
     }
-    bmw.clearInFlight = true;
-    apiFetch("/api/bmw/clear", {
+    brand.clearInFlight = true;
+    var body = { mode: obdMode(), confirm: true, address: address };
+    if (brandNeedsAdapter(p) && !state.simulate && state.currentAdapterId) {
+      body.adapter = state.currentAdapterId;
+    }
+    apiFetch("/api/" + encodeURIComponent(p.id) + "/clear", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: obdMode(), confirm: true, address: address })
+      body: JSON.stringify(body)
     })
       .then(function (data) {
-        el.bmwMessage.textContent = (data && data.message) || "";
-        if (data && data.ok) runBmwScan();
+        el.brandMessage.textContent = (data && data.message) || "";
+        if (data && data.ok) runBrandScan();
       })
       .catch(function () {
-        el.bmwMessage.textContent = "Couldn't reach the backend to clear.";
+        el.brandMessage.textContent = "Couldn't reach the backend to clear.";
       })
       .then(function () {
-        bmw.clearInFlight = false;
+        brand.clearInFlight = false;
       });
   }
 
-  // ---------- Service resets (per manufacturer) ----------
+  // One extras read (Mazda live extras / snapshot, Peugeot health check, …).
+  // ``action`` is the profile's panel.actions entry; its id doubles as the
+  // endpoint: /api/{brand}/live or /api/{brand}/snapshot.
+  function runBrandExtras(action, btn) {
+    var p = currentProfile();
+    if (!p || brand.extrasInFlight) return;
+    if (
+      !guardAdapterPicked(p, function (msg) {
+        el.brandExtras.hidden = false;
+        el.brandExtrasTitle.textContent = action.title || action.label || "Extras";
+        el.brandExtrasMessage.textContent = msg;
+      })
+    ) {
+      return;
+    }
+    brand.extrasInFlight = true;
+    btn.disabled = true;
+    var original = btn.textContent;
+    btn.textContent = "Reading…";
+    el.brandExtras.hidden = false;
+    el.brandExtrasTitle.textContent = action.title || action.label || "Extras";
+    el.brandExtrasHint.hidden = !action.hint;
+    el.brandExtrasHint.textContent = action.hint || "";
+    el.brandExtrasChips.innerHTML = "";
+    el.brandExtrasMessage.textContent = action.busy || "Reading…";
 
-  function serviceBrandButtons() {
-    return {
-      bmw: el.serviceBrandBmw,
-      mazda: el.serviceBrandMazda,
-      peugeot: el.serviceBrandPeugeot
-    };
+    apiFetch(obdUrl("/api/" + encodeURIComponent(p.id) + "/" + action.id))
+      .then(function (data) {
+        el.brandExtrasMessage.textContent = (data && data.message) || "";
+        el.brandExtrasChips.innerHTML = "";
+        ((data && data.readings) || []).forEach(function (r) {
+          var value = r.unit ? r.value + " " + r.unit : r.value;
+          el.brandExtrasChips.appendChild(chip(r.name, value));
+        });
+      })
+      .catch(function () {
+        el.brandExtrasMessage.textContent = "Couldn't reach the backend.";
+      })
+      .then(function () {
+        brand.extrasInFlight = false;
+        btn.disabled = false;
+        btn.textContent = original;
+      });
   }
 
-  function selectServiceBrand(brand) {
-    service.brand = brand;
-    var buttons = serviceBrandButtons();
-    Object.keys(buttons).forEach(function (b) {
-      buttons[b].classList.toggle("btn-primary", b === brand);
-      buttons[b].classList.toggle("btn-secondary", b !== brand);
-    });
-    loadServiceResets(brand);
-  }
+  // ---------- Service resets (follow the manufacturer dropdown) ----------
 
   function confidenceTag(confidence) {
     var span = document.createElement("span");
@@ -1637,13 +1775,13 @@
 
   function buildServiceRow(r) {
     var row = document.createElement("div");
-    row.className = "bmw-module";
+    row.className = "module-row";
 
     var head = document.createElement("div");
-    head.className = "bmw-module-head";
+    head.className = "module-row-head";
 
     var title = document.createElement("span");
-    title.className = "bmw-module-name";
+    title.className = "module-row-name";
     title.textContent = r.name;
     head.appendChild(title);
     head.appendChild(confidenceTag(r.confidence));
@@ -1704,7 +1842,7 @@
     var resets = (data && data.resets) || [];
     if (!resets.length) {
       el.serviceMessage.hidden = false;
-      el.serviceMessage.textContent = "No service resets catalogued for this brand yet.";
+      el.serviceMessage.textContent = "No service resets catalogued for this manufacturer yet.";
       return;
     }
     resets.forEach(function (r) {
@@ -1712,12 +1850,18 @@
     });
   }
 
-  function loadServiceResets(brand) {
-    service.loading = true;
+  function loadServiceResets() {
+    var p = currentProfile();
     el.serviceList.innerHTML = "";
+    if (!p || !brandFeatures(p).resets) {
+      el.serviceMessage.hidden = false;
+      el.serviceMessage.textContent = "No service resets catalogued for this manufacturer yet.";
+      return;
+    }
+    service.loading = true;
     el.serviceMessage.hidden = false;
-    el.serviceMessage.textContent = "Loading " + brand + " resets…";
-    apiFetch("/api/" + brand + "/resets")
+    el.serviceMessage.textContent = "Loading " + p.name + " resets…";
+    apiFetch("/api/" + encodeURIComponent(p.id) + "/resets")
       .then(function (data) {
         renderServiceResets(data);
       })
@@ -1731,15 +1875,16 @@
   }
 
   function runServiceReset(r) {
-    if (service.runningId) return;
+    var p = currentProfile();
+    if (!p || service.runningId) return;
     if (!confirm("Run '" + r.name + "'? This sends the reset over the dongle and changes the car.")) {
       return;
     }
     service.runningId = r.id;
-    loadServiceResets(service.brand); // re-render to disable buttons
+    loadServiceResets(); // re-render to disable buttons
     var body = { reset_id: r.id, mode: obdMode(), confirm: true };
     if (!state.simulate && state.currentAdapterId) body.adapter = state.currentAdapterId;
-    apiFetch("/api/" + service.brand + "/reset", {
+    apiFetch("/api/" + encodeURIComponent(p.id) + "/reset", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -1754,141 +1899,8 @@
       })
       .then(function () {
         service.runningId = null;
-        loadServiceResets(service.brand);
+        loadServiceResets();
       });
-  }
-
-  // ---------- Mazda module scan (OBD dongle) ----------
-
-  function resetMazdaPanel() {
-    el.mazdaResult.hidden = true;
-    el.mazdaSimBanner.hidden = true;
-    el.mazdaChips.innerHTML = "";
-    el.mazdaModules.innerHTML = "";
-    el.mazdaMessage.textContent = "";
-    el.mazdaExtras.hidden = true;
-    el.mazdaExtrasChips.innerHTML = "";
-    el.mazdaExtrasMessage.textContent = "";
-  }
-
-  function renderMazdaScan(data) {
-    el.mazdaResult.hidden = false;
-    el.mazdaSimBanner.hidden = !(data && data.simulated);
-    el.mazdaChips.innerHTML = "";
-    el.mazdaModules.innerHTML = "";
-    el.mazdaMessage.textContent = (data && data.message) || "";
-
-    if (!data || !data.ok) return;
-
-    var v = data.vehicle || {};
-    if (v.vin) el.mazdaChips.appendChild(chip("VIN", v.vin, "is-mono"));
-    if (v.protocol) el.mazdaChips.appendChild(chip("Protocol", v.protocol));
-    if (v.adapter) el.mazdaChips.appendChild(chip("Adapter", v.adapter));
-
-    (data.modules || []).forEach(function (m) {
-      el.mazdaModules.appendChild(buildModuleRow(m, function (mm) {
-        runMazdaClear(mm.address, mm.code + " — " + mm.name);
-      }));
-    });
-  }
-
-  function runMazdaScan() {
-    if (mazda.scanInFlight) return;
-    mazda.scanInFlight = true;
-    el.mazdaScanBtn.disabled = true;
-    var original = el.mazdaScanBtn.textContent;
-    el.mazdaScanBtn.textContent = "Scanning…";
-    el.mazdaResult.hidden = false;
-    el.mazdaChips.innerHTML = "";
-    el.mazdaModules.innerHTML = "";
-    el.mazdaMessage.textContent =
-      "Walking the HS-CAN modules through the dongle… (absent addresses time out quietly)";
-
-    apiFetch(obdUrl("/api/mazda/scan"))
-      .then(function (data) {
-        renderMazdaScan(data);
-      })
-      .catch(function () {
-        renderMazdaScan({ ok: false, message: "Couldn't reach the backend to scan." });
-      })
-      .then(function () {
-        mazda.scanInFlight = false;
-        el.mazdaScanBtn.disabled = false;
-        el.mazdaScanBtn.textContent = original;
-      });
-  }
-
-  function runMazdaClear(address, label) {
-    if (mazda.clearInFlight) return;
-    if (
-      !window.confirm(
-        "Clear the fault memory of " + label + "?\n\nFaults will return if the " +
-          "underlying problem is still present."
-      )
-    ) {
-      return;
-    }
-    mazda.clearInFlight = true;
-    var body = { mode: obdMode(), confirm: true, address: address };
-    if (!state.simulate && state.currentAdapterId) body.adapter = state.currentAdapterId;
-    apiFetch("/api/mazda/clear", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    })
-      .then(function (data) {
-        el.mazdaMessage.textContent = (data && data.message) || "";
-        if (data && data.ok) runMazdaScan();
-      })
-      .catch(function () {
-        el.mazdaMessage.textContent = "Couldn't reach the backend to clear.";
-      })
-      .then(function () {
-        mazda.clearInFlight = false;
-      });
-  }
-
-  function runMazdaReadings(btn, path, busyText) {
-    if (mazda.liveInFlight) return;
-    mazda.liveInFlight = true;
-    btn.disabled = true;
-    var original = btn.textContent;
-    btn.textContent = "Reading…";
-    el.mazdaExtras.hidden = false;
-    el.mazdaExtrasChips.innerHTML = "";
-    el.mazdaExtrasMessage.textContent = busyText;
-
-    apiFetch(obdUrl(path))
-      .then(function (data) {
-        el.mazdaExtrasMessage.textContent = (data && data.message) || "";
-        el.mazdaExtrasChips.innerHTML = "";
-        ((data && data.readings) || []).forEach(function (r) {
-          var value = r.unit ? r.value + " " + r.unit : r.value;
-          el.mazdaExtrasChips.appendChild(chip(r.name, value));
-        });
-      })
-      .catch(function () {
-        el.mazdaExtrasMessage.textContent = "Couldn't reach the backend.";
-      })
-      .then(function () {
-        mazda.liveInFlight = false;
-        btn.disabled = false;
-        btn.textContent = original;
-      });
-  }
-
-  function runMazdaLive() {
-    runMazdaReadings(
-      el.mazdaLiveBtn, "/api/mazda/live",
-      "Asking the modules for the Mazda-specific values…"
-    );
-  }
-
-  function runMazdaSnapshot() {
-    runMazdaReadings(
-      el.mazdaSnapBtn, "/api/mazda/snapshot",
-      "Listening to the car's broadcast frames (~10s)…"
-    );
   }
 
   // ---------- Phone pairing ----------
@@ -2036,14 +2048,16 @@
 
   el.profileSelect.addEventListener("change", function () {
     state.currentProfileId = el.profileSelect.value;
+    renderBrandPanel();
+    renderBrandLabels();
+    loadServiceResets();
     refreshAll();
   });
 
   el.simulateToggle.addEventListener("change", function () {
     state.simulate = el.simulateToggle.checked;
     resetObdPanel();
-    resetBmwPanel();
-    resetMazdaPanel();
+    resetBrandPanel();
     if (obd.liveOn) {
       el.liveToggle.checked = false;
       setLive(false);
@@ -2086,7 +2100,7 @@
   el.adapterSelect.addEventListener("change", function () {
     state.currentAdapterId = el.adapterSelect.value;
     resetObdPanel();
-    resetMazdaPanel(); // the Mazda scan runs through the picked adapter too
+    resetBrandPanel(); // brand scans run through the picked adapter too
     if (obd.liveOn) {
       el.liveToggle.checked = false;
       setLive(false);
@@ -2096,13 +2110,7 @@
 
   el.obdScanBtn.addEventListener("click", runObdScan);
   el.obdClearBtn.addEventListener("click", runObdClear);
-  el.bmwScanBtn.addEventListener("click", runBmwScan);
-  el.mazdaScanBtn.addEventListener("click", runMazdaScan);
-  el.mazdaLiveBtn.addEventListener("click", runMazdaLive);
-  el.mazdaSnapBtn.addEventListener("click", runMazdaSnapshot);
-  el.serviceBrandBmw.addEventListener("click", function () { selectServiceBrand("bmw"); });
-  el.serviceBrandMazda.addEventListener("click", function () { selectServiceBrand("mazda"); });
-  el.serviceBrandPeugeot.addEventListener("click", function () { selectServiceBrand("peugeot"); });
+  el.brandScanBtn.addEventListener("click", runBrandScan);
   el.liveToggle.addEventListener("change", function () {
     setLive(el.liveToggle.checked);
   });
@@ -2151,11 +2159,12 @@
     renderStatusOffline();
     renderProfileOptions();
     renderAdapterSelect();
+    renderBrandLabels();
+    loadVersion();
     loadProfiles().then(function () {
       refreshAll();
     });
     loadAdapters();
-    selectServiceBrand("bmw");
   }
 
   init();

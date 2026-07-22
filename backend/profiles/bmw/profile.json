@@ -4,5 +4,11 @@
   "transport": "enet-doip",
   "description": "BMW F/G-series over ENET (DoIP).",
   "probe": "profile.py",
-  "adapters": ["enet-doip", "elm327-serial", "elm327-bluetooth"]
+  "adapters": ["enet-doip", "elm327-serial", "elm327-bluetooth"],
+  "panel": {
+    "title": "All modules (ENET cable)",
+    "hint": "Deep scan over the yellow ENET cable — every module's fault memory (airbag, ABS, iDrive, gearbox…), not just the engine. Plug the cable into the car's OBD port and the laptop's USB-Ethernet adapter, ignition ON, give the link ~30s to settle, then scan. BMW F-Series (≈2011–2018); read-only unless you clear.",
+    "scanBusy": "Walking every module through the gateway… (30–60s, absent modules time out quietly)",
+    "actions": []
+  }
 }

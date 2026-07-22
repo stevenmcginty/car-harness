@@ -29,6 +29,9 @@ class BleTransport(private val context: Context, private val device: BluetoothDe
 
     override val label = "BLE ${device.name ?: device.address}"
 
+    /** Fired once if the link drops AFTER a successful open (never on close()). */
+    @Volatile var onLinkLost: (() -> Unit)? = null
+
     private var gatt: BluetoothGatt? = null
     private var writeChar: BluetoothGattCharacteristic? = null
     private var notifyChar: BluetoothGattCharacteristic? = null
@@ -40,6 +43,8 @@ class BleTransport(private val context: Context, private val device: BluetoothDe
     @Volatile private var servicesLatch = CountDownLatch(1)
     @Volatile private var descriptorLatch = CountDownLatch(1)
     @Volatile private var connectionState = BluetoothProfile.STATE_DISCONNECTED
+    @Volatile private var wasConnected = false
+    @Volatile private var closed = false
 
     companion object {
         private val CCC_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
@@ -58,13 +63,24 @@ class BleTransport(private val context: Context, private val device: BluetoothDe
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             connectionState = newState
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                wasConnected = true
                 connectLatch.countDown()
-                g.discoverServices()
+                // Ask for a bigger ATT MTU first (default is 23 bytes -- fine for
+                // commands, cramped for multi-frame fault dumps). Services are
+                // discovered from onMtuChanged; if the request can't even be
+                // issued, fall through to discovery directly.
+                if (!g.requestMtu(185)) g.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 connectLatch.countDown()
                 servicesLatch.countDown()
                 promptLatch.countDown()
+                // An unexpected drop mid-session (not our own close()).
+                if (wasConnected && !closed) onLinkLost?.invoke()
             }
+        }
+
+        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
+            g.discoverServices() // runs whether the MTU request succeeded or not
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
@@ -202,13 +218,20 @@ class BleTransport(private val context: Context, private val device: BluetoothDe
         synchronized(bufferLock) { buffer.reset() }
         promptLatch = CountDownLatch(1)
         rawWrite(data)
-        promptLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        val gotPrompt = promptLatch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        // A timed-out wait with the link down is a drop, not a slow ELM. A
+        // timeout WITH data (or none) still returns the buffer as-is: monitor
+        // commands (ATMA) legitimately end on the deadline with no '>' prompt.
+        if (!gotPrompt && connectionState != BluetoothProfile.STATE_CONNECTED) {
+            throw IOException("BLE link dropped mid-command.")
+        }
         synchronized(bufferLock) {
             return buffer.toByteArray()
         }
     }
 
     override fun close() {
+        closed = true
         try {
             gatt?.disconnect()
         } catch (_: Exception) {

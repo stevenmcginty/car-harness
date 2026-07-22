@@ -188,9 +188,12 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
         }
         try {
             val log = when (reset.brand) {
+                "bmw" -> BmwUds.performReset(session, reset, onProgress)
                 "mazda" -> MazdaUds.performReset(session, reset, onProgress)
                 "peugeot" -> PeugeotUds.performReset(session, reset, onProgress)
-                else -> BmwUds.performReset(session, reset, onProgress)
+                else -> throw IllegalArgumentException(
+                    "No reset engine for brand '${reset.brand}'."
+                )
             }
             ResetOutcome(
                 ok = true,

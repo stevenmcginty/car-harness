@@ -26,7 +26,7 @@ data class UdsModuleResult(
 data class UdsScanReport(
     val ok: Boolean,
     val simulated: Boolean,
-    val brand: String,       // "bmw" | "mazda" — which scan produced this
+    val brand: String,       // Brand.id from Brands.all — which scan produced this
     val modules: List<UdsModuleResult>,
     val message: String,
     val vin: String? = null, // consensus VIN across modules — identifies the car

@@ -15,6 +15,8 @@ import com.carharness.app.harness.DesktopServer
 import com.carharness.app.harness.HarnessClient
 import com.carharness.app.obd.BleTransport
 import com.carharness.app.obd.BluetoothSppTransport
+import com.carharness.app.obd.BrandAction
+import com.carharness.app.obd.Brands
 import com.carharness.app.obd.DemoTransport
 import com.carharness.app.obd.EnhancedReading
 import com.carharness.app.obd.Dtc
@@ -121,8 +123,9 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
         disconnect()
         connState = ConnState.Connecting
         scope.launch(Dispatchers.IO) {
+            var transport: ObdTransport? = null
             try {
-                val transport: ObdTransport = when (kind) {
+                val t: ObdTransport = when (kind) {
                     "demo" -> DemoTransport()
                     "wifi" -> WifiTransport(wifiHost.trim(), wifiPort.trim().toIntOrNull() ?: 35000)
                     "bt" -> {
@@ -135,15 +138,38 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                     }
                     else -> throw IllegalArgumentException("unknown transport")
                 }
-                val s = Elm327Session(transport)
+                transport = t
+                val s = Elm327Session(t)
                 s.open()
                 val voltage = s.voltage()
                 session = s
                 controller = ObdController(s, simulated = kind == "demo")
+                if (t is BleTransport) {
+                    // Surface a mid-session BLE drop instead of showing
+                    // "Connected" forever with every button silently failing.
+                    t.onLinkLost = {
+                        scope.launch(Dispatchers.Main) {
+                            if (session === s) {
+                                disconnect()
+                                connState = ConnState.Error(
+                                    "BLE link lost — the dongle went out of range or powered " +
+                                        "off. Reconnect from the Car tab."
+                                )
+                            }
+                        }
+                    }
+                }
                 withContext(Dispatchers.Main) {
-                    connState = ConnState.Connected(transport.label, s.firmware, voltage)
+                    connState = ConnState.Connected(t.label, s.firmware, voltage)
                 }
             } catch (e: Exception) {
+                // Elm327Session.open() closes the transport when the init fails,
+                // but a failure before/around it (voltage, wiring) must not leak
+                // a live GATT link or socket. Closing twice is harmless.
+                try {
+                    transport?.close()
+                } catch (_: Exception) {
+                }
                 withContext(Dispatchers.Main) {
                     connState = ConnState.Error(e.message ?: "Could not connect.")
                 }
@@ -167,6 +193,20 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
         }
         connState = ConnState.Idle
         readings = emptyList()
+        // Results and errors from the old connection are another car's story --
+        // showing them as if still live would mislead on the next vehicle.
+        scanResult = null
+        faultError = ""
+        liveError = ""
+        modReport = null
+        modError = ""
+        modProgress = ""
+        extras = emptyList()
+        extrasRead = false
+        extrasBrand = ""
+        resetMessage = ""
+        resetProgress = ""
+        resetLog = emptyList()
     }
 
     // ---------------- live data ----------------
@@ -215,6 +255,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
             return
         }
         if (scanning) return
+        setLive(false) // don't make the scan fight the dashboard for the ELM
         scanning = true
         faultError = ""
         scope.launch(Dispatchers.IO) {
@@ -223,7 +264,9 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 withContext(Dispatchers.Main) { scanResult = result }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    faultError = e.message ?: "Scan failed."
+                    // After an intentional disconnect the failure is expected --
+                    // don't surface it as if the scan itself went wrong.
+                    if (controller === ctrl) faultError = e.message ?: "Scan failed."
                 }
             } finally {
                 withContext(Dispatchers.Main) { scanning = false }
@@ -234,6 +277,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     fun runClear() {
         val ctrl = controller ?: return
         if (clearing) return
+        setLive(false) // don't make the clear fight the dashboard for the ELM
         clearing = true
         faultError = ""
         scope.launch(Dispatchers.IO) {
@@ -243,7 +287,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 withContext(Dispatchers.Main) { scanResult = result }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    faultError = e.message ?: "Clear failed."
+                    if (controller === ctrl) faultError = e.message ?: "Clear failed."
                 }
             } finally {
                 withContext(Dispatchers.Main) { clearing = false }
@@ -251,8 +295,8 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
-    // ------------- manufacturer module scan (BMW / Mazda / Peugeot) ---------
-    var moduleBrand by mutableStateOf("bmw") // bmw | mazda | peugeot
+    // ------------- manufacturer module scan (see obd/Brands.kt) -------------
+    var moduleBrand by mutableStateOf(Brands.all.first().id)
     var modScanning by mutableStateOf(false)
     var modProgress by mutableStateOf("")
     var modReport by mutableStateOf<UdsScanReport?>(null)
@@ -264,9 +308,10 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     // ran last; extrasBrand keeps a Mazda card from showing under Peugeot.
     var extras by mutableStateOf<List<EnhancedReading>>(emptyList())
     var extrasBusy by mutableStateOf(false)
-    var extrasRead by mutableStateOf(false)  // true once a read completed
-    var extrasSource by mutableStateOf("")   // "extras" | "snapshot"
-    var extrasBrand by mutableStateOf("")    // brand that produced the card
+    var extrasRead by mutableStateOf(false)     // true once a read completed
+    var extrasSource by mutableStateOf("")      // BrandAction.id that produced it
+    var extrasBrand by mutableStateOf("")       // brand that produced the card
+    var extrasRunningId by mutableStateOf<String?>(null) // BrandAction.id in flight
 
     fun chooseModuleBrand(brand: String) {
         if (brand == moduleBrand) return
@@ -279,9 +324,12 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
             modError = "Connect to the car first (Car tab)."
             return
         }
+        val brand = Brands.byId(moduleBrand) ?: run {
+            modError = "Unknown brand '$moduleBrand'."
+            return
+        }
         if (modScanning) return
         setLive(false) // a module scan retargets the ELM; pause the dashboard
-        val brand = moduleBrand
         modScanning = true
         modError = ""
         modProgress = "Starting module scan…"
@@ -290,18 +338,14 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 val onStep: (String) -> Unit = { step ->
                     scope.launch(Dispatchers.Main) { modProgress = step }
                 }
-                val report = when (brand) {
-                    "mazda" -> ctrl.mazdaScan(onStep)
-                    "peugeot" -> ctrl.peugeotScan(onStep)
-                    else -> ctrl.bmwScan(onStep)
-                }
+                val report = brand.scan(ctrl, onStep)
                 withContext(Dispatchers.Main) {
                     modReport = report
                     if (!report.ok) modError = report.message
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    modError = e.message ?: "Module scan failed."
+                    if (controller === ctrl) modError = e.message ?: "Module scan failed."
                 }
             } finally {
                 withContext(Dispatchers.Main) {
@@ -315,16 +359,13 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     fun runModuleClear(address: Int) {
         val ctrl = controller ?: return
         val report = modReport ?: return
+        val brand = Brands.byId(report.brand) ?: return
         if (modClearingAddr != null || modScanning) return
         modClearingAddr = address
         modError = ""
         scope.launch(Dispatchers.IO) {
             try {
-                val fresh = when (report.brand) {
-                    "mazda" -> ctrl.mazdaClear(address)
-                    "peugeot" -> ctrl.peugeotClear(address)
-                    else -> ctrl.bmwClear(address)
-                }
+                val fresh = brand.clear(ctrl, address)
                 withContext(Dispatchers.Main) {
                     modReport = modReport?.let { r ->
                         r.copy(modules = r.modules.map { m ->
@@ -334,7 +375,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    modError = e.message ?: "Clear failed."
+                    if (controller === ctrl) modError = e.message ?: "Clear failed."
                 }
             } finally {
                 withContext(Dispatchers.Main) { modClearingAddr = null }
@@ -342,56 +383,41 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
-    private fun runExtraReadings(
-        brand: String,
-        source: String,
-        read: suspend (ObdController, (String) -> Unit) -> List<EnhancedReading>,
-    ) {
+    /** Run one of the selected brand's extra actions (extras / snapshot / …). */
+    fun runBrandAction(action: BrandAction) {
         val ctrl = controller ?: run {
             modError = "Connect to the car first (Car tab)."
             return
         }
         if (extrasBusy || modScanning) return
         setLive(false) // retargets the ELM; pause the dashboard
+        val brand = moduleBrand
         extrasBusy = true
+        extrasRunningId = action.id
         modError = ""
         scope.launch(Dispatchers.IO) {
             try {
-                val readings = read(ctrl) { step ->
+                val readings = action.run(ctrl) { step ->
                     scope.launch(Dispatchers.Main) { modProgress = step }
                 }
                 withContext(Dispatchers.Main) {
                     extras = readings
                     extrasRead = true
-                    extrasSource = source
+                    extrasSource = action.id
                     extrasBrand = brand
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    modError = e.message ?: "Read failed."
+                    if (controller === ctrl) modError = e.message ?: "Read failed."
                 }
             } finally {
                 withContext(Dispatchers.Main) {
                     extrasBusy = false
+                    extrasRunningId = null
                     modProgress = ""
                 }
             }
         }
-    }
-
-    /** Mazda mode-22 values asked from each module (PCM, TCM, cluster, body). */
-    fun runMazdaExtras() = runExtraReadings("mazda", "extras") { ctrl, onStep ->
-        ctrl.mazdaEnhanced(onStep)
-    }
-
-    /** Passive listen to the car's own broadcast frames — sends nothing. */
-    fun runMazdaSnapshot() = runExtraReadings("mazda", "snapshot") { ctrl, onStep ->
-        ctrl.mazdaSnapshot(onStep)
-    }
-
-    /** Peugeot dealer health check: PSA-specific values + mileage cross-check. */
-    fun runPeugeotExtras() = runExtraReadings("peugeot", "extras") { ctrl, onStep ->
-        ctrl.peugeotEnhanced(onStep)
     }
 
     // ---------------- service resets (oil / brake / inspection) -------------

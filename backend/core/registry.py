@@ -132,18 +132,26 @@ def list_profiles() -> List[dict]:
                 "id": pid,
                 "name": data.get("name", pid),
                 "transport": data.get("transport", ""),
+                "description": data.get("description", ""),
+                "panel": data.get("panel"),
                 "modules": summaries,
             }
         )
     return profiles
 
 
+_probe_cache: dict = {}
+
+
 def load_profile_probe(profile_id: str):
     """Dynamically import a profile's probe module (its profile.py) by file path.
 
     Returns the imported module (expected to expose ``status(mode)``) or None if
-    the profile or its probe file is missing.
+    the profile or its probe file is missing or fails to import. Cached per id
+    so /api/status doesn't re-execute the module on every poll.
     """
+    if profile_id in _probe_cache:
+        return _probe_cache[profile_id]
     profile_dir = PROFILES_DIR / profile_id
     profile_json = profile_dir / "profile.json"
     if not profile_json.is_file():
@@ -159,7 +167,11 @@ def load_profile_probe(profile_id: str):
     if spec is None or spec.loader is None:
         return None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return None  # a broken profile.py must not 500 every /api/status call
+    _probe_cache[profile_id] = module
     return module
 
 

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.carharness.app.AppState
 import com.carharness.app.ConnState
+import com.carharness.app.obd.Brands
 import com.carharness.app.obd.UdsDtc
 import com.carharness.app.obd.UdsModuleResult
 
@@ -68,39 +69,20 @@ fun ModulesScreen(state: AppState) {
     }
 
     val brand = state.moduleBrand
-    val mazda = brand == "mazda"
-    val peugeot = brand == "peugeot"
+    val brandDef = Brands.byId(brand)
 
     LazyColumn(Modifier.fillMaxSize().padding(top = 10.dp)) {
         item {
             SectionCard {
                 PanelTitle("MODULE SCAN")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BrandChip("BMW", brand == "bmw") { state.chooseModuleBrand("bmw") }
-                    BrandChip("Mazda", mazda) { state.chooseModuleBrand("mazda") }
-                    BrandChip("Peugeot", peugeot) { state.chooseModuleBrand("peugeot") }
+                    Brands.all.forEach { b ->
+                        BrandChip(b.label, brand == b.id) { state.chooseModuleBrand(b.id) }
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    when {
-                        peugeot ->
-                            "Scan all modules walks the Peugeot's (PSA) control units by their own " +
-                                "CAN ids — BSI, engine, gearbox, ABS, airbags, cluster, AdBlue/DPF " +
-                                "and more — reads each one's fault memory, and cross-checks every " +
-                                "module's VIN. Health check adds DPF soot/regen (HDi diesels) and " +
-                                "battery State-of-Health/charge (e-208 & other e-CMP EVs). " +
-                                "For ~2010+ cars; pre-2004 (VAN) and many 2004-2010 (KWP) cars " +
-                                "can't be reached over a plain dongle."
-                        mazda ->
-                            "Walks the Mazda's HS-CAN control units — engine and whatever else " +
-                                "answers on the diagnostic bus — and reads each one's own fault " +
-                                "memory. Body/comfort modules sit on MS-CAN and need a switchable " +
-                                "adapter, so they won't appear here."
-                        else ->
-                            "Walks every control unit on the car — engine, gearbox, ABS, airbags, " +
-                                "cluster, head unit and more — and reads each one's own fault memory. " +
-                                "This is the deep scan generic OBD apps can't do."
-                    },
+                    brandDef?.scanHint ?: "",
                     color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp
                 )
                 Spacer(Modifier.height(10.dp))
@@ -113,20 +95,15 @@ fun ModulesScreen(state: AppState) {
                     }
                     val ready = state.connState is ConnState.Connected &&
                         !state.modScanning && !state.extrasBusy
-                    if (mazda) {
-                        OutlinedButton(onClick = { state.runMazdaExtras() }, enabled = ready) {
+                    brandDef?.actions?.forEach { action ->
+                        OutlinedButton(
+                            onClick = { state.runBrandAction(action) },
+                            enabled = ready,
+                        ) {
                             Text(
-                                if (state.extrasBusy && state.extrasSource != "snapshot")
-                                    "Reading…" else "Live extras"
+                                if (state.extrasRunningId == action.id) "Reading…"
+                                else action.label
                             )
-                        }
-                        OutlinedButton(onClick = { state.runMazdaSnapshot() }, enabled = ready) {
-                            Text("Snapshot")
-                        }
-                    }
-                    if (peugeot) {
-                        OutlinedButton(onClick = { state.runPeugeotExtras() }, enabled = ready) {
-                            Text(if (state.extrasBusy) "Reading…" else "Health check")
                         }
                     }
                 }
@@ -149,33 +126,16 @@ fun ModulesScreen(state: AppState) {
         }
 
         // Extras card: only shown for the brand that produced it, same rule as
-        // the module report below.
-        if (state.extrasRead && state.extrasBrand == brand) {
-            val fromSnapshot = state.extrasSource == "snapshot"
+        // the module report below. All its text comes from the BrandAction that
+        // ran (see obd/Brands.kt) — no brand names hard-coded here.
+        val extrasAction = brandDef?.actions?.firstOrNull { it.id == state.extrasSource }
+        if (state.extrasRead && state.extrasBrand == brand && extrasAction != null) {
             item {
                 SectionCard {
-                    PanelTitle(
-                        when {
-                            peugeot -> "PEUGEOT HEALTH CHECK"
-                            fromSnapshot -> "MAZDA SNAPSHOT (BROADCAST)"
-                            else -> "MAZDA LIVE EXTRAS"
-                        }
-                    )
+                    PanelTitle(extrasAction.cardTitle)
                     if (state.extras.isEmpty()) {
                         Text(
-                            when {
-                                peugeot ->
-                                    "This car didn't answer any of the PSA-specific values. " +
-                                        "Make sure the ignition is ON — coverage also varies " +
-                                        "by model year and engine."
-                                fromSnapshot ->
-                                    "No decodable broadcast frames were captured. Make sure the " +
-                                        "ignition is ON — with the car fully asleep the bus is quiet."
-                                else ->
-                                    "This car didn't answer any of the Mazda-specific values. " +
-                                        "They vary by model year and engine — the generic live " +
-                                        "dashboard on the Car tab still works."
-                            },
+                            extrasAction.emptyHint,
                             color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp
                         )
                     } else {
@@ -195,15 +155,7 @@ fun ModulesScreen(state: AppState) {
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            when {
-                                peugeot ->
-                                    "One-shot read-only pass — tap Health check again to refresh. " +
-                                        "Values this car doesn't support are skipped."
-                                fromSnapshot ->
-                                    "Passive listen — nothing was sent to the car. Tap Snapshot to refresh."
-                                else ->
-                                    "One-shot read — tap Live extras again to refresh."
-                            },
+                            extrasAction.refreshHint,
                             color = TextFaint, fontSize = 11.sp
                         )
                     }

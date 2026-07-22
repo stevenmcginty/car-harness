@@ -53,7 +53,6 @@ object Pids {
             } catch (_: Exception) {
                 break
             }
-            val merged = mutableSetOf<Int>()
             for (payload in payloads) {
                 if (payload.size >= 6 && (payload[1].toInt() and 0xFF) == base) {
                     for (i in 0 until 4) {
@@ -64,7 +63,6 @@ object Pids {
                     }
                 }
             }
-            supported.addAll(merged)
             val next = base + 0x20
             if (next > 0x40 || !supported.contains(next)) break
             base = next

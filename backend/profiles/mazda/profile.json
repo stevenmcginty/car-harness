@@ -4,5 +4,26 @@
   "transport": "elm327",
   "description": "Mazda over a generic OBD-II dongle (HS-CAN, UDS). Tuned for 2016 SkyActiv (MX-5 ND and siblings). Reads modules on the HS-CAN bus only -- body/comfort modules on MS-CAN need an MS-CAN switchable adapter.",
   "probe": "profile.py",
-  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"]
+  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"],
+  "panel": {
+    "title": "All modules (OBD dongle)",
+    "hint": "Module scan for SkyActiv-era Mazdas (≈2012+) over the ordinary OBD dongle — each HS-CAN module's own fault memory, deeper than generic OBD-II. Pick the adapter top-right, ignition ON, then scan. Body/comfort modules sit on MS-CAN and need a switchable adapter — they won't show here.",
+    "scanBusy": "Walking the HS-CAN modules through the dongle… (absent addresses time out quietly)",
+    "actions": [
+      {
+        "id": "live",
+        "label": "Live extras",
+        "busy": "Asking the modules for the Mazda-specific values…",
+        "title": "Mazda live extras",
+        "hint": "Reads Mazda-specific values the generic list doesn't carry — oil temperature, ATF, battery state, cluster fuel and odometer."
+      },
+      {
+        "id": "snapshot",
+        "label": "Snapshot",
+        "busy": "Listening to the car's broadcast frames (~10s)…",
+        "title": "Mazda snapshot (broadcast)",
+        "hint": "Passive listen — nothing is sent to the car. Decodes the frames the car broadcasts anyway: doors, fuel, gear, ignition, odometer."
+      }
+    ]
+  }
 }

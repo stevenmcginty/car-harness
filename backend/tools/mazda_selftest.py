@@ -327,11 +327,28 @@ def main():
     check("sim snapshot labelled", sn["ok"] and sn["simulated"])
 
     # ------------------------------------------------------- routes + MCP
+    # The brand routes are generic (/api/{brand}/...) -- assert they actually
+    # answer for Mazda through the app, not merely that a path is registered.
+    from fastapi.testclient import TestClient
+
     from backend.main import app
-    paths = {r.path for r in app.routes if hasattr(r, "path")}
-    check("API routes registered",
-          {"/api/mazda/scan", "/api/mazda/clear", "/api/mazda/live",
-           "/api/mazda/snapshot"} <= paths)
+    # No `with`: keeps the app's startup hook (UDP discovery responder) from
+    # running inside a selftest. Plain requests still exercise the routes.
+    client = TestClient(app)
+    r = client.get("/api/mazda/scan?mode=sim").json()
+    check("API sim scan over the generic brand route", r.get("ok") and r.get("simulated"))
+    r = client.get("/api/mazda/live?mode=sim").json()
+    check("API sim live over the generic brand route", r.get("ok") and r.get("simulated"))
+    r = client.get("/api/mazda/snapshot?mode=sim").json()
+    check("API sim snapshot over the generic brand route", r.get("ok") and r.get("simulated"))
+    r = client.post("/api/mazda/clear", json={"mode": "sim", "confirm": True}).json()
+    check("API sim clear over the generic brand route", r.get("ok") and r.get("simulated"))
+    check("API rejects unknown brands",
+          client.get("/api/notacar/scan?mode=sim").status_code == 404)
+    profs = client.get("/api/profiles").json().get("profiles", [])
+    mz = next((p for p in profs if p.get("id") == "mazda"), {})
+    check("API profile carries features + panel",
+          bool(mz.get("features", {}).get("scan")) and bool(mz.get("panel")))
     from backend import mcp_server
     check("MCP tools registered",
           all(hasattr(mcp_server, n) for n in

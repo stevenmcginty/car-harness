@@ -19,7 +19,7 @@
       <h1>Car Harness</h1>
     </div>
     <div class="header-right">
-      <label class="field">
+      <label class="field field-manufacturer">
         <span class="field-label">Manufacturer</span>
         <select id="profile-select" disabled>
           <option value="">Loading…</option>
@@ -141,88 +141,47 @@
       <div id="live-grid" class="live-grid" hidden></div>
     </section>
 
-    <section class="panel bmw-panel" aria-label="BMW module scan">
+    <section class="panel brand-panel" aria-label="Manufacturer deep scan" id="brand-panel" hidden>
       <div class="panel-header">
-        <h2>BMW — All modules (ENET cable)</h2>
-        <div class="panel-actions">
-          <button id="bmw-scan-btn" class="btn btn-primary" type="button">Scan all modules</button>
+        <h2 id="brand-title">Manufacturer</h2>
+        <div class="panel-actions" id="brand-actions">
+          <button id="brand-scan-btn" class="btn btn-primary" type="button">Scan all modules</button>
         </div>
       </div>
 
-      <div id="bmw-sim-banner" class="banner banner-amber" hidden role="status">
+      <div id="brand-sim-banner" class="banner banner-amber" hidden role="status">
         <svg class="banner-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 3l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.01" />
         </svg>
         <span>SIMULATED — no real car connected</span>
       </div>
 
-      <p id="bmw-hint" class="obd-hint">
-        Deep scan over the yellow ENET cable — every module's fault memory (airbag, ABS,
-        iDrive, gearbox…), not just the engine. Plug the cable into the car's OBD port and
-        the laptop's USB-Ethernet adapter, ignition ON, give the link ~30s to settle, then scan.
-        BMW F-Series (≈2011–2018); read-only unless you clear.
-      </p>
+      <p id="brand-hint" class="obd-hint"></p>
 
-      <div id="bmw-result" hidden>
-        <div id="bmw-chips" class="obd-chips"></div>
-        <p id="bmw-message" class="status-message"></p>
-        <div id="bmw-modules" class="bmw-modules"></div>
-      </div>
-    </section>
-
-    <section class="panel mazda-panel" aria-label="Mazda module scan">
-      <div class="panel-header">
-        <h2>Mazda — All modules (OBD dongle)</h2>
-        <div class="panel-actions">
-          <button id="mazda-scan-btn" class="btn btn-primary" type="button">Scan all modules</button>
-          <button id="mazda-live-btn" class="btn btn-secondary" type="button">Live extras</button>
-          <button id="mazda-snap-btn" class="btn btn-secondary" type="button">Snapshot</button>
-        </div>
+      <div id="brand-result" hidden>
+        <div id="brand-chips" class="obd-chips"></div>
+        <p id="brand-message" class="status-message"></p>
+        <div id="brand-modules" class="module-rows"></div>
       </div>
 
-      <div id="mazda-sim-banner" class="banner banner-amber" hidden role="status">
-        <svg class="banner-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3l9 16H3z" /><path d="M12 10v4" /><path d="M12 17.5v.01" />
-        </svg>
-        <span>SIMULATED — no real car connected</span>
-      </div>
-
-      <p id="mazda-hint" class="obd-hint">
-        Module scan for SkyActiv-era Mazdas (≈2012+) over the ordinary OBD dongle — each
-        HS-CAN module's own fault memory, deeper than generic OBD-II. Pick the adapter
-        top-right, ignition ON, then scan. “Live extras” reads Mazda-specific values the
-        generic list doesn't carry. Body/comfort modules sit on MS-CAN and need a
-        switchable adapter — they won't show here.
-      </p>
-
-      <div id="mazda-result" hidden>
-        <div id="mazda-chips" class="obd-chips"></div>
-        <p id="mazda-message" class="status-message"></p>
-        <div id="mazda-modules" class="bmw-modules"></div>
-      </div>
-
-      <div id="mazda-extras" hidden>
-        <div class="obd-live-header"><h3>Mazda live extras</h3></div>
-        <p id="mazda-extras-message" class="status-message"></p>
-        <div id="mazda-extras-chips" class="obd-chips"></div>
+      <div id="brand-extras" hidden>
+        <div class="obd-live-header"><h3 id="brand-extras-title">Extras</h3></div>
+        <p id="brand-extras-hint" class="obd-hint" hidden></p>
+        <p id="brand-extras-message" class="status-message"></p>
+        <div id="brand-extras-chips" class="obd-chips"></div>
       </div>
     </section>
 
     <section class="panel service-panel" aria-label="Service resets">
       <div class="panel-header">
-        <h2>Service resets</h2>
-        <div class="panel-actions">
-          <button id="service-brand-bmw" class="btn btn-secondary btn-small" type="button">BMW</button>
-          <button id="service-brand-mazda" class="btn btn-secondary btn-small" type="button">Mazda</button>
-          <button id="service-brand-peugeot" class="btn btn-secondary btn-small" type="button">Peugeot</button>
-        </div>
+        <h2>Service resets<span id="service-brand-label" class="panel-subject"></span></h2>
       </div>
 
       <p id="service-hint" class="obd-hint">
         Reset the service indicators after the work's done — oil/inspection counters and
-        brake reminders, per manufacturer. Items marked <strong>Run reset</strong> go over
-        the OBD dongle; the rest are the official dash steps to follow on the car. Pick a
-        brand above.
+        brake reminders, for the manufacturer picked top-right. Items marked
+        <strong>Run reset</strong> go over the OBD dongle; the rest are the official dash
+        steps to follow on the car.
       </p>
 
       <p id="service-message" class="status-message" hidden></p>
@@ -231,7 +190,7 @@
 
     <section class="panel modules-panel" aria-label="Jobs">
       <div class="panel-header">
-        <h2>Jobs</h2>
+        <h2>Jobs<span id="jobs-brand-label" class="panel-subject"></span></h2>
         <div class="panel-actions">
           <button id="import-btn" class="btn btn-secondary" type="button">Import job…</button>
           <input type="file" id="import-file-input" accept=".zip" hidden />
@@ -245,7 +204,7 @@
   </main>
 
   <footer class="footer">
-    <span id="footer-status">Car Harness — v1</span>
+    <span id="footer-status">Car Harness</span>
   </footer>
 
 </div>

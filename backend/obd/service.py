@@ -68,14 +68,17 @@ def _drop_session(entry):
 
 
 def close_all():
+    """Close every cached session (called on server shutdown). Takes each
+    entry's lock so an in-flight exchange finishes before its link is cut."""
     with _cache_lock:
         entries = list(_sessions.values())
         _sessions.clear()
     for entry in entries:
-        try:
-            _drop_session(entry)
-        except Exception:
-            pass
+        with entry["lock"]:
+            try:
+                _drop_session(entry)
+            except Exception:
+                pass
 
 
 def _with_session(adapter: dict, fn):
