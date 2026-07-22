@@ -25,12 +25,23 @@ from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import interfaces, pairing, registry  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
+from backend.profiles.bmw import resets as bmw_resets  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
+from backend.profiles.mazda import resets as mazda_resets  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
 from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
+from backend.profiles.peugeot import resets as peugeot_resets  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
+
+# Brand -> its resets module. Each exposes list_resets() and
+# perform(adapter, mode, reset_id, confirm). New manufacturers register here.
+_RESETS_BY_BRAND = {
+    "bmw": bmw_resets,
+    "mazda": mazda_resets,
+    "peugeot": peugeot_resets,
+}
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
@@ -409,6 +420,47 @@ async def peugeot_clear(request: Request) -> dict:
     mode = body.get("mode") or "real"
     instance = _obd_adapter_or_400(body.get("adapter"), mode)
     return peugeot_scan.clear(instance, mode, body.get("address"))
+
+
+# --------------------------------------------------------------------------- #
+# Service resets (per manufacturer): oil / brake / inspection counters.
+# GET the catalog (no car needed); POST to run one (confirm-gated, may change
+# the car). BMW CBS + Mazda UDS resets go over the ELM327 dongle; procedure-only
+# entries (e.g. PSA spanner) return their steps instead of touching the car.
+# --------------------------------------------------------------------------- #
+@app.get("/api/{brand}/resets")
+def get_resets(brand: str) -> dict:
+    module = _RESETS_BY_BRAND.get(brand)
+    if module is None:
+        raise HTTPException(status_code=404, detail=f"No service resets for '{brand}'.")
+    return module.list_resets()
+
+
+@app.post("/api/{brand}/reset")
+async def run_reset(brand: str, request: Request) -> dict:
+    module = _RESETS_BY_BRAND.get(brand)
+    if module is None:
+        raise HTTPException(status_code=404, detail=f"No service resets for '{brand}'.")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"reset_id": "...", "adapter": "...", "mode": "real"|"sim", "confirm": true}.',
+        )
+    body = body or {}
+    reset_id = body.get("reset_id")
+    if not reset_id:
+        raise HTTPException(status_code=400, detail='JSON body must include a "reset_id".')
+    mode = body.get("mode") or "real"
+    # Procedure lookups and sim runs need no adapter; a real UDS run does.
+    adapter = None
+    if mode == "real":
+        instance = _obd_adapter_or_400(body.get("adapter"), mode)
+        adapter = instance
+    elif mode != "sim":
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return module.perform(adapter, mode, reset_id, bool(body.get("confirm")))
 
 
 # --------------------------------------------------------------------------- #

@@ -169,6 +169,40 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             PeugeotUds.readEnhanced(session, onProgress)
         }
 
+    /**
+     * Run one service reset over the dongle — CHANGES THE CAR (uds resets only).
+     * Serialised with everything else. Dispatches on the reset's brand so the
+     * right transport addressing (BMW 6F1 gateway vs standard 11-bit) is used.
+     */
+    suspend fun performReset(
+        reset: ServiceReset,
+        onProgress: (String) -> Unit,
+    ): ResetOutcome = mutex.withLock {
+        if (simulated) {
+            val log = reset.steps.map { it.describe() }
+            return@withLock ResetOutcome(
+                ok = true,
+                message = "SIMULATED — '${reset.name}' would run these steps; no real car touched.",
+                log = log,
+            )
+        }
+        try {
+            val log = when (reset.brand) {
+                "mazda" -> MazdaUds.performReset(session, reset, onProgress)
+                "peugeot" -> PeugeotUds.performReset(session, reset, onProgress)
+                else -> BmwUds.performReset(session, reset, onProgress)
+            }
+            ResetOutcome(
+                ok = true,
+                message = "'${reset.name}' sent. Cycle the ignition and confirm on the dash — " +
+                    "faults come back if the underlying part is still worn.",
+                log = log,
+            )
+        } catch (e: Exception) {
+            ResetOutcome(ok = false, message = "'${reset.name}' failed: ${e.message}", log = emptyList())
+        }
+    }
+
     suspend fun live(keys: List<String> = Pids.dashboardKeys): List<LiveReading> = mutex.withLock {
         session.ensureProtocol()
         if (supported == null) supported = Pids.readSupported(session)

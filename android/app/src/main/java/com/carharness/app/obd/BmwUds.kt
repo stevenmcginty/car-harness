@@ -349,6 +349,30 @@ object BmwUds {
         )
     }
 
+    /**
+     * Run one service reset's UDS steps against a module (KOMBI for CBS) over
+     * the 6F1 gateway addressing — CHANGES THE CAR; the UI confirm-gates it.
+     */
+    fun performReset(
+        session: Elm327Session,
+        reset: ServiceReset,
+        onProgress: (String) -> Unit,
+    ): List<String> {
+        session.ensureProtocol()
+        if (!protocolSupported(session)) {
+            throw ObdException("Not on a BMW CAN connection.", ObdException.Kind.PROTOCOL)
+        }
+        begin(session)
+        try {
+            target(session, reset.address)
+            return ServiceResets.executeSteps(reset.steps, onProgress) { svc, dataHex, timeout ->
+                request(session, svc, dataHex, timeout)
+            }
+        } finally {
+            restore(session)
+        }
+    }
+
     /** Clear one module's fault memory, then re-read it. Returns fresh DTCs. */
     fun clearDtcs(session: Elm327Session, dst: Int): List<UdsDtc> {
         session.ensureProtocol()

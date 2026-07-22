@@ -22,12 +22,17 @@ from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import interfaces, registry  # noqa: E402
+from backend.profiles.bmw import resets as bmw_resets  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
+from backend.profiles.mazda import resets as mazda_resets  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
 from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
+from backend.profiles.peugeot import resets as peugeot_resets  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
+
+_RESETS_BY_BRAND = {"bmw": bmw_resets, "mazda": mazda_resets, "peugeot": peugeot_resets}
 
 mcp = FastMCP("car-harness")
 
@@ -270,6 +275,50 @@ def peugeot_clear_module(
     if error is not None:
         return error
     return peugeot_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Service resets (oil / brake / inspection counters) per manufacturer
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def list_service_resets(brand: str) -> dict:
+    """List the service resets available for a brand (read-only catalog).
+
+    brand: "bmw", "mazda" or "peugeot". Returns each reset's name, description,
+    method ("uds" = sendable over the dongle, "procedure" = manual dash steps),
+    a confidence grade, the source it came from, and either the UDS steps or the
+    dash procedure. No car or adapter is needed to list them.
+    """
+    module = _RESETS_BY_BRAND.get(brand)
+    if module is None:
+        return {"error": f"No service resets for '{brand}'."}
+    return module.list_resets()
+
+
+@mcp.tool()
+def perform_service_reset(
+    brand: str, reset_id: str, confirm: bool = False,
+    adapter_id: str | None = None, mode: str = "real",
+) -> dict:
+    """Perform one service reset -- CHANGES THE CAR for "uds" resets.
+
+    brand: "bmw", "mazda" or "peugeot". reset_id: from list_service_resets.
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter (required for a real "uds" reset).
+    mode="sim" shows the steps without touching a car. "procedure" resets never
+    touch the car -- they return the manual steps to follow.
+    """
+    module = _RESETS_BY_BRAND.get(brand)
+    if module is None:
+        return {"error": f"No service resets for '{brand}'."}
+    if mode == "real":
+        instance, error = _elm_adapter_or_error(mode, adapter_id)
+        if error is not None:
+            return error
+        return module.perform(instance, mode, reset_id, confirm)
+    if mode != "sim":
+        return {"error": "mode must be 'real' or 'sim'."}
+    return module.perform(None, mode, reset_id, confirm)
 
 
 # --------------------------------------------------------------------------- #

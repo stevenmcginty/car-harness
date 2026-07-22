@@ -14,6 +14,13 @@ A modular car-diagnostics desktop app + Android companion app.
 - An **Android app** (`android/`, prebuilt `CarHarness.apk`) that scans cars
   directly from the phone with the same adapters, and **pairs with the
   desktop** over WiFi to drive the desktop's cables for the bigger jobs.
+- **Service resets** (the 🔧 Service tab / desktop *Service resets* panel): a
+  per-manufacturer catalogue of the after-servicing jobs a dealer does daily --
+  oil/inspection counters, brake reminders, battery relearn. Each item is
+  either a UDS reset the app sends over the OBD dongle or the official dash
+  procedure to follow on the car, with a confidence grade and its source.
+  Adding a manufacturer adds its resets. See
+  `docs/private/service-resets-research.md` for the provenance.
 
 It is built to grow: manufacturer **profiles** (BMW today; Peugeot, Vauxhall,
 ... later) and installable/removable **job modules** are both discovered from

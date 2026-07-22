@@ -262,6 +262,29 @@ object MazdaUds {
         )
     }
 
+    /**
+     * Run one service reset's UDS steps against a module (11-bit request id) —
+     * CHANGES THE CAR; the UI confirm-gates it.
+     */
+    fun performReset(
+        session: Elm327Session,
+        reset: ServiceReset,
+        onProgress: (String) -> Unit,
+    ): List<String> {
+        session.ensureProtocol()
+        if (!protocolSupported(session)) {
+            throw ObdException("Not on a Mazda CAN connection.", ObdException.Kind.PROTOCOL)
+        }
+        begin(session)
+        try {
+            return ServiceResets.executeSteps(reset.steps, onProgress) { svc, dataHex, timeout ->
+                request(session, reset.address, svc, dataHex, timeout)
+            }
+        } finally {
+            restore(session)
+        }
+    }
+
     /** Clear one module's fault memory, then re-read it. Returns fresh DTCs. */
     fun clearDtcs(session: Elm327Session, reqId: Int): List<UdsDtc> {
         session.ensureProtocol()

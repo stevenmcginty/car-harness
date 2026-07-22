@@ -1262,3 +1262,37 @@ select:disabled {
   background: var(--green-dim, rgba(52, 199, 89, 0.14));
   color: var(--green);
 }
+
+/* Service resets panel: reuses .bmw-module rows */
+.service-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.service-list .bmw-module-head {
+  justify-content: space-between;
+}
+
+.service-list .btn-small {
+  margin-top: 10px;
+}
+
+.service-steps {
+  margin: 8px 0 2px;
+  padding-left: 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.service-steps li {
+  margin-bottom: 2px;
+}
+
+.dtc-desc.is-mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}

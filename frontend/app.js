@@ -111,6 +111,11 @@
     mazdaExtras: document.getElementById("mazda-extras"),
     mazdaExtrasMessage: document.getElementById("mazda-extras-message"),
     mazdaExtrasChips: document.getElementById("mazda-extras-chips"),
+    serviceBrandBmw: document.getElementById("service-brand-bmw"),
+    serviceBrandMazda: document.getElementById("service-brand-mazda"),
+    serviceBrandPeugeot: document.getElementById("service-brand-peugeot"),
+    serviceMessage: document.getElementById("service-message"),
+    serviceList: document.getElementById("service-list"),
     pairBtn: document.getElementById("pair-btn"),
     pairModal: document.getElementById("pair-modal"),
     pairModalClose: document.getElementById("pair-modal-close"),
@@ -129,6 +134,7 @@
   var pair = { open: false, info: null, devices: [], error: "" };
   var bmw = { scanInFlight: false, clearInFlight: false };
   var mazda = { scanInFlight: false, clearInFlight: false, liveInFlight: false };
+  var service = { brand: "", loading: false, runningId: null };
 
   // ---------- Helpers ----------
 
@@ -1599,6 +1605,159 @@
       });
   }
 
+  // ---------- Service resets (per manufacturer) ----------
+
+  function serviceBrandButtons() {
+    return {
+      bmw: el.serviceBrandBmw,
+      mazda: el.serviceBrandMazda,
+      peugeot: el.serviceBrandPeugeot
+    };
+  }
+
+  function selectServiceBrand(brand) {
+    service.brand = brand;
+    var buttons = serviceBrandButtons();
+    Object.keys(buttons).forEach(function (b) {
+      buttons[b].classList.toggle("btn-primary", b === brand);
+      buttons[b].classList.toggle("btn-secondary", b !== brand);
+    });
+    loadServiceResets(brand);
+  }
+
+  function confidenceTag(confidence) {
+    var span = document.createElement("span");
+    var cls =
+      confidence === "verified" ? "is-good" :
+      confidence === "community" ? "is-pending" : "is-stored";
+    span.className = "tag dtc-tag " + cls;
+    span.textContent = confidence;
+    return span;
+  }
+
+  function buildServiceRow(r) {
+    var row = document.createElement("div");
+    row.className = "bmw-module";
+
+    var head = document.createElement("div");
+    head.className = "bmw-module-head";
+
+    var title = document.createElement("span");
+    title.className = "bmw-module-name";
+    title.textContent = r.name;
+    head.appendChild(title);
+    head.appendChild(confidenceTag(r.confidence));
+    row.appendChild(head);
+
+    var desc = document.createElement("p");
+    desc.className = "dtc-desc";
+    desc.textContent = r.description;
+    row.appendChild(desc);
+
+    if (r.models) {
+      var models = document.createElement("p");
+      models.className = "obd-hint";
+      models.textContent = r.models;
+      row.appendChild(models);
+    }
+
+    if (r.method === "uds") {
+      if (r.steps && r.steps.length) {
+        var sends = document.createElement("p");
+        sends.className = "dtc-desc is-mono";
+        sends.textContent = "Sends: " + r.steps.join("  ·  ");
+        row.appendChild(sends);
+      }
+      var runBtn = document.createElement("button");
+      runBtn.type = "button";
+      runBtn.className = "btn btn-primary btn-small";
+      runBtn.textContent = service.runningId === r.id ? "Running…" : "Run reset";
+      runBtn.disabled = service.runningId !== null;
+      runBtn.addEventListener("click", function () {
+        runServiceReset(r);
+      });
+      row.appendChild(runBtn);
+    } else {
+      var steps = document.createElement("ol");
+      steps.className = "service-steps";
+      (r.procedure || []).forEach(function (step) {
+        var li = document.createElement("li");
+        li.textContent = step;
+        steps.appendChild(li);
+      });
+      row.appendChild(steps);
+    }
+
+    (r.cautions || []).forEach(function (c) {
+      var warn = document.createElement("p");
+      warn.className = "dtc-desc";
+      warn.textContent = "⚠ " + c;
+      row.appendChild(warn);
+    });
+
+    return row;
+  }
+
+  function renderServiceResets(data) {
+    el.serviceList.innerHTML = "";
+    el.serviceMessage.hidden = true;
+    var resets = (data && data.resets) || [];
+    if (!resets.length) {
+      el.serviceMessage.hidden = false;
+      el.serviceMessage.textContent = "No service resets catalogued for this brand yet.";
+      return;
+    }
+    resets.forEach(function (r) {
+      el.serviceList.appendChild(buildServiceRow(r));
+    });
+  }
+
+  function loadServiceResets(brand) {
+    service.loading = true;
+    el.serviceList.innerHTML = "";
+    el.serviceMessage.hidden = false;
+    el.serviceMessage.textContent = "Loading " + brand + " resets…";
+    apiFetch("/api/" + brand + "/resets")
+      .then(function (data) {
+        renderServiceResets(data);
+      })
+      .catch(function () {
+        el.serviceMessage.hidden = false;
+        el.serviceMessage.textContent = "Couldn't reach the backend for resets.";
+      })
+      .then(function () {
+        service.loading = false;
+      });
+  }
+
+  function runServiceReset(r) {
+    if (service.runningId) return;
+    if (!confirm("Run '" + r.name + "'? This sends the reset over the dongle and changes the car.")) {
+      return;
+    }
+    service.runningId = r.id;
+    loadServiceResets(service.brand); // re-render to disable buttons
+    var body = { reset_id: r.id, mode: obdMode(), confirm: true };
+    if (!state.simulate && state.currentAdapterId) body.adapter = state.currentAdapterId;
+    apiFetch("/api/" + service.brand + "/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    })
+      .then(function (res) {
+        el.serviceMessage.hidden = false;
+        el.serviceMessage.textContent = (res && res.message) || "Reset finished.";
+      })
+      .catch(function () {
+        el.serviceMessage.hidden = false;
+        el.serviceMessage.textContent = "Couldn't reach the backend to run the reset.";
+      })
+      .then(function () {
+        service.runningId = null;
+        loadServiceResets(service.brand);
+      });
+  }
+
   // ---------- Mazda module scan (OBD dongle) ----------
 
   function resetMazdaPanel() {
@@ -1941,6 +2100,9 @@
   el.mazdaScanBtn.addEventListener("click", runMazdaScan);
   el.mazdaLiveBtn.addEventListener("click", runMazdaLive);
   el.mazdaSnapBtn.addEventListener("click", runMazdaSnapshot);
+  el.serviceBrandBmw.addEventListener("click", function () { selectServiceBrand("bmw"); });
+  el.serviceBrandMazda.addEventListener("click", function () { selectServiceBrand("mazda"); });
+  el.serviceBrandPeugeot.addEventListener("click", function () { selectServiceBrand("peugeot"); });
   el.liveToggle.addEventListener("change", function () {
     setLive(el.liveToggle.checked);
   });
@@ -1993,6 +2155,7 @@
       refreshAll();
     });
     loadAdapters();
+    selectServiceBrand("bmw");
   }
 
   init();

@@ -435,6 +435,32 @@ object PeugeotUds {
         return out
     }
 
+    /**
+     * Run one service reset's UDS steps against a PSA module (its request id) —
+     * CHANGES THE CAR; the UI confirm-gates it. PSA's service-interval reset is
+     * a BSI coding write behind a SecurityAccess unlock that isn't publicly
+     * documented, so today the shipped PSA resets are dash procedures; this
+     * exists for any capture-then-hardcode routine added later (e.g. DPF).
+     */
+    fun performReset(
+        session: Elm327Session,
+        reset: ServiceReset,
+        onProgress: (String) -> Unit,
+    ): List<String> {
+        session.ensureProtocol()
+        if (!protocolSupported(session)) {
+            throw ObdException("Not on a PSA CAN connection.", ObdException.Kind.PROTOCOL)
+        }
+        begin(session)
+        try {
+            return ServiceResets.executeSteps(reset.steps, onProgress) { svc, dataHex, timeout ->
+                request(session, reset.address, svc, dataHex, timeout)
+            }
+        } finally {
+            restore(session)
+        }
+    }
+
     /** Clear one module's fault memory, then re-read it. Returns fresh DTCs. */
     fun clearDtcs(session: Elm327Session, reqId: Int): List<UdsDtc> {
         session.ensureProtocol()

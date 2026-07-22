@@ -23,6 +23,9 @@ import com.carharness.app.obd.Elm327Session
 import com.carharness.app.obd.LiveReading
 import com.carharness.app.obd.ObdController
 import com.carharness.app.obd.ObdTransport
+import com.carharness.app.obd.ResetOutcome
+import com.carharness.app.obd.ServiceReset
+import com.carharness.app.obd.ServiceResets
 import com.carharness.app.obd.ScanResult
 import com.carharness.app.obd.UdsScanReport
 import com.carharness.app.obd.WifiTransport
@@ -389,6 +392,52 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     /** Peugeot dealer health check: PSA-specific values + mileage cross-check. */
     fun runPeugeotExtras() = runExtraReadings("peugeot", "extras") { ctrl, onStep ->
         ctrl.peugeotEnhanced(onStep)
+    }
+
+    // ---------------- service resets (oil / brake / inspection) -------------
+    // Reuses moduleBrand as the selected brand. The catalog is static (no car
+    // needed to browse it); running a uds reset needs the car connected.
+    var resetRunningId by mutableStateOf<String?>(null)
+    var resetMessage by mutableStateOf("")
+    var resetProgress by mutableStateOf("")
+    var resetLog by mutableStateOf<List<String>>(emptyList())
+
+    /** The resets available for the currently-selected module brand. */
+    fun resetsForBrand(): List<ServiceReset> = ServiceResets.forBrand(moduleBrand)
+
+    /** Run one UDS service reset over the connected dongle. Confirm-gated by UI. */
+    fun runReset(reset: ServiceReset) {
+        if (!reset.uds) return // procedures are display-only; UI shows the steps
+        val ctrl = controller ?: run {
+            resetMessage = "Connect to the car first (Car tab)."
+            return
+        }
+        if (resetRunningId != null || modScanning || extrasBusy) return
+        setLive(false) // a reset retargets the ELM; pause the dashboard
+        resetRunningId = reset.id
+        resetMessage = ""
+        resetLog = emptyList()
+        resetProgress = "Starting ${reset.name}…"
+        scope.launch(Dispatchers.IO) {
+            try {
+                val outcome = ctrl.performReset(reset) { step ->
+                    scope.launch(Dispatchers.Main) { resetProgress = step }
+                }
+                withContext(Dispatchers.Main) {
+                    resetMessage = outcome.message
+                    resetLog = outcome.log
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    resetMessage = e.message ?: "Reset failed."
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    resetRunningId = null
+                    resetProgress = ""
+                }
+            }
+        }
     }
 
     // ---------------- desktop pairing + remote ----------------

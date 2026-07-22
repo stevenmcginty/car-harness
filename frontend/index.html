@@ -208,6 +208,27 @@
       </div>
     </section>
 
+    <section class="panel service-panel" aria-label="Service resets">
+      <div class="panel-header">
+        <h2>Service resets</h2>
+        <div class="panel-actions">
+          <button id="service-brand-bmw" class="btn btn-secondary btn-small" type="button">BMW</button>
+          <button id="service-brand-mazda" class="btn btn-secondary btn-small" type="button">Mazda</button>
+          <button id="service-brand-peugeot" class="btn btn-secondary btn-small" type="button">Peugeot</button>
+        </div>
+      </div>
+
+      <p id="service-hint" class="obd-hint">
+        Reset the service indicators after the work's done — oil/inspection counters and
+        brake reminders, per manufacturer. Items marked <strong>Run reset</strong> go over
+        the OBD dongle; the rest are the official dash steps to follow on the car. Pick a
+        brand above.
+      </p>
+
+      <p id="service-message" class="status-message" hidden></p>
+      <div id="service-list" class="service-list"></div>
+    </section>
+
     <section class="panel modules-panel" aria-label="Jobs">
       <div class="panel-header">
         <h2>Jobs</h2>

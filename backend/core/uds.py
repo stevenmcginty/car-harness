@@ -1,22 +1,29 @@
-"""Minimal UDS (ISO 14229) helpers for the BMW ENET path.
+"""Minimal UDS (ISO 14229) helpers shared by every transport (ENET + ELM327).
 
-Only the read-mostly services the harness needs:
+The services the harness needs:
 
-    0x3E TesterPresent          -- "are you there?" presence probe
-    0x22 ReadDataByIdentifier   -- VIN (DID 0xF190)
-    0x19 ReadDTCInformation     -- fault codes by status mask
+    0x3E TesterPresent            -- "are you there?" presence probe
+    0x22 ReadDataByIdentifier     -- VIN (DID 0xF190), ident, CBS status
+    0x19 ReadDTCInformation       -- fault codes by status mask
     0x14 ClearDiagnosticInformation
+    0x10 DiagnosticSessionControl -- extended session, needed by service resets
+    0x31 RoutineControl           -- service-reset routines (start/stop/result)
+    0x2E WriteDataByIdentifier    -- service-reset counters written as DIDs
 
-Anything write-heavy (sessions, security access, flashing) is deliberately
-absent -- flashing stays E-Sys's job.
+SecurityAccess (0x27) and flashing are deliberately absent -- flashing stays
+E-Sys's job, and none of the shipped service resets needs an unlock.
 """
 
+import time
 from typing import List, Optional
 
 SVC_TESTER_PRESENT = 0x3E
 SVC_READ_DATA_BY_ID = 0x22
 SVC_READ_DTC = 0x19
 SVC_CLEAR_DTC = 0x14
+SVC_SESSION_CONTROL = 0x10
+SVC_ROUTINE_CONTROL = 0x31
+SVC_WRITE_DATA_BY_ID = 0x2E
 
 DID_VIN = 0xF190
 
@@ -155,3 +162,53 @@ def clear_dtcs(client, dst: int, timeout: float = 5.0) -> None:
         dst, bytes([SVC_CLEAR_DTC, 0xFF, 0xFF, 0xFF]), timeout=timeout
     )
     _check(payload, SVC_CLEAR_DTC)
+
+
+# --------------------------------------------------------------------------- #
+# Write-side services used by the per-brand service resets. Each call retries
+# through 0x78 "response pending" (an ELM327 can only re-send, not re-listen).
+# --------------------------------------------------------------------------- #
+def _request_settled(client, dst: int, data: bytes, timeout: float) -> bytes:
+    service = data[0]
+    for _ in range(6):
+        try:
+            return _check(client.request(dst, data, timeout=timeout), service)
+        except UdsNegativeResponse as exc:
+            if exc.nrc != 0x78:
+                raise
+            time.sleep(0.4)
+    raise UdsNegativeResponse(service, 0x78)
+
+
+def start_session(client, dst: int, level: int = 0x03, timeout: float = 3.0) -> None:
+    """DiagnosticSessionControl (default 0x03 = extended). The ECU drops back
+    to the default session by itself a few seconds after the last request."""
+    _request_settled(client, dst, bytes([SVC_SESSION_CONTROL, level]), timeout)
+
+
+def read_did(client, dst: int, did: int, timeout: float = 3.0) -> bytes:
+    """ReadDataByIdentifier -> the data bytes after the echoed DID."""
+    payload = _request_settled(
+        client, dst, bytes([SVC_READ_DATA_BY_ID, did >> 8, did & 0xFF]), timeout
+    )
+    return payload[3:]
+
+
+def write_did(client, dst: int, did: int, data: bytes, timeout: float = 5.0) -> None:
+    """WriteDataByIdentifier -- CHANGES THE ECU. Callers confirm-gate this."""
+    _request_settled(
+        client, dst, bytes([SVC_WRITE_DATA_BY_ID, did >> 8, did & 0xFF]) + data, timeout
+    )
+
+
+def routine_control(
+    client, dst: int, rid: int, sub: int = 0x01, data: bytes = b"", timeout: float = 6.0
+) -> bytes:
+    """RoutineControl (sub 0x01 start / 0x02 stop / 0x03 results) -- CHANGES THE
+    ECU when the routine does. Returns the routine status bytes (may be empty)."""
+    payload = _request_settled(
+        client, dst,
+        bytes([SVC_ROUTINE_CONTROL, sub, rid >> 8, rid & 0xFF]) + data,
+        timeout,
+    )
+    return payload[4:]
