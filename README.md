@@ -77,6 +77,11 @@ The **Simulate** toggle returns clearly-labelled fake results (VIN
 - **Car tab** -- connect straight to a dongle from the phone (Demo / BLE /
   Classic Bluetooth / WiFi) and get the same live dashboard.
 - **Faults tab** -- read + clear codes with the same descriptions database.
+- **Modules tab** -- BMW F-series deep scan straight from the phone: walks
+  every control unit (engine, gearbox, ABS, airbags, cluster, head unit...)
+  over the same ELM327 dongle using BMW's 6F1 extended addressing, and shows
+  each module's part number, software/hardware version and its own fault
+  memory -- with per-module clear. Read-only otherwise; no coding/flashing.
 - **Desktop tab** -- pair with this app: on the PC click **Pair phone...**,
   then on the phone **Find my PC** (UDP discovery on port 8766) and type the
   6-digit code. Once paired, the phone can run scans *through the desktop's

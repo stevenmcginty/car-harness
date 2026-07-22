@@ -15,6 +15,7 @@ import com.carharness.app.harness.DesktopServer
 import com.carharness.app.harness.HarnessClient
 import com.carharness.app.obd.BleTransport
 import com.carharness.app.obd.BluetoothSppTransport
+import com.carharness.app.obd.BmwScanReport
 import com.carharness.app.obd.DemoTransport
 import com.carharness.app.obd.Dtc
 import com.carharness.app.obd.DtcRecord
@@ -242,6 +243,70 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 }
             } finally {
                 withContext(Dispatchers.Main) { clearing = false }
+            }
+        }
+    }
+
+    // ---------------- BMW module scan ----------------
+    var bmwScanning by mutableStateOf(false)
+    var bmwProgress by mutableStateOf("")
+    var bmwReport by mutableStateOf<BmwScanReport?>(null)
+    var bmwError by mutableStateOf("")
+    var bmwClearingAddr by mutableStateOf<Int?>(null)
+
+    fun runBmwScan() {
+        val ctrl = controller ?: run {
+            bmwError = "Connect to the car first (Car tab)."
+            return
+        }
+        if (bmwScanning) return
+        setLive(false) // a module scan retargets the ELM; pause the dashboard
+        bmwScanning = true
+        bmwError = ""
+        bmwProgress = "Starting module scan…"
+        scope.launch(Dispatchers.IO) {
+            try {
+                val report = ctrl.bmwScan { step ->
+                    scope.launch(Dispatchers.Main) { bmwProgress = step }
+                }
+                withContext(Dispatchers.Main) {
+                    bmwReport = report
+                    if (!report.ok) bmwError = report.message
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    bmwError = e.message ?: "Module scan failed."
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    bmwScanning = false
+                    bmwProgress = ""
+                }
+            }
+        }
+    }
+
+    fun runBmwClear(address: Int) {
+        val ctrl = controller ?: return
+        if (bmwClearingAddr != null || bmwScanning) return
+        bmwClearingAddr = address
+        bmwError = ""
+        scope.launch(Dispatchers.IO) {
+            try {
+                val fresh = ctrl.bmwClear(address)
+                withContext(Dispatchers.Main) {
+                    bmwReport = bmwReport?.let { report ->
+                        report.copy(modules = report.modules.map { m ->
+                            if (m.address == address) m.copy(dtcs = fresh, error = null) else m
+                        })
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    bmwError = e.message ?: "Clear failed."
+                }
+            } finally {
+                withContext(Dispatchers.Main) { bmwClearingAddr = null }
             }
         }
     }

@@ -75,6 +75,10 @@ fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
                     )
                     NavigationBarItem(
                         selected = tab == 2, onClick = { tab = 2 },
+                        icon = { Text("🧩", fontSize = 20.sp) }, label = { Text("Modules") }
+                    )
+                    NavigationBarItem(
+                        selected = tab == 3, onClick = { tab = 3 },
                         icon = { Text("🖥️", fontSize = 20.sp) }, label = { Text("Desktop") }
                     )
                 }
@@ -87,6 +91,7 @@ fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
                 when (tab) {
                     0 -> CarScreen(state, requestBt)
                     1 -> FaultsScreen(state)
+                    2 -> ModulesScreen(state)
                     else -> DesktopScreen(state)
                 }
             }

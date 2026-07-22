@@ -121,6 +121,16 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
         }
     }
 
+    /** BMW F-series full-module scan. Serialised with everything else. */
+    suspend fun bmwScan(onProgress: (String) -> Unit): BmwScanReport = mutex.withLock {
+        BmwUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one BMW module's fault memory; returns that module's fresh DTCs. */
+    suspend fun bmwClear(address: Int): List<BmwDtc> = mutex.withLock {
+        BmwUds.clearDtcs(session, address)
+    }
+
     suspend fun live(keys: List<String> = Pids.dashboardKeys): List<LiveReading> = mutex.withLock {
         session.ensureProtocol()
         if (supported == null) supported = Pids.readSupported(session)

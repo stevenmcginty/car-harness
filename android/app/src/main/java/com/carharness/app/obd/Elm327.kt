@@ -106,7 +106,25 @@ class Elm327Session(private val transport: ObdTransport) {
         return parse(reply, service or 0x40, cmd)
     }
 
+    /**
+     * Send a raw hex request (e.g. a UDS command while BMW-addressed) and
+     * return every hex record in the reply, unfiltered — module scanning
+     * needs to see negative (7F ...) responses, which parse() would discard.
+     */
+    fun udsRecords(dataHex: String, timeoutMs: Long = 8000): List<ByteArray> =
+        collect(raw(dataHex, timeoutMs), dataHex)
+
     private fun parse(text: String, expected: Int, echo: String): List<ByteArray> {
+        val records = collect(text, echo)
+        val matching = records.filter { it.isNotEmpty() && (it[0].toInt() and 0xFF) == expected }
+        if (matching.isEmpty()) {
+            val got = text.replace("\r", " ").replace("\n", " ").trim()
+            throw ObdException("Unexpected reply to $echo: '$got'.", ObdException.Kind.PROTOCOL)
+        }
+        return matching
+    }
+
+    private fun collect(text: String, echo: String): List<ByteArray> {
         val upper = text.uppercase()
         for (token in LINK_ERROR_TOKENS) {
             if (upper.contains(token)) {
@@ -150,13 +168,7 @@ class Elm327Session(private val transport: ObdTransport) {
             multiLen?.let { if (payload.size > it) payload = payload.copyOfRange(0, it) }
             records.add(payload)
         }
-
-        val matching = records.filter { it.isNotEmpty() && (it[0].toInt() and 0xFF) == expected }
-        if (matching.isEmpty()) {
-            val got = text.replace("\r", " ").replace("\n", " ").trim()
-            throw ObdException("Unexpected reply to $echo: '$got'.", ObdException.Kind.PROTOCOL)
-        }
-        return matching
+        return records
     }
 
     private fun hexToBytes(hex: String): ByteArray =

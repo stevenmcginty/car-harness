@@ -25,6 +25,10 @@ class DemoTransport : ObdTransport {
     override val label = "Demo (simulated car)"
     private var cleared = false
 
+    // BMW extended-addressing state: set by ATCEA<hh>, cleared by bare ATCEA.
+    private var cea: Int? = null
+    private val bmwCleared = mutableSetOf<Int>()
+
     override fun open() {}
     override fun close() {}
 
@@ -35,7 +39,10 @@ class DemoTransport : ObdTransport {
             cmd.startsWith("ATRV") -> "12.4V"
             cmd == "ATDP" -> "SIMULATED CAN 11/500"
             cmd == "ATDPN" -> "A6"
+            cmd == "ATCEA" -> { cea = null; "OK" }
+            cmd.startsWith("ATCEA") -> { cea = cmd.removePrefix("ATCEA").toIntOrNull(16); "OK" }
             cmd.startsWith("AT") -> "OK"
+            cea != null -> bmwReply(cea!!, cmd)
             cmd == "0100" -> "4100BE3FA813"
             cmd == "0120" -> "412080000001"
             cmd == "0140" -> "414040000000"
@@ -50,6 +57,55 @@ class DemoTransport : ObdTransport {
             else -> "NO DATA"
         }
         return "$reply\r\r>".toByteArray(Charsets.US_ASCII)
+    }
+
+    // ------------------------------------------------- simulated BMW modules
+
+    private val bmwPresent = mapOf(
+        0x10 to "8637890", 0x12 to "8631745", 0x18 to "8632267", 0x29 to "6879043",
+        0x60 to "9382566", 0x63 to "9387573", 0x78 to "9384046",
+    )
+
+    private fun bmwReply(dst: Int, cmd: String): String {
+        if (dst !in bmwPresent) return "NO DATA"
+        return when {
+            cmd == "3E00" -> "7E00"
+            cmd.startsWith("22F187") -> isoTp("62F187" + ascii(bmwPresent[dst]!!))
+            cmd.startsWith("22F189") -> isoTp("62F189" + ascii("08.11.%02X".format(dst)))
+            cmd.startsWith("22F191") -> isoTp("62F191" + ascii("06"))
+            cmd.startsWith("22") -> "7F2231"
+            cmd.startsWith("1902") -> bmwDtcs(dst)
+            cmd == "14FFFFFF" -> { bmwCleared.add(dst); "54" }
+            else -> "NO DATA"
+        }
+    }
+
+    private fun bmwDtcs(dst: Int): String {
+        if (dst in bmwCleared) return "5902AF"
+        return when (dst) {
+            0x63 -> isoTp("5902AF" + "B7F2032F" + "B7F82108") // head unit: 2 faults
+            0x18 -> isoTp("5902AF" + "27710108")              // gearbox: 1 fault
+            else -> "5902AF"
+        }
+    }
+
+    private fun ascii(text: String): String =
+        text.toByteArray(Charsets.US_ASCII).joinToString("") { "%02X".format(it) }
+
+    /** Render a payload the way an ELM327 prints it (multi-frame if > 7 bytes). */
+    private fun isoTp(payloadHex: String): String {
+        val nbytes = payloadHex.length / 2
+        if (nbytes <= 7) return payloadHex
+        val lines = StringBuilder("%03X".format(nbytes))
+        var i = 0
+        var frame = 0
+        while (i < payloadHex.length) {
+            val chunk = payloadHex.substring(i, minOf(i + 14, payloadHex.length))
+            lines.append("\r").append("%X:".format(frame and 0xF)).append(chunk)
+            i += 14
+            frame++
+        }
+        return lines.toString()
     }
 
     private fun livePid(pid: String): String {
