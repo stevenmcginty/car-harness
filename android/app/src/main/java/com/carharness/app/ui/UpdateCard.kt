@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -78,54 +76,77 @@ fun UpdateCard() {
     }
 
     SectionCard {
-        PanelTitle("APP UPDATES")
-        Text("Installed version: $installed", color = TextMuted, fontSize = 13.sp)
-        Spacer(Modifier.height(8.dp))
+        PanelTitle("App updates")
+        Row {
+            InfoChip("Installed", installed)
+        }
+        Spacer(Modifier.height(10.dp))
 
         when (stage) {
             UpdateStage.Idle, UpdateStage.Checking -> {
-                OutlinedButton(onClick = { check() }, enabled = stage == UpdateStage.Idle) {
-                    Text(if (stage == UpdateStage.Checking) "Checking…" else "Check for updates")
-                }
+                GhostButton(
+                    if (stage == UpdateStage.Checking) "Checking…" else "Check for updates",
+                    onClick = { check() },
+                    enabled = stage == UpdateStage.Idle,
+                )
             }
 
             UpdateStage.UpToDate -> {
                 Text(
                     "✓ You're on the latest version (${release?.tag}).",
-                    color = Green, fontSize = 13.sp
+                    color = Green, fontFamily = Barlow, fontSize = 13.sp,
                 )
-                Spacer(Modifier.height(6.dp))
-                OutlinedButton(onClick = { check() }) { Text("Check again") }
+                Spacer(Modifier.height(8.dp))
+                GhostButton("Check again", onClick = { check() })
             }
 
             UpdateStage.Available -> {
                 val info = release
                 if (info != null) {
-                    Text("Update available: ${info.tag}", color = Amber, fontSize = 14.sp)
+                    Text(
+                        "Update available: ${info.tag}",
+                        color = Amber, fontFamily = Barlow, fontSize = 14.sp,
+                    )
                     if (info.title.isNotEmpty() && info.title != info.tag) {
                         Spacer(Modifier.height(2.dp))
-                        Text(info.title, color = TextMuted, fontSize = 12.sp, lineHeight = 17.sp)
+                        Text(
+                            info.title, color = TextMuted, fontFamily = Barlow,
+                            fontSize = 12.sp, lineHeight = 17.sp,
+                        )
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(10.dp))
                     val mb = "%.1f".format(info.apkBytes / 1024.0 / 1024.0)
-                    Button(onClick = { downloadAndInstall() }) {
-                        Text("Download & install ($mb MB)")
-                    }
+                    PrimaryButton(
+                        "Download & install ($mb MB)",
+                        onClick = { downloadAndInstall() },
+                    )
                 }
             }
 
             UpdateStage.Downloading -> {
-                Text("Downloading ${release?.tag}…", color = TextMuted, fontSize = 13.sp)
-                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Downloading ${release?.tag}…",
+                    color = TextMuted, fontFamily = Barlow, fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(8.dp))
                 if (progress >= 0) {
                     LinearProgressIndicator(
                         progress = { progress / 100f },
                         modifier = Modifier.fillMaxWidth(),
+                        color = Green,
+                        trackColor = PanelRaised,
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text("$progress%", color = TextFaint, fontSize = 11.sp)
+                    Text(
+                        "$progress%", color = TextFaint,
+                        fontFamily = Mono, fontSize = 11.sp,
+                    )
                 } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Green,
+                        trackColor = PanelRaised,
+                    )
                 }
             }
 
@@ -134,28 +155,33 @@ fun UpdateCard() {
                     Text(
                         "Android needs your one-time OK first: flip on “Allow from this " +
                             "source” in the screen that just opened, come back, and tap Install.",
-                        color = Amber, fontSize = 12.sp, lineHeight = 17.sp
+                        color = Amber, fontFamily = Barlow,
+                        fontSize = 12.sp, lineHeight = 17.sp,
                     )
                 } else {
                     Text(
                         "Downloaded — follow the install prompt. If it didn't appear, " +
                             "tap Install.",
-                        color = TextMuted, fontSize = 12.sp, lineHeight = 17.sp
+                        color = TextMuted, fontFamily = Barlow,
+                        fontSize = 12.sp, lineHeight = 17.sp,
                     )
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
+                    PrimaryButton("Install", onClick = {
                         apkFile?.let { installHint = !AppUpdater.install(context, it) }
-                    }) { Text("Install") }
-                    OutlinedButton(onClick = { check() }) { Text("Re-check") }
+                    })
+                    GhostButton("Re-check", onClick = { check() })
                 }
             }
         }
 
         if (error.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            Text(error, color = Red, fontSize = 12.sp, lineHeight = 17.sp)
+            Text(
+                error, color = Red, fontFamily = Barlow,
+                fontSize = 12.sp, lineHeight = 17.sp,
+            )
         }
     }
 }

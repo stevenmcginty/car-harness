@@ -1,8 +1,6 @@
 package com.carharness.app.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +12,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
@@ -26,13 +23,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.carharness.app.AppState
 import com.carharness.app.ConnState
-import com.carharness.app.obd.Brands
 import com.carharness.app.obd.ServiceReset
 
 @Composable
@@ -71,43 +66,48 @@ fun ServiceScreen(state: AppState) {
     }
 
     LazyColumn(Modifier.fillMaxSize()) {
-        item { ScreenHeader("Service", "Resets & maintenance procedures") }
+        item { StatusRail("Service", "Resets & maintenance procedures", state) }
+
+        item { BrandRail(brand) { state.chooseModuleBrand(it) } }
+
         item {
             SectionCard {
-                PanelTitle("SERVICE RESETS")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Brands.all.forEach { b ->
-                        ResetBrandChip(b.label, brand == b.id) { state.chooseModuleBrand(b.id) }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
+                PanelTitle("Service resets")
                 Text(
                     "Reset the service indicators after you've done the work — oil/inspection " +
                         "counters and brake reminders. Green 'Run reset' items go over the OBD " +
                         "dongle; the rest are manual dash steps to follow.",
-                    color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp
+                    color = TextMuted, fontFamily = Barlow,
+                    fontSize = 13.sp, lineHeight = 18.sp,
                 )
                 if (state.connState !is ConnState.Connected) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Connect to the car on the Car tab to run dongle resets (you can still " +
                             "read the manual steps without a connection).",
-                        color = TextFaint, fontSize = 12.sp, lineHeight = 17.sp
+                        color = TextFaint, fontFamily = Barlow,
+                        fontSize = 12.sp, lineHeight = 17.sp,
                     )
                 }
                 if (state.resetProgress.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(state.resetProgress, color = Amber, fontSize = 12.sp)
+                    Spacer(Modifier.height(10.dp))
+                    SweepBar()
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        state.resetProgress, color = Amber,
+                        fontFamily = Mono, fontSize = 11.sp,
+                    )
                 }
                 if (state.resetMessage.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text(state.resetMessage, color = TextMain, fontSize = 13.sp, lineHeight = 18.sp)
+                    Text(
+                        state.resetMessage, color = TextMain, fontFamily = Barlow,
+                        fontSize = 13.sp, lineHeight = 18.sp,
+                    )
                 }
                 if (state.resetLog.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    state.resetLog.forEach {
-                        Text("✓ $it", color = TextFaint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    }
+                    Spacer(Modifier.height(8.dp))
+                    ConsoleBlock("Reset log", state.resetLog.map { "✓ $it" })
                 }
             }
         }
@@ -118,7 +118,7 @@ fun ServiceScreen(state: AppState) {
                 SectionCard {
                     Text(
                         "No service resets catalogued for this brand yet.",
-                        color = TextMuted, fontSize = 13.sp
+                        color = TextMuted, fontFamily = Barlow, fontSize = 13.sp,
                     )
                 }
             }
@@ -133,36 +133,30 @@ fun ServiceScreen(state: AppState) {
                 )
             }
         }
-    }
-}
 
-@Composable
-private fun ResetBrandChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Text(
-        label,
-        color = if (selected) TextMain else TextFaint,
-        fontSize = 13.sp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(if (selected) PanelRaised else Panel)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 7.dp)
-    )
+        item { Spacer(Modifier.height(12.dp)) }
+    }
 }
 
 @Composable
 private fun ConfidenceBadge(confidence: String) {
-    val color = when (confidence) {
-        "verified" -> Green
-        "community" -> Amber
-        else -> TextFaint
+    val (color, label) = when (confidence) {
+        "verified" -> Green to "VERIFIED"
+        "community" -> Amber to "COMMUNITY"
+        else -> TextFaint to "EXPERIMENTAL"
     }
-    val label = when (confidence) {
-        "verified" -> "VERIFIED"
-        "community" -> "COMMUNITY"
-        else -> "EXPERIMENTAL"
-    }
-    Text(label, color = color, fontSize = 10.sp)
+    StatusPill(label, color)
+}
+
+/** "DONGLE" (sends frames) vs "DASH STEPS" (manual procedure) tag. */
+@Composable
+private fun MethodTag(uds: Boolean) {
+    Text(
+        if (uds) "OVER THE DONGLE" else "DASH PROCEDURE",
+        color = if (uds) Green else TextFaint,
+        fontFamily = Barlow, fontSize = 9.sp,
+        fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp,
+    )
 }
 
 @Composable
@@ -176,61 +170,64 @@ private fun ResetCard(
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = Panel),
+        border = BorderStroke(1.dp, BorderSoft),
         shape = RoundedCornerShape(14.dp),
     ) {
         Column(Modifier.padding(14.dp)) {
+            MethodTag(reset.uds)
+            Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(reset.name, color = TextMain, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                Text(
+                    reset.name, color = TextMain, fontFamily = Barlow,
+                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(8.dp))
                 ConfidenceBadge(reset.confidence)
             }
             Spacer(Modifier.height(6.dp))
-            Text(reset.description, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
+            Text(
+                reset.description, color = TextMuted, fontFamily = Barlow,
+                fontSize = 13.sp, lineHeight = 18.sp,
+            )
 
             if (reset.models.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                Text(reset.models, color = TextFaint, fontSize = 11.sp)
+                Text(
+                    reset.models, color = TextFaint,
+                    fontFamily = Barlow, fontSize = 11.sp,
+                )
             }
 
             if (reset.uds) {
                 if (reset.steps.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("Sends:", color = TextFaint, fontSize = 10.sp)
-                    reset.steps.forEach {
-                        Text(
-                            it.describe(), color = TextMuted, fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
+                    Spacer(Modifier.height(10.dp))
+                    ConsoleBlock("Sends", reset.steps.map { it.describe() })
                 }
-                Spacer(Modifier.height(10.dp))
-                Button(onClick = onRun, enabled = connected && !busy) {
-                    Text(if (running) "Running…" else "Run reset")
-                }
+                Spacer(Modifier.height(12.dp))
+                PrimaryButton(
+                    if (running) "Running…" else "Run reset",
+                    onClick = onRun,
+                    enabled = connected && !busy,
+                )
                 if (!connected) {
                     Spacer(Modifier.height(4.dp))
-                    Text("Connect to the car first.", color = TextFaint, fontSize = 11.sp)
+                    Text(
+                        "Connect to the car first.", color = TextFaint,
+                        fontFamily = Barlow, fontSize = 11.sp,
+                    )
                 }
             } else {
-                // Manual dash procedure — show numbered steps, no send button.
-                Spacer(Modifier.height(8.dp))
-                Text("Steps (manual):", color = TextFaint, fontSize = 10.sp)
-                Spacer(Modifier.height(4.dp))
+                // Manual dash procedure — numbered steps, no send button.
+                Spacer(Modifier.height(10.dp))
                 reset.procedure.forEachIndexed { idx, step ->
-                    Row(Modifier.padding(vertical = 2.dp)) {
-                        Text(
-                            "${idx + 1}.", color = TextFaint, fontSize = 12.sp,
-                            modifier = Modifier.width(22.dp)
-                        )
-                        Text(step, color = TextMuted, fontSize = 12.sp, lineHeight = 17.sp)
-                    }
+                    StepRow(idx + 1, step)
                 }
             }
 
             if (reset.cautions.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                reset.cautions.forEach {
-                    Text("⚠ $it", color = Amber, fontSize = 11.sp, lineHeight = 16.sp)
-                }
+                Spacer(Modifier.height(10.dp))
+                CautionBox(reset.cautions)
             }
         }
     }

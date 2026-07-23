@@ -1,5 +1,7 @@
 package com.carharness.app.ui
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,8 +10,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,11 +22,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,7 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +46,7 @@ import com.carharness.app.obd.UdsDtc
 import com.carharness.app.obd.UdsModuleResult
 import com.carharness.app.obd.VinDecode
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ModulesScreen(state: AppState) {
     var expanded by remember { mutableStateOf<Int?>(null) }
@@ -80,62 +82,54 @@ fun ModulesScreen(state: AppState) {
     val brandDef = Brands.byId(brand)
 
     LazyColumn(Modifier.fillMaxSize()) {
-        item { ScreenHeader("Modules", "Deep scan, straight to each control unit") }
+        item { StatusRail("Modules", "Deep scan, straight to each control unit", state) }
 
-        item { BrandSelector(brand) { state.chooseModuleBrand(it) } }
+        item { BrandRail(brand) { state.chooseModuleBrand(it) } }
 
         item {
             SectionCard {
                 Text(
                     brandDef?.scanHint ?: "",
-                    color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp
+                    color = TextMuted, fontFamily = Barlow,
+                    fontSize = 13.sp, lineHeight = 19.sp,
                 )
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    PrimaryButton(
+                        if (state.modScanning) "Scanning…" else "Scan all modules",
                         onClick = { state.runModuleScan() },
                         enabled = state.connState is ConnState.Connected && !state.modScanning,
-                    ) {
-                        Text(
-                            if (state.modScanning) "Scanning…" else "Scan all modules",
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
+                    )
                     val ready = state.connState is ConnState.Connected &&
                         !state.modScanning && !state.extrasBusy
                     brandDef?.actions?.forEach { action ->
-                        OutlinedButton(
+                        GhostButton(
+                            if (state.extrasRunningId == action.id) "Reading…" else action.label,
                             onClick = { state.runBrandAction(action) },
                             enabled = ready,
-                            border = BorderStroke(1.dp, BorderSoft),
-                        ) {
-                            Text(
-                                if (state.extrasRunningId == action.id) "Reading…"
-                                else action.label
-                            )
-                        }
+                        )
                     }
                 }
                 if ((state.modScanning || state.extrasBusy) && state.modProgress.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
-                    LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(99.dp)),
-                        color = Green,
-                        trackColor = PanelRaised,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(state.modProgress, color = TextMuted, fontSize = 12.sp)
+                    Spacer(Modifier.height(14.dp))
+                    ScanTicker(state.modProgress)
                 }
                 if (state.connState !is ConnState.Connected) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Connect to the car on the Car tab first (or use Demo).",
-                        color = TextFaint, fontSize = 12.sp
+                        color = TextFaint, fontFamily = Barlow, fontSize = 12.sp,
                     )
                 }
                 if (state.modError.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text(state.modError, color = Red, fontSize = 13.sp, lineHeight = 18.sp)
+                    Text(
+                        state.modError, color = Red, fontFamily = Barlow,
+                        fontSize = 13.sp, lineHeight = 18.sp,
+                    )
                 }
             }
         }
@@ -151,27 +145,29 @@ fun ModulesScreen(state: AppState) {
                     if (state.extras.isEmpty()) {
                         Text(
                             extrasAction.emptyHint,
-                            color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp
+                            color = TextMuted, fontFamily = Barlow,
+                            fontSize = 13.sp, lineHeight = 18.sp,
                         )
                     } else {
                         state.extras.forEach { r ->
                             val warn = r.value.startsWith("⚠")
                             Row(Modifier.padding(vertical = 3.dp)) {
                                 Text(
-                                    r.name, color = if (warn) Red else TextMuted, fontSize = 13.sp,
+                                    r.name, color = if (warn) Red else TextMuted,
+                                    fontFamily = Barlow, fontSize = 13.sp,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
                                     if (r.unit.isEmpty()) r.value else "${r.value} ${r.unit}",
-                                    color = if (warn) Red else TextMain, fontSize = 13.sp,
-                                    fontFamily = FontFamily.Monospace
+                                    color = if (warn) Red else TextMain, fontSize = 12.sp,
+                                    fontFamily = Mono, fontWeight = FontWeight.Medium,
                                 )
                             }
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
                             extrasAction.refreshHint,
-                            color = TextFaint, fontSize = 11.sp
+                            color = TextFaint, fontFamily = Barlow, fontSize = 11.sp,
                         )
                     }
                 }
@@ -191,43 +187,81 @@ fun ModulesScreen(state: AppState) {
         report?.let {
             val present = it.modules.filter { m -> m.present }
             val faults = present.sumOf { m -> m.dtcs.size }
+            val noData = present.count { m -> m.error != null }
+            val faulted = present.count { m -> m.error == null && m.dtcs.isNotEmpty() }
+            val clean = present.size - noData - faulted
 
             item {
                 SectionCard {
-                    PanelTitle("VEHICLE")
+                    PanelTitle("Scan result")
                     if (it.simulated) {
                         StatusPill("SIMULATED — no real car connected", Amber)
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(10.dp))
                     }
-                    val ident = VinDecode.decode(it.vin)
-                    if (ident.make != null || it.vin != null) {
-                        Text(
-                            ident.make ?: "Identified by VIN",
-                            color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        HealthRing(
+                            ok = clean, faulted = faulted, noData = noData,
+                            faultCount = faults,
                         )
-                        ident.year?.let { y ->
-                            Spacer(Modifier.height(2.dp))
-                            Text("Likely $y", color = Blue, fontSize = 13.sp)
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            val ident = VinDecode.decode(it.vin)
+                            Text(
+                                ident.make ?: (if (it.vin != null) "Identified by VIN" else "Vehicle"),
+                                color = TextMain, fontFamily = Barlow,
+                                fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
+                            )
+                            ident.year?.let { y ->
+                                Text(
+                                    "Likely $y", color = Blue, fontFamily = Barlow,
+                                    fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                )
+                            }
+                            ident.marketNote?.let { n ->
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    n, color = TextFaint,
+                                    fontFamily = Barlow, fontSize = 10.sp, lineHeight = 14.sp,
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                StatusDot(Green)
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "$clean clean", color = TextMuted,
+                                    fontFamily = Barlow, fontSize = 11.sp,
+                                )
+                                if (faulted > 0) {
+                                    Spacer(Modifier.width(10.dp))
+                                    StatusDot(Red)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "$faulted with faults", color = TextMuted,
+                                        fontFamily = Barlow, fontSize = 11.sp,
+                                    )
+                                }
+                                if (noData > 0) {
+                                    Spacer(Modifier.width(10.dp))
+                                    StatusDot(Amber)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "$noData no data", color = TextMuted,
+                                        fontFamily = Barlow, fontSize = 11.sp,
+                                    )
+                                }
+                            }
                         }
-                        ident.marketNote?.let { n ->
-                            Spacer(Modifier.height(2.dp))
-                            Text(n, color = TextFaint, fontSize = 11.sp)
-                        }
-                        Spacer(Modifier.height(8.dp))
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        it.vin?.let { vin -> InfoChip("VIN", vin, Blue) }
-                    }
-                    if (it.vin != null) Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        InfoChip("Modules", "${present.size} answered")
-                        InfoChip(
-                            "Faults", "$faults",
-                            if (faults > 0) Red else Green
-                        )
+                    it.vin?.let { vin ->
+                        Spacer(Modifier.height(12.dp))
+                        Row { InfoChip("VIN", vin, Blue) }
                     }
                     Spacer(Modifier.height(10.dp))
-                    Text(it.message, color = TextMuted, fontSize = 13.sp, lineHeight = 19.sp)
+                    Text(
+                        it.message, color = TextMuted, fontFamily = Barlow,
+                        fontSize = 13.sp, lineHeight = 19.sp,
+                    )
                 }
             }
 
@@ -264,38 +298,6 @@ fun ModulesScreen(state: AppState) {
 
 // ---------------------------------------------------------------- components
 
-@Composable
-private fun BrandSelector(selected: String, onChoose: (String) -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 5.dp)
-            .background(Panel, RoundedCornerShape(14.dp))
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Brands.all.forEach { b ->
-            val active = selected == b.id
-            Box(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (active) Green.copy(alpha = 0.15f) else Panel)
-                    .clickable { onChoose(b.id) }
-                    .padding(vertical = 9.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    b.label,
-                    color = if (active) Green else TextFaint,
-                    fontSize = 13.sp,
-                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                )
-            }
-        }
-    }
-}
-
 private fun Int.hex(): String = if (this > 0xFF) "0x%03X".format(this) else "0x%02X".format(this)
 
 @Composable
@@ -318,6 +320,7 @@ private fun ModuleCard(
         faults == 0 -> "OK"
         else -> "$faults fault" + if (faults == 1) "" else "s"
     }
+    val chevron by animateFloatAsState(if (expanded) 0f else -90f, label = "chevron")
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -327,20 +330,26 @@ private fun ModuleCard(
         border = BorderStroke(1.dp, BorderSoft),
         shape = RoundedCornerShape(14.dp),
     ) {
-        Column(Modifier.padding(14.dp)) {
+        Column(Modifier.padding(14.dp).animateContentSize()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 StatusDot(statusColor)
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        module.code, color = TextMain, fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold
+                        module.code, color = TextMain, fontFamily = Barlow,
+                        fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                     )
-                    Text(module.name, color = TextFaint, fontSize = 12.sp)
+                    Text(
+                        module.name, color = TextFaint,
+                        fontFamily = Barlow, fontSize = 12.sp,
+                    )
                 }
                 StatusPill(statusLabel, statusColor)
                 Spacer(Modifier.width(8.dp))
-                Text(if (expanded) "▾" else "▸", color = TextFaint, fontSize = 13.sp)
+                Text(
+                    "▾", color = TextFaint, fontSize = 13.sp,
+                    modifier = Modifier.rotate(chevron),
+                )
             }
 
             if (expanded) {
@@ -353,61 +362,52 @@ private fun ModuleCard(
                     module.ident.forEach { (label, value) ->
                         Row(Modifier.padding(vertical = 2.dp)) {
                             Text(
-                                label.uppercase(), color = TextFaint, fontSize = 10.sp,
+                                label.uppercase(), color = TextFaint,
+                                fontFamily = Barlow, fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.width(92.dp),
-                                letterSpacing = 0.6.sp,
+                                letterSpacing = 0.8.sp,
                             )
                             Text(
                                 value,
                                 color = if (label == "VIN") Blue else TextMain,
-                                fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                                fontSize = 11.sp, fontFamily = Mono,
                             )
                         }
                     }
                 }
                 module.error?.let {
                     Spacer(Modifier.height(8.dp))
-                    Text(it, color = Amber, fontSize = 12.sp, lineHeight = 17.sp)
+                    Text(
+                        it, color = Amber, fontFamily = Barlow,
+                        fontSize = 12.sp, lineHeight = 17.sp,
+                    )
                 }
                 Spacer(Modifier.height(8.dp))
                 if (module.dtcs.isEmpty() && module.error == null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         StatusDot(Green)
                         Spacer(Modifier.width(8.dp))
-                        Text("No faults stored in this module.", color = Green, fontSize = 13.sp)
+                        Text(
+                            "No faults stored in this module.", color = Green,
+                            fontFamily = Barlow, fontSize = 13.sp,
+                        )
                     }
                 } else {
                     module.dtcs.forEach { UdsDtcCard(it, ai) }
                 }
                 if (module.trace.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(PanelRaised, RoundedCornerShape(10.dp))
-                            .padding(10.dp)
-                    ) {
-                        Text(
-                            "DIAGNOSTIC TRAIL", color = TextFaint, fontSize = 9.sp,
-                            letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        module.trace.forEach { line ->
-                            Text(
-                                line, color = TextFaint, fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace, lineHeight = 15.sp
-                            )
-                        }
-                    }
+                    ConsoleBlock("Diagnostic trail", module.trace)
                 }
                 if (module.dtcs.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
-                    OutlinedButton(
-                        onClick = onClear, enabled = !clearing,
-                        border = BorderStroke(1.dp, BorderSoft),
-                    ) {
-                        Text(if (clearing) "Clearing…" else "Clear this module")
-                    }
+                    GhostButton(
+                        if (clearing) "Clearing…" else "Clear this module",
+                        onClick = onClear,
+                        enabled = !clearing,
+                        tint = Red,
+                    )
                 }
             }
         }
@@ -418,9 +418,12 @@ private fun ModuleCard(
 @Composable
 private fun AbsentCard(absent: List<UdsModuleResult>, hint: String?) {
     SectionCard {
-        PanelTitle(if (hint != null) "NOT REACHABLE OVER THIS DONGLE" else "NOT FITTED / NO ANSWER")
+        PanelTitle(if (hint != null) "Not reachable over this dongle" else "Not fitted / no answer")
         if (hint != null) {
-            Text(hint, color = TextMuted, fontSize = 12.sp, lineHeight = 18.sp)
+            Text(
+                hint, color = TextMuted, fontFamily = Barlow,
+                fontSize = 12.sp, lineHeight = 18.sp,
+            )
             Spacer(Modifier.height(10.dp))
         }
         FlowRow(
@@ -435,8 +438,8 @@ private fun AbsentCard(absent: List<UdsModuleResult>, hint: String?) {
                 ) {
                     Text(
                         "${m.code} · ${m.address.hex()}",
-                        color = TextFaint, fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
+                        color = TextFaint, fontSize = 10.sp,
+                        fontFamily = Mono,
                     )
                 }
             }
@@ -446,28 +449,45 @@ private fun AbsentCard(absent: List<UdsModuleResult>, hint: String?) {
 
 @Composable
 private fun UdsDtcCard(dtc: UdsDtc, ai: AiFaultContext? = null) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = PanelRaised),
-        border = BorderStroke(1.dp, BorderSoft),
-        shape = RoundedCornerShape(12.dp),
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(PanelRaised)
+            .height(IntrinsicSize.Min)
     ) {
+        Box(
+            Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(Red)
+        )
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    dtc.code, color = TextMain, fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace
+                    dtc.code, color = TextMain, fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold, fontFamily = Mono,
                 )
                 Spacer(Modifier.width(10.dp))
                 if (dtc.hex.isNotEmpty()) {
-                    Text(dtc.hex, color = Amber, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    Text(
+                        dtc.hex, color = Amber,
+                        fontSize = 11.sp, fontFamily = Mono,
+                    )
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Text(dtc.description, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
+            Text(
+                dtc.description, color = TextMuted, fontFamily = Barlow,
+                fontSize = 13.sp, lineHeight = 18.sp,
+            )
             if (dtc.flags.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                Text(dtc.flags.joinToString(" · "), color = TextFaint, fontSize = 11.sp)
+                Text(
+                    dtc.flags.joinToString(" · "), color = TextFaint,
+                    fontFamily = Barlow, fontSize = 11.sp,
+                )
             }
             if (ai != null) AiExplainBlock(dtc.code, dtc.hex, ai)
         }

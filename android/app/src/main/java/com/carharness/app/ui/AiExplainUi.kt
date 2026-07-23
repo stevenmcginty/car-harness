@@ -1,6 +1,7 @@
 package com.carharness.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -76,12 +77,13 @@ fun AiExplainBlock(code: String, rawHex: String?, ctx: AiFaultContext) {
         answer != null -> Column(
             Modifier
                 .fillMaxWidth()
-                .background(Panel, RoundedCornerShape(10.dp))
+                .background(Bg, RoundedCornerShape(10.dp))
+                .border(1.dp, RuleInner, RoundedCornerShape(10.dp))
                 .padding(10.dp),
         ) {
             Text(
-                "AI EXPLANATION", color = Blue, fontSize = 9.sp,
-                letterSpacing = 1.2.sp, fontWeight = FontWeight.SemiBold,
+                "AI EXPLANATION", color = Blue, fontFamily = Barlow, fontSize = 9.sp,
+                letterSpacing = 1.4.sp, fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(4.dp))
             Text(answer!!, color = TextMuted, fontSize = 12.sp, lineHeight = 17.sp)

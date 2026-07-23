@@ -5,11 +5,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -53,34 +50,39 @@ fun FaultsScreen(state: AppState) {
     }
 
     LazyColumn(Modifier.fillMaxSize()) {
-        item { ScreenHeader("Faults", "Engine fault codes over OBD-II") }
+        item { StatusRail("Faults", "Engine fault codes over OBD-II", state) }
         item {
             SectionCard {
-                PanelTitle("FAULT CODES")
+                PanelTitle("Fault codes")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                    PrimaryButton(
+                        if (state.scanning) "Scanning…" else "Read fault codes",
                         onClick = { state.runScan() },
                         enabled = state.connState is ConnState.Connected && !state.scanning,
-                    ) {
-                        Text(if (state.scanning) "Scanning…" else "Read fault codes")
-                    }
-                    OutlinedButton(
+                    )
+                    GhostButton(
+                        if (state.clearing) "Clearing…" else "Clear",
                         onClick = { confirmClear = true },
                         enabled = state.scanResult != null && !state.clearing,
-                    ) {
-                        Text(if (state.clearing) "Clearing…" else "Clear")
-                    }
+                    )
+                }
+                if (state.scanning) {
+                    Spacer(Modifier.height(12.dp))
+                    SweepBar()
                 }
                 if (state.connState !is ConnState.Connected) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Connect to the car on the Car tab first (or use Demo).",
-                        color = TextFaint, fontSize = 12.sp
+                        color = TextFaint, fontFamily = Barlow, fontSize = 12.sp,
                     )
                 }
                 if (state.faultError.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text(state.faultError, color = Red, fontSize = 13.sp, lineHeight = 18.sp)
+                    Text(
+                        state.faultError, color = Red, fontFamily = Barlow,
+                        fontSize = 13.sp, lineHeight = 18.sp,
+                    )
                 }
             }
         }
