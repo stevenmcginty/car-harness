@@ -1,0 +1,22 @@
+{
+  "id": "fiat",
+  "name": "Fiat / Alfa Romeo",
+  "transport": "elm327",
+  "description": "Fiat / Alfa Romeo (FCA / Stellantis, also Lancia and the Jeep/Chrysler siblings) over a generic OBD-II dongle. Two feasible eras plus one honest no. UDS-era FCA (Giulia 952, Stelvio, 500X, Tipo, 124 Spider, Jeep Renegade, newer 500/Panda; ~2014+) uses 29-bit 18DAxxF1 addressing on 500k CAN at the standard OBD pins -- fully readable over the bare dongle, and the 2018+ Security Gateway blocks only clearing/actuations, NOT reads. CAN-era Fiats (~2005-2016: Grande Punto, 500, Panda, MiTo, Giulietta) answer engine + ABS bare on 11-bit HS-CAN; body/cluster/airbag sit on a low-speed B-CAN not wired to the OBD port and need a MultiECUScan-style pin adapter. K-line-era cars (Alfa 147/156/GT, Punto mk2) are out of scope on this dongle.",
+  "probe": "profile.py",
+  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"],
+  "panel": {
+    "title": "FCA modules (OBD dongle)",
+    "hint": "Module scan for Fiat / Alfa Romeo over the ordinary OBD dongle. UDS-era FCA (Alfa Giulia/Stelvio, Fiat 500X/Tipo/124, Jeep Renegade, ≈2014+) reads in full over the bare dongle — engine, gearbox, ABS/ESC, steering and body computer, each module's own fault memory. Reads work even on 2018+ Security-Gateway cars: the SGW blocks only clearing and actuations, not reads, so don't avoid an SGW car. CAN-era Fiats (≈2005-2016: Grande Punto, 500, Panda, MiTo, Giulietta) give engine + ABS on the bare dongle; the body computer, cluster and airbag sit on a low-speed B-CAN and need a MultiECUScan-style B-CAN pin adapter (UK: Gendan). K-line-era cars (Alfa 147/156/GT, older Punto) aren't supported on this dongle. Pick the adapter top-right, ignition ON, then scan.",
+    "scanBusy": "Walking the FCA modules on 29-bit CAN (18DAxxF1)… (absent modules time out quietly; TPMS is never touched)",
+    "actions": [
+      {
+        "id": "live",
+        "label": "Live extras",
+        "busy": "Reading the Fiat / Alfa-specific values…",
+        "title": "Fiat / Alfa live extras",
+        "hint": "Reads FCA-specific values the generic list doesn't carry — for the Alfa Giulia/Stelvio 2.2 diesel: DPF soot mass and regeneration status, oil temp/level, coolant, boost, current gear, battery, and gearbox (TCT/ZF) oil temperature. Captured from a single on-car MY2016 Giulia, so verify the scaling against the car. On a CAN-era Fiat it falls back to a curated generic Mode-01 set. TPMS is never polled (it can engage the immobilizer)."
+      }
+    ]
+  }
+}

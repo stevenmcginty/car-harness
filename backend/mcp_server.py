@@ -23,9 +23,13 @@ from serial.tools import list_ports  # noqa: E402
 from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import brands, interfaces, registry  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
+from backend.profiles.fiat import pids as fiat_pids  # noqa: E402
+from backend.profiles.fiat import scan as fiat_scan  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
+from backend.profiles.mercedes import pids as mercedes_pids  # noqa: E402
+from backend.profiles.mercedes import scan as mercedes_scan  # noqa: E402
 from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
 from backend.profiles.vw import pids as vw_pids  # noqa: E402
@@ -338,6 +342,151 @@ def vw_clear_module(
     if error is not None:
         return error
     return vw_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Mercedes-Benz engine + gearbox read over a generic OBD dongle (UDS + KWP2000)
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def mercedes_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a Mercedes' engine + gearbox fault memory over a generic OBD-II dongle (read-only).
+
+    Reads the two modules a plain dongle reaches at manufacturer depth on a
+    Mercedes -- engine (0x7E0/0x7E8) and automatic transmission (0x7E1/0x7E9),
+    both on the standard +8 block -- and each one's fault codes + identification,
+    laddering UDS then Mercedes' KWP2000-over-CAN dialect. VIN first over Mode 09.
+    For mainstream Mercedes ~2004-2018 (petrol OBD ~2001+, EU diesel ~2004+).
+    Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    Note: this is NOT a VCDS/ISTA-style all-modules walk. Body/chassis/comfort
+    modules (ABS/ESP, SRS, SAM, EZS, cluster, Airmatic, climate) use Mercedes'
+    proprietary addressing behind the gateway and are STAR/XENTRY-only -- no OBD
+    dongle reaches them. ~2018+ cars are DoIP/Ethernet and give generic OBD only.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mercedes_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def mercedes_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read Mercedes-specific live "extras" over a generic OBD dongle.
+
+    One read-only pass: the one verified Mercedes-specific value -- the 722.9/9G
+    automatic-transmission (ATF) oil temperature on the gearbox ECU 0x7E1 (tried
+    as KWP 21 30 then UDS 22 2130; its -50 vs -40 offset needs a real-car confirm)
+    -- plus a curated generic Mode-01 set (coolant, oil temp, module voltage,
+    ambient, fuel level) on the engine. Values this car doesn't support are
+    skipped. Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    Note: DPF soot / AdBlue level have no public DID for Mercedes, so DPF/SCR
+    health shows through the fault codes, not a live value.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mercedes_pids.live(instance, mode)
+
+
+@mcp.tool()
+def mercedes_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on Mercedes engine/gearbox modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    address: hex request id like "0x7E0" (the engine) or "0x7E1" (the gearbox);
+        omit to clear both modules that answer. Clears via UDS then the KWP
+        14 FF 00 fallback. Faults return if the underlying problem is still present.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mercedes_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Fiat / Alfa Romeo (FCA / Stellantis) module read over a generic OBD dongle
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def fiat_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a Fiat / Alfa Romeo (FCA) car's modules over a generic OBD-II dongle (read-only).
+
+    Two tiers. On a UDS-era FCA (Alfa Giulia/Stelvio, Fiat 500X/Tipo/124, Jeep
+    Renegade, ~2014+) it walks the modules over 29-bit CAN (18DAxxF1) -- engine
+    0x10, transmission 0x18, ABS/ESC 0x28 (which hosts the EPB), steering column
+    0x30 and body computer 0x40 -- reading each one's fault codes + identification.
+    VIN first over Mode 09. On a CAN-era Fiat (~2005-2016) it falls back to the
+    11-bit engine and says the body modules need a MultiECUScan B-CAN pin adapter.
+    Ignition must be ON.
+
+    SGW honesty: the 2018+ FCA Security Gateway blocks CLEARING and actuations,
+    NOT reads -- so this read-only scan works fully even on an SGW car. TPMS
+    (0xC7) is NEVER addressed: polling it can engage the immobilizer and stall the
+    car.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return fiat_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def fiat_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read Fiat / Alfa-specific live "extras" over a generic OBD dongle.
+
+    One read-only pass. On a UDS-era Alfa Giulia/Stelvio (2.2 diesel) it reads the
+    danardi-captured DPF soot mass + regeneration status, oil temp/level, coolant,
+    boost, current gear and battery on the engine (0x10) and the gearbox (TCT/ZF)
+    oil temperature on the TCM (0x18), over 29-bit CAN, one DID at a time. These
+    are a single on-car capture, so verify the scaling against the car. A CAN-era
+    Fiat falls back to a curated generic Mode-01 set. Ignition must be ON.
+
+    TPMS (0xC7) is NEVER polled -- it can engage the immobilizer.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return fiat_pids.live(instance, mode)
+
+
+@mcp.tool()
+def fiat_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on Fiat / Alfa (FCA) modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    address: one-byte FCA module address like "0x10" (engine) or "0x28" (ABS);
+        omit to clear every FCA module that answers. TPMS "0xC7" is refused
+        outright (immobilizer trap). On a 2018+ Security-Gateway car the clear is
+        blocked over a bare dongle -- reads still work, but clearing needs an SGW
+        bypass plug or an AutoAuth-registered tool. Faults return if the
+        underlying problem is still present.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return fiat_scan.clear(instance, mode, address)
 
 
 # --------------------------------------------------------------------------- #

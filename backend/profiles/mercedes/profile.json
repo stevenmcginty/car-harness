@@ -1,0 +1,22 @@
+{
+  "id": "mercedes",
+  "name": "Mercedes-Benz",
+  "transport": "elm327",
+  "description": "Mercedes-Benz over a generic OBD-II dongle. Engine (0x7E0/0x7E8) + automatic transmission (0x7E1/0x7E9) deep read plus generic OBD-II, on 11-bit/500k CAN -- honestly the whole reachable set. Body/chassis/comfort modules (ABS/ESP, SRS, SAM, EZS, cluster, Airmatic, Parktronic, climate) use Mercedes' proprietary addressing behind a filtering gateway and are STAR/XENTRY-only -- no OBD dongle reaches them. Works ~2004-2018 (petrol OBD ~2001+, EU diesel ~2004+); ~2018+ cars are DoIP/Ethernet and give generic OBD-II only. This is NOT a VCDS/ISTA-style all-modules walk.",
+  "probe": "profile.py",
+  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"],
+  "panel": {
+    "title": "Engine & gearbox deep read (OBD dongle)",
+    "hint": "Reads the engine and automatic gearbox fault memory + identification deeper than generic OBD-II, plus the VIN and a generic all-system scan. Works on mainstream Mercedes ~2004-2018 (petrol OBD ~2001+, EU diesel ~2004+). Body modules (ABS/ESP, SRS, SAM, EZS, cluster, Airmatic, climate) are STAR/XENTRY-only on ANY dongle -- their ids live in encrypted CBF files, so apps like Carly use privately reverse-engineered maps the dongle itself can't supply. On ~2018+ cars full diagnostics moved to DoIP/Ethernet, so only generic OBD-II answers -- the scan says so rather than imply a fault. Pick the adapter top-right, ignition ON, then scan.",
+    "scanBusy": "Reading the Mercedes engine + gearbox (UDS then KWP2000-over-CAN; body modules are STAR-only and not part of this scan)...",
+    "actions": [
+      {
+        "id": "live",
+        "label": "Live extras",
+        "busy": "Reading the Mercedes-specific values...",
+        "title": "Mercedes live extras",
+        "hint": "Reads the one verified Mercedes-specific value the generic list doesn't carry -- 722.9/9G automatic-transmission (ATF) oil temperature on the gearbox ECU -- plus a curated generic Mode-01 set (coolant, oil temp, module voltage, ambient, fuel level). DPF soot / AdBlue level have no public DID for Mercedes, so DPF/SCR health shows through the fault codes instead."
+      }
+    ]
+  }
+}

@@ -154,3 +154,90 @@ class Elm327UdsClient:
                 return matching[-1]
             return records[-1]
         raise ObdError(f"No usable reply to {cmd}.", kind="no_data")
+
+
+class Elm327Uds29Client:
+    """A UDS client over one already-open Elm327Session, 29-bit FCA addressing.
+
+    Sibling of Elm327UdsClient for the Fiat / Alfa Romeo (FCA / Stellantis) UDS
+    era, which addresses ECUs with 29-bit extended CAN at 500k
+    (docs/private/fiat-alfa-research.md §2a, §3a): the physically-addressed
+    request id is 18DAxxF1 (xx = destination ECU, F1 = tester), the response is
+    18DAF1xx, and the functional broadcast is 18DB33F1. Same lifecycle as the
+    11-bit client -- begin() once, then request()/the core.uds helpers per module,
+    then restore() in a finally -- and reassemble() is shared.
+
+    ``dst`` throughout is the ONE-BYTE ECU address (0x10 engine, 0x18 TCM, ...),
+    NOT a full CAN id. The 29-bit era needs the ELM on ATSP7; scan.py owns that
+    switch (it also restores the discovered protocol afterwards), so this client
+    never touches ATSP.
+    """
+
+    def __init__(self, session):
+        self.session = session
+        self._target = None    # dst the ELM is currently aimed at
+        self._priority = True  # ATCP accepted -> 3-byte ATSH; else full 8-byte ATSH
+
+    # ------------------------------------------------------------------ #
+    def begin(self):
+        """One-off ELM setup for a 29-bit UDS module session (undone by restore()).
+
+        Sets the CAN priority byte (ATCP 18) so ATSH need only carry the low three
+        header bytes (DAxxF1). A cheap clone that rejects ATCP answers "?", in
+        which case _aim() falls back to the full 18DAxxF1 header some firmwares
+        accept instead (research §3a, §7)."""
+        self.session.at("ATAT0")   # adaptive timing off -- we manage the timeout
+        self.session.at("ATST64")  # ~400ms per-frame ceiling; DA10F1 reads are slow
+        reply = self.session.at("ATCP18")
+        self._priority = "?" not in reply
+
+    def restore(self):
+        """Undo the per-module receive filter, flow control and timing. ATSP is
+        the caller's (scan.py owns the protocol switch), so restore only sets the
+        29-bit functional header 18DB33F1 -- the 29-bit analogue of the 11-bit
+        client's ATSH7DF -- and clears the filters back to defaults."""
+        for cmd in ("ATCRA", "ATSH18DB33F1", "ATFCSM0", "ATAT1", "ATST32"):
+            try:
+                self.session.at(cmd)
+            except Exception:
+                pass
+        self._target = None
+
+    def _aim(self, dst: int):
+        """Point the ELM at one ECU by its one-byte address: TX header + RX filter
+        + flow control for the 18DAxxF1 / 18DAF1xx pair (research §3a). With ATCP
+        accepted the TX header is the 3-byte DAxxF1; otherwise the full 18DAxxF1.
+        Flow control 30 00 00 = clear-to-send, no block-size limit, no gap."""
+        if self._target == dst:
+            return
+        tx_low = f"DA{dst:02X}F1"
+        tx_full = f"18DA{dst:02X}F1"
+        rx_full = f"18DAF1{dst:02X}"
+        self.session.at(f"ATSH{tx_low if self._priority else tx_full}")
+        self.session.at(f"ATCRA{rx_full}")
+        self.session.at(f"ATFCSH{tx_full}")
+        self.session.at("ATFCSD300000")
+        self.session.at("ATFCSM1")
+        self._target = dst
+
+    # ------------------------------------------------------------------ #
+    def request(self, dst: int, data: bytes, timeout: float = 3.0) -> bytes:
+        """Send one UDS request to ECU ``dst`` (its one-byte address) and return
+        the reassembled UDS reply bytes.
+
+        The reply may be a 0x7F negative response -- returned as-is so the caller's
+        _check() (backend/core/uds.py) can raise a proper UdsNegativeResponse.
+        Raises ObdError(kind='no_data'|'link') when nothing usable comes back,
+        which tester_present() reads as "no ECU here".
+        """
+        self._aim(dst)
+        cmd = data.hex().upper()
+        text = self.session._raw(cmd.encode("ascii") + b"\r", timeout)
+        records = [bytes(r) for r in reassemble(text, cmd) if r]
+        if records:
+            expected = data[0] | 0x40
+            matching = [r for r in records if r[0] == expected or r[0] == 0x7F]
+            if matching:
+                return matching[-1]
+            return records[-1]
+        raise ObdError(f"No usable reply to {cmd}.", kind="no_data")

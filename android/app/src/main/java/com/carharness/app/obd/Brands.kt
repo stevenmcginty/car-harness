@@ -127,6 +127,64 @@ object Brands {
             scan = { ctrl, onStep -> ctrl.vwScan(onStep) },
             clear = { ctrl, addr -> ctrl.vwClear(addr) },
         ),
+        Brand(
+            id = "mercedes",
+            label = "Mercedes",
+            scanHint = "Reads the VIN first (so you always know the car), then the two modules a " +
+                "dongle reaches at manufacturer depth on a Mercedes — the engine and the automatic " +
+                "gearbox — reading each one's own fault memory, laddering UDS then Mercedes' " +
+                "KWP2000-over-CAN dialect. This is an honest engine + gearbox deep read, NOT a " +
+                "VCDS/ISTA all-modules walk: body modules (ABS/ESP, SRS, SAM, EZS, cluster, " +
+                "Airmatic, climate) use Mercedes' proprietary addressing behind the gateway and are " +
+                "STAR-only — no dongle reaches them. Works ~2004-2018; ~2018+ cars are DoIP/Ethernet " +
+                "and give generic OBD-II only. Live extras adds the 722.9/9G ATF gearbox temperature.",
+            actions = listOf(
+                BrandAction(
+                    id = "extras",
+                    label = "Live extras",
+                    cardTitle = "MERCEDES LIVE EXTRAS",
+                    emptyHint = "This car didn't answer any of the Mercedes-specific values. " +
+                        "Make sure the ignition is ON — the 722.9/9G ATF temp is the one " +
+                        "Mercedes-specific extra, and the generic live dashboard on the Car tab " +
+                        "still works.",
+                    refreshHint = "One-shot read-only pass — tap Live extras again to refresh. " +
+                        "Values this car doesn't support are skipped.",
+                    run = { ctrl, onStep -> ctrl.mercedesEnhanced(onStep) },
+                ),
+            ),
+            scan = { ctrl, onStep -> ctrl.mercedesScan(onStep) },
+            clear = { ctrl, addr -> ctrl.mercedesClear(addr) },
+        ),
+        Brand(
+            id = "fiat",
+            label = "Fiat/Alfa",
+            scanHint = "Reads the VIN first (so you always know the car), then walks the Fiat / Alfa " +
+                "modules. On a UDS-era FCA (Alfa Giulia/Stelvio, Fiat 500X/Tipo/124, Jeep Renegade, " +
+                "≈2014+) it reads engine, gearbox, ABS/ESC, steering and the body computer over 29-bit " +
+                "CAN — each one's own fault memory. Reads work even on a 2018+ Security-Gateway car: " +
+                "the SGW blocks only clearing and actuations, not reads. On a CAN-era Fiat (≈2005-2016) " +
+                "you get engine + ABS on the bare dongle; the body computer, cluster and airbag sit on " +
+                "a low-speed B-CAN and need a MultiECUScan-style B-CAN pin adapter (UK: Gendan). Older " +
+                "K-line cars (Alfa 147/156/GT, older Punto) aren't supported on this dongle. TPMS is " +
+                "never touched — polling it can engage the immobilizer. Live extras adds the Giulia " +
+                "diesel DPF soot/regen, oil/coolant/boost and gearbox temperature.",
+            actions = listOf(
+                BrandAction(
+                    id = "extras",
+                    label = "Live extras",
+                    cardTitle = "FIAT / ALFA LIVE EXTRAS",
+                    emptyHint = "This car didn't answer any of the FCA-specific values. " +
+                        "Make sure the ignition is ON — the danardi Giulia values are captured " +
+                        "on a diesel MY2016, so coverage varies by model year and engine.",
+                    refreshHint = "One-shot read-only pass — tap Live extras again to refresh. " +
+                        "Single-source scaling; verify against the car. Values this car doesn't " +
+                        "support are skipped.",
+                    run = { ctrl, onStep -> ctrl.fiatEnhanced(onStep) },
+                ),
+            ),
+            scan = { ctrl, onStep -> ctrl.fiatScan(onStep) },
+            clear = { ctrl, addr -> ctrl.fiatClear(addr) },
+        ),
     )
 
     fun byId(id: String): Brand? = all.firstOrNull { it.id == id }

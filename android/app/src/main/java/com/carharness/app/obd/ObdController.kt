@@ -185,6 +185,38 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             VwUds.readEnhanced(session, onProgress)
         }
 
+    /** Mercedes engine + gearbox module scan (UDS then KWP2000-over-CAN). Serialised. */
+    suspend fun mercedesScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        MercedesUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one Mercedes module's fault memory; returns that module's fresh DTCs. */
+    suspend fun mercedesClear(address: Int): List<UdsDtc> = mutex.withLock {
+        MercedesUds.clearDtcs(session, address)
+    }
+
+    /** One pass over the Mercedes live extras (722.9/9G ATF temp + generic Mode-01). */
+    suspend fun mercedesEnhanced(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            MercedesUds.readEnhanced(session, onProgress)
+        }
+
+    /** Fiat / Alfa (FCA) module scan (29-bit UDS, with an 11-bit CAN-era fallback). Serialised. */
+    suspend fun fiatScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        FiatUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one Fiat / Alfa module's fault memory; returns that module's fresh DTCs. */
+    suspend fun fiatClear(address: Int): List<UdsDtc> = mutex.withLock {
+        FiatUds.clearDtcs(session, address)
+    }
+
+    /** One pass over the Fiat / Alfa live extras (danardi Giulia DIDs / generic Mode-01). */
+    suspend fun fiatEnhanced(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            FiatUds.readEnhanced(session, onProgress)
+        }
+
     /**
      * Run one service reset over the dongle — CHANGES THE CAR (uds resets only).
      * Serialised with everything else. Dispatches on the reset's brand so the
