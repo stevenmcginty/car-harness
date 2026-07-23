@@ -235,6 +235,22 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             JlrUds.readEnhanced(session, onProgress)
         }
 
+    /** Porsche module scan (Porsche-own UDS/KWP-over-CAN, VAG-MLB reuse, K-line floor). Serialised. */
+    suspend fun porscheScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        PorscheUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one Porsche module's fault memory; returns that module's fresh DTCs. */
+    suspend fun porscheClear(address: Int): List<UdsDtc> = mutex.withLock {
+        PorscheUds.clearDtcs(session, address)
+    }
+
+    /** One pass over the Porsche live extras (997.2 KWP oil temp / generic Mode-01). */
+    suspend fun porscheEnhanced(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            PorscheUds.readEnhanced(session, onProgress)
+        }
+
     /** Fiat / Alfa (FCA) module scan (29-bit UDS, with an 11-bit CAN-era fallback). Serialised. */
     suspend fun fiatScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
         FiatUds.scan(session, simulated, onProgress)

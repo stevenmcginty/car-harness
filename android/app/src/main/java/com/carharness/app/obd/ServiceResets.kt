@@ -62,6 +62,7 @@ object ServiceResets {
         "peugeot" -> PEUGEOT
         "vw" -> VW
         "jlr" -> JLR
+        "porsche" -> PORSCHE
         else -> emptyList() // unknown brand must not silently show BMW's resets
     }
 
@@ -101,4 +102,5 @@ object ServiceResets {
     val PEUGEOT: List<ServiceReset> get() = BrandResetData.PEUGEOT
     val VW: List<ServiceReset> get() = BrandResetData.VW
     val JLR: List<ServiceReset> get() = BrandResetData.JLR
+    val PORSCHE: List<ServiceReset> get() = BrandResetData.PORSCHE
 }

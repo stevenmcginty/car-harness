@@ -711,4 +711,141 @@ object BrandResetData {
             ),
         ),
     )
+
+    // Porsche — dash procedures throughout (no public dongle reset frame;
+    // research docs/private/porsche-research-modules.md §8). Porsche resets are
+    // more involved than most brands: only the 997/991 trip-stalk and the
+    // Macan/Cayenne wheel menu have a reliable no-tool route; 996/986, Cayenne
+    // 955/957 and the newest cars are tool-required, documented here honestly.
+    // Dash procedures don't care about the CAN/DoIP/K-line wall, so these apply
+    // regardless of what the module scan could reach.
+    val PORSCHE: List<ServiceReset> = listOf(
+        ServiceReset(
+            id = "porsche-oil-997-991",
+            brand = "porsche",
+            name = "Oil / service reset (911 997 & 991, analog cluster) — trip-stalk",
+            description = "Resets the service-interval reminder on the 997 (2005-12) and 991 " +
+                "(2012-16) with an analog cluster, using the trip-odometer reset button through " +
+                "the ignition. No dongle command exists for any Porsche service reset, so this " +
+                "is the built-in method.",
+            uds = false,
+            confidence = "community",
+            source = "rennlist.com 1029307 (997 oil-service reset); multiple 997/991 forum threads",
+            models = "911 997 (2005-2012), 911 991 (2012-2016); Boxster/Cayman 987/981 similar",
+            cautions = listOf(
+                "Reset AFTER the oil + filter change, not before.",
+                "Wording varies by model year — confirm the message centre matches before relying " +
+                    "on it; if the trip-stalk route refuses, the car may be tool-only.",
+            ),
+            procedure = listOf(
+                "Ignition ON (accessory / instruments live, engine OFF).",
+                "Press and HOLD the trip-odometer reset button (on the instrument cluster / end " +
+                    "of the stalk).",
+                "Keep holding until the message centre shows the oil-service / reset prompt " +
+                    "(e.g. 'Oil Service' or 'Service Reset').",
+                "Follow the prompt to confirm the reset.",
+                "Ignition OFF, then back ON and check the reminder is gone.",
+            ),
+        ),
+        ServiceReset(
+            id = "porsche-service-macan-cayenne-menu",
+            brand = "porsche",
+            name = "Service reset (Macan / Cayenne & newer) — steering-wheel menu",
+            description = "Cars with a steering-wheel on-board-computer menu (Macan, Cayenne " +
+                "2018+ and newer) reset the service item from the on-screen Maintenance menu " +
+                "rather than a button dance. No dongle command exists.",
+            uds = false,
+            confidence = "community",
+            source = "6speedonline.com 330525 (Cayenne 958 reset without tool); " +
+                "macanforum.com 168049; Macan/Cayenne forum threads",
+            models = "Macan (95B), Cayenne (958 / 9YA, 2018+) and newer with a wheel-menu OBC",
+            cautions = listOf(
+                "Reset AFTER the service, not before.",
+                "Menu wording/path varies by model and PCM generation — confirm against the car's " +
+                    "own menu; the newest Macan MK2 (2022+) is tool-required (separate entry).",
+            ),
+            procedure = listOf(
+                "Ignition ON (engine OFF).",
+                "Use the steering-wheel buttons to open the on-board computer.",
+                "Navigate to Maintenance / Service Intervals.",
+                "Select the item you serviced (Oil Service / Inspection / Brake Fluid).",
+                "Hold the confirm button until the reset is confirmed.",
+                "Ignition OFF, then back ON and check the reminder is gone.",
+            ),
+        ),
+        ServiceReset(
+            id = "porsche-service-996-986-tool",
+            brand = "porsche",
+            name = "Service reset (911 996 / Boxster 986) — tool required",
+            description = "The 996 and 986 have no reliable dash button-dance for the service " +
+                "reset — the service-interval data lives on the K-line modules that a generic " +
+                "dongle can't address, so it historically needs a Porsche tool (PST2 / Durametric) " +
+                "or an address-aware handheld. This card is the honest brief.",
+            uds = false,
+            confidence = "community",
+            source = "Porsche 996/986 forums ('no button sequence, needs a tool'); Durametric",
+            models = "911 996 (1998-2005), Boxster 986 (1997-2004)",
+            cautions = listOf(
+                "There is no known no-tool button sequence — battery-disconnect 'resets' don't " +
+                    "clear the service counter.",
+                "The service data is on the K-line (K2/pin 3) modules, not on generic OBD, so a " +
+                    "plain dongle can't reach it either.",
+            ),
+            procedure = listOf(
+                "Do the oil + filter / service work first.",
+                "Reset the service interval with a Porsche-capable tool: Durametric, PST2, or an " +
+                    "address-aware handheld that carries the 996/986 K-line addresses.",
+                "There is no dash or dongle route on these cars.",
+            ),
+        ),
+        ServiceReset(
+            id = "porsche-service-cayenne-955-957",
+            brand = "porsche",
+            name = "Service reset (Cayenne 955 / 957) — usually tool required",
+            description = "Reports are mixed on the first-gen Cayenne (a VW Touareg underneath): " +
+                "some owners describe a menu/stalk method, most report it needs a tool " +
+                "(Durametric or a VAG-tool). Documented honestly rather than pretending a " +
+                "reliable button dance exists.",
+            uds = false,
+            confidence = "experimental",
+            source = "Cayenne 955/957 forum threads (mixed reports); Durametric / VAG-tool notes",
+            models = "Cayenne 955 (9PA, 2003-2006), Cayenne 957 (2007-2010)",
+            cautions = listOf(
+                "Sources genuinely disagree on whether a no-tool route works — treat the tool " +
+                    "route as the reliable one.",
+                "Enhanced diagnostics on these cars are VW TP2.0, which a plain BLE dongle can't " +
+                    "hold — so a generic dongle can't run the reset either.",
+            ),
+            procedure = listOf(
+                "Do the service work first.",
+                "Try the on-board-computer / stalk menu for a service-interval reset (some cars " +
+                    "have it); if it refuses, it is tool-only.",
+                "Reset with Durametric or a VAG-capable tool (VCDS/ODIS-class) where the menu " +
+                    "route isn't available.",
+            ),
+        ),
+        ServiceReset(
+            id = "porsche-service-newest-tool",
+            brand = "porsche",
+            name = "Service reset (Macan MK2 2022+, Taycan, newest) — scanner required",
+            description = "The newest Porsches can't reset the service reminder without a scan " +
+                "tool — there is no reliable dash route. This card sets that expectation honestly " +
+                "so the reset isn't attempted blind.",
+            uds = false,
+            confidence = "community",
+            source = "Macan MK2 / Taycan owner reports ('cannot be reset without a scanner')",
+            models = "Macan MK2 (2022+), Taycan (Y1A), and other newest DoIP-era Porsches",
+            cautions = listOf(
+                "No no-tool button/menu route is reliably reported on these cars.",
+                "These are DoIP/Ethernet cars — a plain BLE dongle can't run the reset; it needs " +
+                    "PIWIS III or an address-aware handheld that supports the model.",
+            ),
+            procedure = listOf(
+                "Do the service work first.",
+                "Reset the service reminder with a Porsche-capable scan tool (PIWIS III or an " +
+                    "address-aware handheld that lists the model).",
+                "There is no dash or dongle route on these cars.",
+            ),
+        ),
+    )
 }

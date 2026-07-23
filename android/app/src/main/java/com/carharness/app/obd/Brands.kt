@@ -219,6 +219,43 @@ object Brands {
             scan = { ctrl, onStep -> ctrl.jlrScan(onStep) },
             clear = { ctrl, addr -> ctrl.jlrClear(addr) },
         ),
+        Brand(
+            id = "porsche",
+            label = "Porsche",
+            scanHint = "Reads the VIN first (so you always know the car), then the modules a " +
+                "dongle genuinely reaches on a Porsche. On the Porsche-own CAN cars — 997/987 " +
+                "(2005-12) and 991.1 / 981 / Panamera 970 (2010-16) — it reads the engine and " +
+                "probes the gearbox, laddering UDS then Porsche's KWP-over-CAN dialect, each " +
+                "module's own fault memory. Honest scope: Porsche never published its per-module " +
+                "CAN IDs, so ABS/PSM, airbag, cluster, PASM/air-suspension and body modules can't " +
+                "be addressed by a dongle — that's engine + basics, not a fault. On a Cayenne 958 " +
+                "/ Macan (VAG-MLB underneath) some VAG-standard modules answer on the shared " +
+                "addresses; others are Porsche-specific. Walls the scan names when it hits them: " +
+                "996/986 route their body modules onto a second K-line at OBD pin 3 (K1/pin-7 " +
+                "gives generic engine EOBD only — pin 3 needs a pin-swap adapter), the Cayenne " +
+                "955/957 speak VW TP2.0 and MY17+ cars (Panamera 971, Cayenne 9YA, 992, Taycan) " +
+                "use DoIP/Ethernet — those give generic OBD only. Camshaft deviation, over-rev " +
+                "history and electronic oil level are Porsche measuring values with no public DID. " +
+                "The Service tab's dash resets (997/991 trip-stalk, Macan/Cayenne wheel menu) work " +
+                "on every era. Live extras adds the 997.2 KWP engine oil temperature.",
+            actions = listOf(
+                BrandAction(
+                    id = "extras",
+                    label = "Live extras",
+                    cardTitle = "PORSCHE LIVE EXTRAS",
+                    emptyHint = "This car didn't answer any of the Porsche-specific values. " +
+                        "Make sure the ignition is ON — the KWP oil-temperature read is a " +
+                        "997/987-era value; UDS-era, DoIP-era and K-line cars fall back to the " +
+                        "generic set, and the live dashboard on the Car tab still works.",
+                    refreshHint = "One-shot read-only pass — tap Live extras again to refresh. " +
+                        "Single-source scaling; verify against the car. Values this car doesn't " +
+                        "support are skipped.",
+                    run = { ctrl, onStep -> ctrl.porscheEnhanced(onStep) },
+                ),
+            ),
+            scan = { ctrl, onStep -> ctrl.porscheScan(onStep) },
+            clear = { ctrl, addr -> ctrl.porscheClear(addr) },
+        ),
     )
 
     fun byId(id: String): Brand? = all.firstOrNull { it.id == id }
