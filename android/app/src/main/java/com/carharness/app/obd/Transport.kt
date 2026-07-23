@@ -111,8 +111,9 @@ class DemoTransport : ObdTransport {
             cmd == "07" -> if (cleared) "NO DATA" else "470101 71"
             cmd == "0A" -> "NO DATA"
             cmd == "04" -> { cleared = true; "44" }
-            // A decodable demo VIN (Mazda WMI JMZ, position-10 'G' = 2016) so
-            // the Car-tab identity card shows "Mazda · likely 2016" hardware-free.
+            // A decodable demo VIN (Mazda EU WMI JMZ) so the Car-tab identity
+            // card shows "Mazda" plus the honest no-year-in-this-VIN note
+            // hardware-free — exactly what real UK-market stock shows.
             cmd == "0902" ->
                 "014\r0:4902014A4D5A4B\r1:45325737444730\r2:313233343536"
             cmd.startsWith("01") && cmd.length == 4 -> livePid(cmd.substring(2))

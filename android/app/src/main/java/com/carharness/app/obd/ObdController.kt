@@ -52,7 +52,8 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
 
     /**
      * Read the car's identity once, right after connecting: the VIN over the
-     * universal OBD Mode 09 read, decoded to make + likely year. A null VIN
+     * universal OBD Mode 09 read, decoded to make + year where the VIN format
+     * really encodes one. A null VIN
      * means the car didn't answer (ignition off?) — the UI still shows the
      * card so the user sees the app tried. Serialised on the same mutex, so it
      * never races the live dashboard or a scan.

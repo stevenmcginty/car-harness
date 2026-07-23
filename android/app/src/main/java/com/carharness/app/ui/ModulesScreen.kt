@@ -208,6 +208,10 @@ fun ModulesScreen(state: AppState) {
                             Spacer(Modifier.height(2.dp))
                             Text("Likely $y", color = Blue, fontSize = 13.sp)
                         }
+                        ident.marketNote?.let { n ->
+                            Spacer(Modifier.height(2.dp))
+                            Text(n, color = TextFaint, fontSize = 11.sp)
+                        }
                         Spacer(Modifier.height(8.dp))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
