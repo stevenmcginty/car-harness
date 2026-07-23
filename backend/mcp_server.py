@@ -25,6 +25,8 @@ from backend.core import brands, interfaces, registry  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.fiat import pids as fiat_pids  # noqa: E402
 from backend.profiles.fiat import scan as fiat_scan  # noqa: E402
+from backend.profiles.jlr import pids as jlr_pids  # noqa: E402
+from backend.profiles.jlr import scan as jlr_scan  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
@@ -487,6 +489,80 @@ def fiat_clear_module(
     if error is not None:
         return error
     return fiat_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Jaguar / Land Rover module read over a generic OBD dongle
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def jlr_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a Jaguar / Land Rover car's driveline modules over a generic OBD-II dongle (read-only).
+
+    Honest per-era scope. On a 2006-2016 CAN-era JLR (XF X250, XK, XJ X351,
+    F-Type, Disco 3/4, RR Sport L320, Freelander 2, Ford-era L322) it reads the
+    publicly-verified driveline modules on 11-bit CAN -- engine 0x7E0, ZF gearbox
+    0x7E1 and (where fitted) the rear e-diff 0x795 -- each one's fault codes +
+    identification, laddering UDS then KWP2000-over-CAN for the older cars. VIN
+    first over Mode 09. Ignition must be ON.
+
+    The two walls, reported honestly rather than as faults: body modules sit on
+    an MS-CAN not wired to the OBD pins (physically unreachable bare), and MY17+
+    new-architecture cars (Disco 5, Velar, 2018+ Jaguars, Defender L663, I-Pace)
+    plus the gateway-filtered Evoque L538 / Disco Sport L550 give generic OBD
+    only -- the scan detects that pattern and says so. Dash-procedure service
+    resets (jlr in list_service_resets) still work on every era.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return jlr_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def jlr_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read Jaguar / Land Rover-specific live "extras" over a generic OBD dongle.
+
+    One read-only pass over the Old Jaguar Group on-car captures: engine oil
+    temperature, measured oil level (mm) and calculated oil volume (the
+    dipstick-less cars carry these), boost, charge-air temp, ZF gearbox oil
+    temperature (0x7E1) and rear e-diff oil temperature (0x795), one DID at a
+    time on 11-bit CAN. Single-source capture (X351/XK petrol) -- verify the
+    scaling against the car. A DoIP-era or gateway-filtered car falls back to a
+    curated generic Mode-01 set. Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return jlr_pids.live(instance, mode)
+
+
+@mcp.tool()
+def jlr_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on Jaguar / Land Rover modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    address: an 11-bit module id like "0x7E0" (engine), "0x7E1" (ZF gearbox) or
+        "0x795" (rear e-diff); omit to clear every JLR module that answers.
+        Ladder matches the read side: UDS 14 FF FF FF, then the KWP clear an
+        older Ford-era module wants. Faults return if the underlying problem is
+        still present.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return jlr_scan.clear(instance, mode, address)
 
 
 # --------------------------------------------------------------------------- #

@@ -22,8 +22,9 @@ A modular car-diagnostics desktop app + Android companion app.
   Adding a manufacturer adds its resets. See
   `docs/private/service-resets-research.md` for the provenance.
 
-It is built to grow: manufacturer **profiles** (BMW, Mazda, Peugeot/PSA and
-VW/Audi today; the next brand is a folder drop-in) and installable/removable **job
+It is built to grow: manufacturer **profiles** (BMW, Mazda, Peugeot/PSA,
+VW/Audi, Mercedes, Fiat/Alfa and Jaguar/Land Rover today; the next brand is a
+folder drop-in) and installable/removable **job
 modules** are both discovered from the filesystem. A profile folder's
 capability files become its API routes and its desktop panel automatically --
 the manufacturer dropdown at the top of the desktop app drives everything.

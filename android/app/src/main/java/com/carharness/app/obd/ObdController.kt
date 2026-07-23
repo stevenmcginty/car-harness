@@ -219,6 +219,22 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             MercedesUds.readEnhanced(session, onProgress)
         }
 
+    /** JLR driveline module scan (11-bit UDS then KWP2000-over-CAN). Serialised. */
+    suspend fun jlrScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        JlrUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one JLR module's fault memory; returns that module's fresh DTCs. */
+    suspend fun jlrClear(address: Int): List<UdsDtc> = mutex.withLock {
+        JlrUds.clearDtcs(session, address)
+    }
+
+    /** One pass over the JLR live extras (oil temp/level/volume, ZF ATF, e-diff). */
+    suspend fun jlrEnhanced(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            JlrUds.readEnhanced(session, onProgress)
+        }
+
     /** Fiat / Alfa (FCA) module scan (29-bit UDS, with an 11-bit CAN-era fallback). Serialised. */
     suspend fun fiatScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
         FiatUds.scan(session, simulated, onProgress)

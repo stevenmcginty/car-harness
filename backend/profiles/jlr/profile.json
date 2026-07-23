@@ -1,0 +1,22 @@
+{
+  "id": "jlr",
+  "name": "Jaguar / Land Rover",
+  "transport": "elm327",
+  "description": "Jaguar and Land Rover over a generic OBD-II dongle. Honest per-era scope (docs/private/jlr-research-architecture.md): the 2006-2016 Ford/PLA CAN cars (XF X250, XK, Disco 3/4, RR Sport L320, Freelander 2, Ford-era L322, XJ X351, F-Type) answer 11-bit UDS on HS-CAN pins 6/14 -- engine 7E0, ZF gearbox 7E1 and the rear e-diff 795 are the publicly-verified modules; body/comfort modules sit on an MS-CAN not wired to pins 6/14 and are physically unreachable bare. Evoque L538 / Discovery Sport L550 gateway-filter the OBD port (generic OBD only). MY17+ new-architecture cars (Disco 5, Velar, 2018+ Jaguars, Defender L663, I-Pace, L460/L461) moved manufacturer diagnostics to DoIP over Ethernet, which no ELM327 can speak -- generic OBD-II only. Early S-Type/X-Type (J1850) and BMW-era L322 (2002-05) are out of scope. The service resets are dash procedures and work on EVERY era, including the DoIP cars.",
+  "probe": "profile.py",
+  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"],
+  "panel": {
+    "title": "JLR modules (OBD dongle)",
+    "hint": "Module scan for Jaguar / Land Rover over the ordinary OBD dongle. Reads the VIN first, then the modules a dongle genuinely reaches on a 2006-2016 CAN-era JLR: engine, ZF automatic gearbox and (where fitted) the rear e-diff, laddering UDS then KWP2000-over-CAN for the older cars. This is an honest engine + driveline read, NOT a full SDD/Pathfinder walk: body modules (BCM, cluster, HVAC, doors) sit on a separate MS-CAN that isn't wired to the OBD pins the dongle uses, air suspension and ABS use module addresses that were never published, and MY17+ cars (Disco 5, Velar, 2018+ Jaguars, Defender L663, I-Pace) do manufacturer diagnostics over DoIP/Ethernet -- generic OBD only. Evoque L538 / Disco Sport L550 gateway-filter the port. The Service tab's dash-procedure resets work on every era, dongle or not. Pick the adapter top-right, ignition ON, then scan.",
+    "scanBusy": "Walking the JLR driveline modules on 11-bit CAN (engine, gearbox, e-diff)… (absent modules time out quietly)",
+    "actions": [
+      {
+        "id": "live",
+        "label": "Live extras",
+        "busy": "Reading the JLR-specific values…",
+        "title": "JLR live extras",
+        "hint": "Reads JLR-specific values the generic list doesn't carry -- engine oil temperature, measured oil level in mm and calculated oil volume (the dipstick-less cars carry these), boost, post-intercooler charge temp, ZF gearbox oil temperature and rear e-diff oil temperature. Captured from an on-car X351/XK PID pack (petrol AJ133/AJ126; 'should also work' on the diesels), single-source -- verify the scaling against the car. On a car that answers none of them (DoIP-era or gateway-filtered) it falls back to a curated generic Mode-01 set."
+      }
+    ]
+  }
+}

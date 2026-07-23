@@ -185,6 +185,40 @@ object Brands {
             scan = { ctrl, onStep -> ctrl.fiatScan(onStep) },
             clear = { ctrl, addr -> ctrl.fiatClear(addr) },
         ),
+        Brand(
+            id = "jlr",
+            label = "Jaguar/LR",
+            scanHint = "Reads the VIN first (so you always know the car), then the modules a " +
+                "dongle genuinely reaches on a 2006-2016 CAN-era Jaguar / Land Rover — engine, " +
+                "ZF automatic gearbox and (where fitted) the rear e-diff — laddering UDS then " +
+                "KWP2000-over-CAN for the older cars, each module's own fault memory. Honest " +
+                "scope: ABS, air suspension and EPB module addresses were never published, and " +
+                "body modules sit on an MS-CAN that isn't wired to the OBD pins — a GAP IIDTool " +
+                "or SDD reaches those. MY17+ cars (Disco 5, Velar, 2018+ Jaguars, Defender " +
+                "L663, I-Pace) do manufacturer diagnostics over DoIP/Ethernet, and the Evoque " +
+                "L538 / Disco Sport L550 gateway-filter the port — those give generic OBD only, " +
+                "and the scan says which wall it hit. The Service tab's dash-procedure resets " +
+                "(oil, EPB pad mode, DPF drive cycle, TPMS) work on EVERY era, dongle or not. " +
+                "Live extras adds oil temp/level/volume (dipstick-less cars), boost, ZF gearbox " +
+                "and e-diff temperatures.",
+            actions = listOf(
+                BrandAction(
+                    id = "extras",
+                    label = "Live extras",
+                    cardTitle = "JLR LIVE EXTRAS",
+                    emptyHint = "This car didn't answer any of the JLR-specific values. " +
+                        "Make sure the ignition is ON — the values are captured on " +
+                        "X351/XK petrols, so coverage varies by model year and engine; " +
+                        "DoIP-era cars fall back to the generic set.",
+                    refreshHint = "One-shot read-only pass — tap Live extras again to refresh. " +
+                        "Single-source scaling; verify against the car. Values this car " +
+                        "doesn't support are skipped.",
+                    run = { ctrl, onStep -> ctrl.jlrEnhanced(onStep) },
+                ),
+            ),
+            scan = { ctrl, onStep -> ctrl.jlrScan(onStep) },
+            clear = { ctrl, addr -> ctrl.jlrClear(addr) },
+        ),
     )
 
     fun byId(id: String): Brand? = all.firstOrNull { it.id == id }
