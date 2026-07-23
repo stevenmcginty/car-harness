@@ -20,7 +20,7 @@ object Dtc {
         "P08" to "Transmission",
         "P09" to "Transmission",
         "P1" to "Manufacturer-specific powertrain code",
-        "P2" to "Powertrain (SAE reserved)",
+        "P2" to "Powertrain (generic)",
         "P3" to "Powertrain (ignition/misfire, manufacturer-specific)",
         "C" to "Chassis (ABS, steering, suspension)",
         "B" to "Body (airbags, locks, lighting, comfort)",

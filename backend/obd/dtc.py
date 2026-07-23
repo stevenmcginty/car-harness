@@ -30,7 +30,7 @@ _CATEGORIES = [
     ("P08", "Transmission"),
     ("P09", "Transmission"),
     ("P1", "Manufacturer-specific powertrain code"),
-    ("P2", "Powertrain (SAE reserved)"),
+    ("P2", "Powertrain (generic)"),
     ("P3", "Powertrain (ignition/misfire, manufacturer-specific)"),
     ("C", "Chassis (ABS, steering, suspension)"),
     ("B", "Body (airbags, locks, lighting, comfort)"),

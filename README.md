@@ -207,5 +207,14 @@ run.py                 python run.py
 start.bat              double-click launcher (Windows)
 ```
 
+## Data sources
+
+The offline fault-code table (`backend/obd/dtc_db.json`, mirrored in the
+Android assets) covers generic SAE J2012 codes only — manufacturer-specific
+codes mean different things per make, so the app refuses to guess at them
+offline and offers the in-app AI lookup instead. Part of the generic P0 block
+comes from [mytrile/obd-trouble-codes](https://github.com/mytrile/obd-trouble-codes)
+(MIT license).
+
 > The `frontend/` folder is owned by a separate front-end app. The backend just
 > serves whatever static files land there; if it is empty the API still works.

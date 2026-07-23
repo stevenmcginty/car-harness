@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.carharness.app.AppState
 import com.carharness.app.ConnState
+import com.carharness.app.ai.AiFaultContext
 import com.carharness.app.obd.Brands
 import com.carharness.app.obd.UdsDtc
 import com.carharness.app.obd.UdsModuleResult
@@ -240,6 +241,12 @@ fun ModulesScreen(state: AppState) {
                         expanded = if (expanded == module.address) null else module.address
                     },
                     onClear = { confirmAddr = module.address },
+                    ai = AiFaultContext(
+                        vehicle = it.vin?.let { v -> VinDecode.decode(v) },
+                        brand = Brands.byId(it.brand)?.label,
+                        module = "${module.code} — ${module.name}",
+                        siblings = module.dtcs.map { d -> d.code },
+                    ),
                 )
             }
 
@@ -298,6 +305,7 @@ private fun ModuleCard(
     clearing: Boolean,
     onToggle: () -> Unit,
     onClear: () -> Unit,
+    ai: AiFaultContext? = null,
 ) {
     val faults = module.dtcs.size
     val statusColor = when {
@@ -369,7 +377,7 @@ private fun ModuleCard(
                         Text("No faults stored in this module.", color = Green, fontSize = 13.sp)
                     }
                 } else {
-                    module.dtcs.forEach { UdsDtcCard(it) }
+                    module.dtcs.forEach { UdsDtcCard(it, ai) }
                 }
                 if (module.trace.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
@@ -437,7 +445,7 @@ private fun AbsentCard(absent: List<UdsModuleResult>, hint: String?) {
 }
 
 @Composable
-private fun UdsDtcCard(dtc: UdsDtc) {
+private fun UdsDtcCard(dtc: UdsDtc, ai: AiFaultContext? = null) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = PanelRaised),
@@ -461,6 +469,7 @@ private fun UdsDtcCard(dtc: UdsDtc) {
                 Spacer(Modifier.height(4.dp))
                 Text(dtc.flags.joinToString(" · "), color = TextFaint, fontSize = 11.sp)
             }
+            if (ai != null) AiExplainBlock(dtc.code, dtc.hex, ai)
         }
     }
 }

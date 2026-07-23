@@ -42,9 +42,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.carharness.app.AppState
 import com.carharness.app.R
+import com.carharness.app.ai.AiFaultContext
 import com.carharness.app.obd.DtcRecord
 import com.carharness.app.obd.ScanResult
 import com.carharness.app.obd.VehicleIdentity
+import com.carharness.app.obd.VinDecode
 
 // ---------------------------------------------------------------- design tokens
 // A quiet graphite-blue workshop theme: deep neutral surfaces, one signal
@@ -293,7 +295,7 @@ fun VehicleIdentityCard(vehicle: VehicleIdentity?, identifying: Boolean) {
 }
 
 @Composable
-fun DtcCard(record: DtcRecord) {
+fun DtcCard(record: DtcRecord, ai: AiFaultContext? = null) {
     val tagColor = when (record.status) {
         "stored" -> Red
         "pending" -> Amber
@@ -319,12 +321,13 @@ fun DtcCard(record: DtcRecord) {
             }
             Spacer(Modifier.height(5.dp))
             Text(record.description, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
+            if (ai != null) AiExplainBlock(record.code, null, ai)
         }
     }
 }
 
 @Composable
-fun ScanResultView(result: ScanResult) {
+fun ScanResultView(result: ScanResult, vehicle: VehicleIdentity? = null) {
     if (result.simulated) {
         StatusPill("SIMULATED — no real car connected", Amber)
         Spacer(Modifier.height(8.dp))
@@ -349,6 +352,12 @@ fun ScanResultView(result: ScanResult) {
     Text(result.message, color = TextMuted, fontSize = 13.sp, lineHeight = 18.sp)
     Spacer(Modifier.height(8.dp))
     val all = result.stored + result.pending + result.permanent
+    // Give the AI the same picture the dealer has: who the car is (connect-time
+    // identity, else decoded from the scan's own VIN) + every code read together.
+    val ai = AiFaultContext(
+        vehicle = vehicle ?: result.vin?.let { VinDecode.decode(it) },
+        siblings = all.map { it.code },
+    )
     if (all.isEmpty()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusDot(Green)
@@ -356,6 +365,6 @@ fun ScanResultView(result: ScanResult) {
             Text("No fault codes.", color = Green, fontSize = 14.sp)
         }
     } else {
-        all.forEach { DtcCard(it) }
+        all.forEach { DtcCard(it, ai) }
     }
 }

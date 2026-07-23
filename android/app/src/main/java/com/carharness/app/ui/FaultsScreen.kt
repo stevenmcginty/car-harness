@@ -87,7 +87,7 @@ fun FaultsScreen(state: AppState) {
         state.scanResult?.let { result ->
             item {
                 SectionCard {
-                    ScanResultView(result)
+                    ScanResultView(result, vehicle = state.vehicle)
                 }
             }
         }
