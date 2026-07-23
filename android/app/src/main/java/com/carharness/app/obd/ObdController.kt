@@ -50,6 +50,23 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
         return null
     }
 
+    /**
+     * Read the car's identity once, right after connecting: the VIN over the
+     * universal OBD Mode 09 read, decoded to make + likely year. A null VIN
+     * means the car didn't answer (ignition off?) — the UI still shows the
+     * card so the user sees the app tried. Serialised on the same mutex, so it
+     * never races the live dashboard or a scan.
+     */
+    suspend fun identify(): VehicleIdentity = mutex.withLock {
+        val vin = try {
+            session.ensureProtocol()
+            readVin()
+        } catch (_: Exception) {
+            null
+        }
+        VinDecode.decode(vin)
+    }
+
     suspend fun scan(): ScanResult = mutex.withLock {
         session.ensureProtocol()
         val vin = readVin()

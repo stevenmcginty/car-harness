@@ -113,10 +113,16 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
                 "timestamp": _now(),
             }
 
+        # The car's identity first, while the standard OBD channel is still open:
+        # Mode 09 VIN works on any ~2001+ car no matter what UDS does next. Mazda
+        # modules don't reliably volunteer F190, so this is the VIN the report
+        # leads with unless a module gives a consensus VIN below.
+        obd_vin = obd_service._read_vin(session)
+
         client = Elm327UdsClient(session)
         client.begin()
         modules: List[dict] = []
-        vin: Optional[str] = None
+        module_vin: Optional[str] = None
         try:
             for req_id, code, name in MAZDA_ECU_TABLE:
                 mod = {
@@ -134,14 +140,17 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
                     mod["error"] = str(exc)
                 except (ObdError, TransportError) as exc:
                     mod["error"] = str(exc)
-                if vin is None:
+                if module_vin is None:
                     for item in mod["ident"]:
                         if item["label"] == "VIN" and len(item["value"]) >= 11:
-                            vin = item["value"][:17]
+                            module_vin = item["value"][:17]
                 modules.append(mod)
         finally:
             client.restore()
 
+        # A module's own F190 (consensus) VIN wins if any module volunteered one;
+        # otherwise fall back to the universal Mode 09 VIN read above.
+        vin = module_vin or obd_vin
         present = [m for m in modules if m["present"]]
         faults = sum(len(m["dtcs"]) for m in present)
         return {
@@ -150,7 +159,8 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
                         "adapter": (adapter or {}).get("name")},
             "modules": modules,
             "message": (
-                f"{len(present)} module(s) answered on HS-CAN, {faults} fault"
+                (f"VIN {vin}. " if vin else "")
+                + f"{len(present)} module(s) answered on HS-CAN, {faults} fault"
                 f"{'s' if faults != 1 else ''} stored. Read-only scan -- nothing was changed on "
                 "the car. Body/comfort modules on MS-CAN aren't reachable through a standard "
                 "OBD dongle (they need an MS-CAN switchable adapter)."
@@ -264,6 +274,7 @@ def _simulated_scan() -> dict:
         "vehicle": {"vin": "SIMULATED000MAZDA", "protocol": "ISO 15765-4 (CAN 11/500)",
                     "adapter": "Simulated"},
         "modules": modules,
-        "message": "SIMULATED -- 3 modules answered, 3 faults stored. No real car connected.",
+        "message": "SIMULATED -- VIN SIMULATED000MAZDA. 3 modules answered, 3 faults stored. "
+                   "No real car connected.",
         "timestamp": _now(),
     }

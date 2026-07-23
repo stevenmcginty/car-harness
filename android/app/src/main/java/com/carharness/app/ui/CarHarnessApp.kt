@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -43,6 +44,7 @@ import com.carharness.app.AppState
 import com.carharness.app.R
 import com.carharness.app.obd.DtcRecord
 import com.carharness.app.obd.ScanResult
+import com.carharness.app.obd.VehicleIdentity
 
 // ---------------------------------------------------------------- design tokens
 // A quiet graphite-blue workshop theme: deep neutral surfaces, one signal
@@ -228,6 +230,64 @@ fun ScreenHeader(title: String, subtitle: String? = null) {
         if (subtitle != null) {
             Spacer(Modifier.height(2.dp))
             Text(subtitle, color = TextFaint, fontSize = 13.sp)
+        }
+    }
+}
+
+/** "Mazda · likely 2016" — make and/or likely year, or null if neither decoded. */
+fun vehicleDescription(v: VehicleIdentity?): String? {
+    if (v == null) return null
+    val parts = buildList {
+        v.make?.let { add(it) }
+        v.year?.let { add("likely $it") }
+    }
+    return if (parts.isEmpty()) null else parts.joinToString(" · ")
+}
+
+/**
+ * The car's identity, headlined: big VIN + "Make · likely Year". While the
+ * connect-time read is in flight it shows "Reading VIN…"; if the car never
+ * answered it says so honestly — the card still shows so the user sees the
+ * app tried.
+ */
+@Composable
+fun VehicleIdentityCard(vehicle: VehicleIdentity?, identifying: Boolean) {
+    SectionCard {
+        PanelTitle("VEHICLE")
+        val vin = vehicle?.vin
+        when {
+            vin != null -> {
+                Text(
+                    vin,
+                    color = TextMain,
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.sp,
+                )
+                vehicleDescription(vehicle)?.let { line ->
+                    Spacer(Modifier.height(5.dp))
+                    Text(line, color = Blue, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                }
+                vehicle.marketNote?.let {
+                    Spacer(Modifier.height(2.dp))
+                    Text(it, color = TextFaint, fontSize = 11.sp)
+                }
+                if (vehicle.make == null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("Make not recognised from the VIN.", color = TextFaint, fontSize = 11.sp)
+                }
+            }
+            identifying -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Blue)
+                Spacer(Modifier.width(10.dp))
+                Text("Reading VIN…", color = TextMuted, fontSize = 13.sp)
+            }
+            else -> Text(
+                "VIN not answered — is the ignition on? The app asked the car for its VIN " +
+                    "over OBD Mode 09 the moment it connected.",
+                color = Amber, fontSize = 13.sp, lineHeight = 18.sp,
+            )
         }
     }
 }

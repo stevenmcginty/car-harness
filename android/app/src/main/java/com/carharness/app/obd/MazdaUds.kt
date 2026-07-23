@@ -144,6 +144,28 @@ object MazdaUds {
         return false
     }
 
+    /**
+     * The car's VIN over plain OBD Mode 09 PID 02, broadcast — the one VIN
+     * request that works on any ~2001+ car. Mazda modules don't reliably
+     * volunteer F190, so this backs up the module-consensus VIN. Must run with
+     * the ELM aimed at broadcast (7DF), i.e. after restore().
+     */
+    private fun vinFromObd(session: Elm327Session): String? = try {
+        val records = session.query(0x09, 0x02, 8000)
+        val text = records.asSequence()
+            .map { r ->
+                r.drop(if (r.size > 2 && (r[1].toInt() and 0xFF) == 0x02) 3 else 1)
+                    .map { it.toInt() and 0xFF }
+                    .filter { it in 32..126 }
+                    .map { it.toChar() }
+                    .joinToString("")
+            }
+            .maxByOrNull { it.length } ?: ""
+        Regex("[A-HJ-NPR-Z0-9]{17}").find(text.uppercase())?.value
+    } catch (_: Exception) {
+        null
+    }
+
     private fun readIdent(session: Elm327Session, reqId: Int): List<Pair<String, String>> {
         val out = mutableListOf<Pair<String, String>>()
         for ((did, label) in IDENT_DIDS) {
@@ -258,7 +280,11 @@ object MazdaUds {
 
         val present = modules.filter { it.present }
         val faults = present.sumOf { it.dtcs.size }
-        val (vin, vinWarning) = VinCheck.consensus(modules)
+        val (consensusVin, vinWarning) = VinCheck.consensus(modules)
+        // A module's own F190 (consensus) VIN wins; otherwise fall back to the
+        // universal OBD Mode 09 read (the ELM is back on broadcast after
+        // restore()), so the report VIN matches the backend behaviour.
+        val vin = consensusVin ?: vinFromObd(session)
         val simPrefix = if (simulated) "SIMULATED — no real car connected. " else ""
         return UdsScanReport(
             ok = true,

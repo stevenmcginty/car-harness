@@ -42,7 +42,7 @@ import com.carharness.app.ConnState
 import com.carharness.app.obd.Brands
 import com.carharness.app.obd.UdsDtc
 import com.carharness.app.obd.UdsModuleResult
-import com.carharness.app.obd.VinCheck
+import com.carharness.app.obd.VinDecode
 
 @Composable
 fun ModulesScreen(state: AppState) {
@@ -180,6 +180,13 @@ fun ModulesScreen(state: AppState) {
         // Only show a report produced by the currently selected brand — a BMW
         // report under a Mazda heading (or vice versa) would mislead.
         val report = state.modReport?.takeIf { it.brand == state.moduleBrand }
+
+        // Until a scan runs, headline the connect-time VIN + make/year here too
+        // (same decode as the Car tab). A scan's consensus VIN replaces it below.
+        if (report == null && state.connState is ConnState.Connected) {
+            item { VehicleIdentityCard(state.vehicle, state.identifying) }
+        }
+
         report?.let {
             val present = it.modules.filter { m -> m.present }
             val faults = present.sumOf { m -> m.dtcs.size }
@@ -191,12 +198,16 @@ fun ModulesScreen(state: AppState) {
                         StatusPill("SIMULATED — no real car connected", Amber)
                         Spacer(Modifier.height(8.dp))
                     }
-                    val make = VinCheck.makeFromVin(it.vin)
-                    if (make != null || it.vin != null) {
+                    val ident = VinDecode.decode(it.vin)
+                    if (ident.make != null || it.vin != null) {
                         Text(
-                            make ?: "Identified by VIN",
+                            ident.make ?: "Identified by VIN",
                             color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.SemiBold,
                         )
+                        ident.year?.let { y ->
+                            Spacer(Modifier.height(2.dp))
+                            Text("Likely $y", color = Blue, fontSize = 13.sp)
+                        }
                         Spacer(Modifier.height(8.dp))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

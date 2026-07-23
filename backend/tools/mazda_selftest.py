@@ -58,6 +58,10 @@ def iso_tp(payload_hex):
 class FakeSession:
     """Just enough of Elm327Session for Elm327UdsClient + the scan code."""
 
+    # Universal OBD Mode 09 PID 02 VIN the scan now reads first (any ~2001+ car
+    # answers it). Matches the PCM's F190 here, as a real car's would.
+    OBD_VIN = "SELFTEST000MAZDA1"
+
     # broadcast frames the fake car emits while ATMA monitors a filtered id
     MONITOR = {
         0x202: "202" + "0D48" + "1194" + "1E00" + "0000",  # 850rpm 45km/h 12%
@@ -77,6 +81,12 @@ class FakeSession:
 
     def ensure_protocol(self):
         pass
+
+    def query(self, mode, pid, timeout=None):
+        # Generic OBD path used by obd_service._read_vin (Mode 09 PID 02 = VIN).
+        if mode == 0x09 and pid == 0x02:
+            return [bytes([0x49, 0x02, 0x01]) + self.OBD_VIN.encode("ascii")]
+        raise ObdError("no data", kind="no_data")
 
     def at(self, cmd):
         self.at_log.append(cmd)
@@ -204,6 +214,9 @@ def main():
         check("VIN surfaced from PCM",
               report["vehicle"]["vin"] == "SELFTEST000MAZDA1",
               str(report["vehicle"]))
+        check("scan message leads with the VIN",
+              report["message"].startswith("VIN SELFTEST000MAZDA1. "),
+              report["message"])
         codes = sorted(d["code"] for d in pcm["dtcs"])
         check("PCM DTCs decoded", codes == ["P0302", "P0456"], str(codes))
         check("ABS C-code decoded",
@@ -313,6 +326,31 @@ def main():
         check("snapshot restores headers/filter",
               fake6.at_log[-2:] == ["ATCRA", "ATH0"] and fake6.cra is None,
               str(fake6.at_log[-4:]))
+
+        # --------------------- VIN-first via Mode 09 when no module gives F190
+        # The real field-test case: Mazda modules answered fine but none
+        # volunteered a VIN, so the report must fall back to the universal
+        # OBD Mode 09 read. A distinct VIN here proves Mode 09 is the source.
+        class NoModuleVinSession(FakeSession):
+            OBD_VIN = "MODE09VINMAZDA001"
+
+            def _reply(self, req_id, cmd):
+                if cmd == "22F190":
+                    return "7F2231"  # DID not supported -> no module VIN
+                return super()._reply(req_id, cmd)
+
+        fake7 = NoModuleVinSession()
+        obd_service._with_session = with_fake_session(fake7)
+        report3 = mazda_scan.scan({"name": "Fake adapter"}, "real")
+        check("modules still answer when no module gives F190",
+              sum(1 for m in report3["modules"] if m["present"]) == 3,
+              str(report3.get("message")))
+        check("VIN falls back to OBD Mode 09 when no module volunteers one",
+              report3["vehicle"]["vin"] == "MODE09VINMAZDA001",
+              str(report3["vehicle"]))
+        check("Mode-09 fallback VIN also leads the message",
+              report3["message"].startswith("VIN MODE09VINMAZDA001. "),
+              report3["message"])
     finally:
         obd_service._with_session = original
 

@@ -56,25 +56,9 @@ object VinCheck {
         return vin to warning
     }
 
-    /** Manufacturer from the VIN's WMI — enough to headline "what car is this". */
-    fun makeFromVin(vin: String?): String? {
-        val wmi = vin?.take(3)?.uppercase() ?: return null
-        return when (wmi) {
-            "VF3", "VR3" -> "Peugeot"
-            "VF7", "VR7" -> "Citroën"
-            "VR1" -> "DS Automobiles"
-            "W0L", "W0V" -> "Opel / Vauxhall"
-            "VXK" -> "Vauxhall"
-            "WBA", "WBS", "WBY", "WBW" -> "BMW"
-            "WMW" -> "MINI"
-            "JMZ", "JM1", "JM0", "3MD", "JM7" -> "Mazda"
-            "WVW", "WV1", "WV2", "WVG", "1VW", "3VW", "9BW" -> "Volkswagen"
-            "WAU", "WA1", "WUA", "TRU" -> "Audi"
-            "TMB" -> "Škoda"
-            "VSS" -> "SEAT"
-            else -> null
-        }
-    }
+    /** Manufacturer from the VIN's WMI — enough to headline "what car is this".
+     *  Delegates to the one shared table in VinDecode. */
+    fun makeFromVin(vin: String?): String? = VinDecode.makeFromVin(vin)
 }
 
 /** One live value read from a manufacturer-specific DID (mode 22). */

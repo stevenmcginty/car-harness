@@ -37,6 +37,10 @@ import com.carharness.app.ConnState
 fun CarScreen(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
     LazyColumn(Modifier.fillMaxSize()) {
         item { ScreenHeader("Car", "Connection & live data") }
+        // The moment we're connected, headline what the car is (VIN + make/year).
+        if (state.connState is ConnState.Connected) {
+            item { VehicleIdentityCard(state.vehicle, state.identifying) }
+        }
         item {
             SectionCard {
                 PanelTitle("CONNECT TO THE CAR")

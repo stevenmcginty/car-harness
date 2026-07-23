@@ -30,6 +30,7 @@ import com.carharness.app.obd.ServiceReset
 import com.carharness.app.obd.ServiceResets
 import com.carharness.app.obd.ScanResult
 import com.carharness.app.obd.UdsScanReport
+import com.carharness.app.obd.VehicleIdentity
 import com.carharness.app.obd.WifiTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +64,14 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     var connState by mutableStateOf<ConnState>(ConnState.Idle)
     private var session: Elm327Session? = null
     var controller: ObdController? = null
+        private set
+
+    // What the car is, read once at connect (Mode 09 VIN -> make + likely year).
+    // Cleared on disconnect. vin == null once identifying is false means the car
+    // didn't answer (ignition off?) — the Car tab still shows the card.
+    var vehicle by mutableStateOf<VehicleIdentity?>(null)
+        private set
+    var identifying by mutableStateOf(false)
         private set
 
     var wifiHost by mutableStateOf("192.168.0.10")
@@ -161,6 +170,21 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 }
                 withContext(Dispatchers.Main) {
                     connState = ConnState.Connected(t.label, s.firmware, voltage)
+                    identifying = true
+                }
+                // Identify the car straight away — one Mode 09 VIN read + decode,
+                // before any live polling starts — so the Car tab headlines the
+                // VIN and what the car is the moment we're connected.
+                val ident = try {
+                    controller?.identify()
+                } catch (_: Exception) {
+                    null
+                }
+                withContext(Dispatchers.Main) {
+                    if (session === s) {
+                        vehicle = ident
+                        identifying = false
+                    }
                 }
             } catch (e: Exception) {
                 // Elm327Session.open() closes the transport when the init fails,
@@ -192,6 +216,8 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
             scope.launch(Dispatchers.IO) { s.close() }
         }
         connState = ConnState.Idle
+        vehicle = null
+        identifying = false
         readings = emptyList()
         // Results and errors from the old connection are another car's story --
         // showing them as if still live would mislead on the next vehicle.
