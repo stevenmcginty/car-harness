@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The two "Neon Bay" tokens the platform needs before Compose is running.
+  Keep these in step with Ink and Panel in ui/Theme.kt.
+-->
+<resources>
+    <color name="ink">#FF05070C</color>
+    <color name="panel">#FF0D131C</color>
+</resources>

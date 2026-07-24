@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Platform theme for the window itself. Without this the app cold-starts on
+  Material's default grey for a frame before Compose paints, which reads as a
+  flash of the wrong app. Status and nav bars are painted to match the UI that
+  meets them: the screen ground at the top, the tab bar's panel at the bottom.
+-->
+<resources>
+    <style name="Theme.CarHarness" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ink</item>
+        <item name="android:statusBarColor">@color/ink</item>
+        <item name="android:navigationBarColor">@color/panel</item>
+        <!-- Dark bars: keep the system icons light. -->
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

@@ -109,15 +109,33 @@ fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {
+                                // Lit tick over the active tab, sitting in its
+                                // own halo so it glows off the black bar.
                                 Box(
-                                    Modifier
-                                        .width(26.dp)
-                                        .height(3.dp)
-                                        .background(
-                                            if (active) Accent else Color.Transparent,
-                                            RoundedCornerShape(99.dp),
+                                    Modifier.width(34.dp).height(7.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (active) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .height(7.dp)
+                                                .background(
+                                                    Accent.copy(alpha = 0.22f),
+                                                    RoundedCornerShape(99.dp),
+                                                )
                                         )
-                                )
+                                    }
+                                    Box(
+                                        Modifier
+                                            .width(26.dp)
+                                            .height(3.dp)
+                                            .background(
+                                                if (active) Accent else Color.Transparent,
+                                                RoundedCornerShape(99.dp),
+                                            )
+                                    )
+                                }
                                 Spacer(Modifier.height(7.dp))
                                 Icon(
                                     painterResource(def.icon),

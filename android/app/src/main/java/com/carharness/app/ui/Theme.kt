@@ -62,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
@@ -81,39 +82,41 @@ import com.carharness.app.obd.Brands
 
 // ---------------------------------------------------------------- tokens
 //
-// "Garage Slate" — the app should feel like a tool off the van, not a phone
-// app. Warm graphite ground (never cold blue-black), warm panels with a
-// machined top edge, and ONE gold-amber accent that means "this is the thing
-// you press". Status colours are strictly separate from the accent so amber
-// never has to mean two things at once:
+// "Neon Bay" — the workshop at night, lit by its own instruments. A true black
+// ground so the colour is the only thing on screen, and every colour on it is
+// run at full electric saturation. Cyan is the app's voice: it means "this is
+// live / this is the thing you press". Status colours stay strictly separate
+// from the accent so cyan never has to mean two things at once:
 //
-//   Accent  gold      the action / the active thing
-//   Ok      green     clean, healthy, passed
-//   Warn    orange    caution, answered oddly, no data
-//   Bad     red       faults, errors, link down
-//   Info    blue      identity facts (VIN, decoded year)
+//   Accent  electric cyan    the action / the active thing / the car talking
+//   Ok      neon green       clean, healthy, passed
+//   Warn    hot amber        caution, answered oddly, no data
+//   Bad     hot magenta-red  faults, errors, link down
+//   Info    electric violet  identity facts (VIN, decoded year)
 //
 // Everything the car said is monospaced; everything a human wrote is Barlow.
 
-val Ink = Color(0xFF14130E)         // screen ground — warm near-black
-val Panel = Color(0xFF1F1C15)       // card surface
-val PanelHi = Color(0xFF2A2619)     // inset / raised element inside a card
-val PanelTop = Color(0xFF423B2C)    // machined highlight along a card's top edge
-val Line = Color(0xFF332E23)        // card + control borders
-val LineSoft = Color(0xFF272319)    // inner rules, console wells
+val Ink = Color(0xFF05070C)         // screen ground — true near-black
+val Panel = Color(0xFF0D131C)       // card surface
+val PanelLit = Color(0xFF141D29)    // top of a card, where the light falls
+val PanelHi = Color(0xFF16202D)     // inset / raised element inside a card
+val PanelTop = Color(0xFF1F5C6B)    // cyan filament along a card's top edge
+val Line = Color(0xFF1E2A38)        // card + control borders
+val LineSoft = Color(0xFF121A24)    // inner rules, console wells
 
-val TextMain = Color(0xFFF5F0E6)    // warm white
-val TextMuted = Color(0xFFA9A08D)
-val TextFaint = Color(0xFF6E6759)
+val TextMain = Color(0xFFEAF6FF)    // cool white
+val TextMuted = Color(0xFF93A9BC)
+val TextFaint = Color(0xFF5E7285)
 
-val Accent = Color(0xFFFFB020)      // gold-amber — the tool colour
-val AccentDim = Color(0xFFB57A12)
-val AccentInk = Color(0xFF1A1200)   // text/icons sitting ON accent
+val Accent = Color(0xFF00E5FF)      // electric cyan — the tool colour
+val AccentDeep = Color(0xFF3AA9FF)  // the blue end of every accent gradient
+val AccentDim = Color(0xFF00728C)   // the darker edge under a pressed slab
+val AccentInk = Color(0xFF001820)   // text/icons sitting ON accent
 
-val Ok = Color(0xFF86C34A)
-val Warn = Color(0xFFFF8A2B)
-val Bad = Color(0xFFFF5449)
-val Info = Color(0xFF74B4FF)
+val Ok = Color(0xFF4CFF5A)          // neon green
+val Warn = Color(0xFFFFAE1A)        // hot amber
+val Bad = Color(0xFFFF2E63)         // hot magenta-red
+val Info = Color(0xFFA98BFF)        // electric violet
 
 val Barlow = FontFamily(
     Font(R.font.barlow_regular, FontWeight.Normal),
@@ -161,24 +164,30 @@ val AppTypography = Typography(
 
 // ---------------------------------------------------------------- primitives
 
-/** The machined highlight that runs along the top edge of every panel. */
+/**
+ * The lit filament along the top edge of every panel — a cyan hairline that
+ * fades out at both ends, so a card reads as something switched on rather
+ * than a rectangle drawn on the screen.
+ */
 @Composable
-private fun MachinedEdge() {
+private fun MachinedEdge(accent: Boolean = false) {
+    val core = if (accent) Accent else PanelTop
     Box(
         Modifier
             .fillMaxWidth()
             .height(1.dp)
             .background(
                 Brush.horizontalGradient(
-                    listOf(Color.Transparent, PanelTop, PanelTop, Color.Transparent)
+                    listOf(Color.Transparent, core, core, Color.Transparent)
                 )
             )
     )
 }
 
 /**
- * The one card shape in the app. `accent = true` gives it a gold border for
- * the panel that currently matters most.
+ * The one card shape in the app: near-black, lit from the top edge down.
+ * `accent = true` runs the filament and border at full cyan for the panel
+ * that currently matters most.
  */
 @Composable
 fun SectionCard(
@@ -192,10 +201,14 @@ fun SectionCard(
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 6.dp)
             .clip(shape)
-            .background(Panel)
-            .border(1.dp, if (accent) Accent.copy(alpha = 0.40f) else Line, shape)
+            .background(
+                Brush.verticalGradient(
+                    0f to PanelLit, 0.55f to Panel, 1f to Panel,
+                )
+            )
+            .border(1.dp, if (accent) Accent.copy(alpha = 0.55f) else Line, shape)
     ) {
-        MachinedEdge()
+        MachinedEdge(accent)
         Column(Modifier.padding(16.dp), content = content)
     }
 }
@@ -266,8 +279,8 @@ fun StatusPill(text: String, color: Color) {
     Box(
         Modifier
             .clip(RoundedCornerShape(7.dp))
-            .background(color.copy(alpha = 0.14f))
-            .border(1.dp, color.copy(alpha = 0.34f), RoundedCornerShape(7.dp))
+            .background(color.copy(alpha = 0.18f))
+            .border(1.dp, color.copy(alpha = 0.55f), RoundedCornerShape(7.dp))
             .padding(horizontal = 10.dp, vertical = 5.dp)
     ) {
         Text(
@@ -277,10 +290,18 @@ fun StatusPill(text: String, color: Color) {
     }
 }
 
-/** A round status dot used at the front of list rows. */
+/**
+ * A round status dot used at the front of list rows — a lit core inside its
+ * own halo, so the colour carries at arm's length on a bright forecourt.
+ */
 @Composable
 fun StatusDot(color: Color) {
-    Box(Modifier.size(9.dp).background(color, CircleShape))
+    Box(
+        Modifier.size(15.dp).background(color.copy(alpha = 0.22f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(8.dp).background(color, CircleShape))
+    }
 }
 
 /** Status dot with a slow breathing pulse — the app's one ambient motion. */
@@ -294,7 +315,12 @@ fun PulseDot(color: Color) {
         ),
         label = "pulseAlpha",
     )
-    Box(Modifier.size(9.dp).background(color.copy(alpha = alpha), CircleShape))
+    Box(
+        Modifier.size(15.dp).background(color.copy(alpha = alpha * 0.28f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(8.dp).background(color.copy(alpha = alpha), CircleShape))
+    }
 }
 
 // ---------------------------------------------------------------- status rail
@@ -376,9 +402,9 @@ fun LinkChip(state: AppState) {
 // ---------------------------------------------------------------- buttons
 
 /**
- * The big physical slab the whole app is built around — gold, full width,
- * with a darker bottom edge so it reads as a thing you press. Used for the
- * one-tap scan and nothing else on a screen.
+ * The big physical slab the whole app is built around — a cyan-to-blue bar of
+ * light, full width, with a darker bottom edge so it still reads as a thing
+ * you press. Used for the one-tap scan and nothing else on a screen.
  */
 @Composable
 fun BigActionButton(
@@ -390,7 +416,9 @@ fun BigActionButton(
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(12.dp)
-    val face = if (!enabled) PanelHi else Accent
+    val face: Brush =
+        if (!enabled) SolidColor(PanelHi)
+        else Brush.horizontalGradient(listOf(Accent, AccentDeep))
     val edge = if (!enabled) Line else AccentDim
     val ink = if (!enabled) TextFaint else AccentInk
     Column(
@@ -497,10 +525,10 @@ fun SelectPill(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) Accent.copy(alpha = 0.16f) else PanelHi)
+            .background(if (selected) Accent.copy(alpha = 0.20f) else PanelHi)
             .border(
                 1.dp,
-                if (selected) Accent.copy(alpha = 0.55f) else Line,
+                if (selected) Accent.copy(alpha = 0.75f) else Line,
                 RoundedCornerShape(8.dp),
             )
             .clickable(onClick = onClick)
@@ -746,10 +774,10 @@ private fun BrandSheet(selected: String, onChoose: (String) -> Unit) {
                     Column(
                         Modifier
                             .clip(RoundedCornerShape(11.dp))
-                            .background(if (active) Accent.copy(alpha = 0.12f) else PanelHi)
+                            .background(if (active) Accent.copy(alpha = 0.18f) else PanelHi)
                             .border(
                                 1.dp,
-                                if (active) Accent.copy(alpha = 0.55f) else Line,
+                                if (active) Accent.copy(alpha = 0.75f) else Line,
                                 RoundedCornerShape(11.dp),
                             )
                             .clickable { onChoose(b.id) }
@@ -775,7 +803,7 @@ private fun BrandSheet(selected: String, onChoose: (String) -> Unit) {
 
 // ---------------------------------------------------------------- scan ticker
 
-/** Animated gold sweep — "the tool is working". */
+/** Animated cyan sweep — "the tool is working". */
 @Composable
 fun SweepBar() {
     val anim = rememberInfiniteTransition(label = "sweep")
@@ -794,8 +822,9 @@ fun SweepBar() {
         val barW = size.width * 0.35f
         val x = t * (size.width + barW) - barW
         drawRect(
+            // Blue tail, white-hot head — the pulse has a direction.
             brush = Brush.horizontalGradient(
-                colors = listOf(Color.Transparent, Accent, Color.Transparent),
+                colors = listOf(Color.Transparent, AccentDeep, Accent, TextMain),
                 startX = x, endX = x + barW,
             ),
             topLeft = androidx.compose.ui.geometry.Offset(x, 0f),
@@ -834,7 +863,8 @@ fun ScanTicker(progress: String) {
         tail.forEachIndexed { i, line ->
             Text(
                 line,
-                color = if (i == tail.lastIndex) TextMain else TextFaint,
+                // Newest line lit, older ones fading back into the black.
+                color = if (i == tail.lastIndex) Accent else Accent.copy(alpha = 0.38f),
                 fontFamily = Mono, fontSize = 10.sp, lineHeight = 15.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
@@ -872,13 +902,20 @@ fun HealthRing(
             )
             val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
             drawArc(PanelHi, 0f, 360f, false, topLeft, arcSize, style = stroke)
+            val glow = Stroke(width = 16.dp.toPx(), cap = StrokeCap.Butt)
             val total = (ok + faulted + noData).coerceAtLeast(1)
             var start = -90f
             listOf(Ok to ok, Bad to faulted, Warn to noData).forEach { (color, n) ->
                 if (n > 0) {
                     val sweep = (n.toFloat() / total) * 360f * fraction.value
+                    val drawn = (sweep - 3f).coerceAtLeast(1f)
+                    // A wide, faint pass under the segment reads as light spill.
                     drawArc(
-                        color, start, (sweep - 3f).coerceAtLeast(1f), false,
+                        color.copy(alpha = 0.16f), start, drawn, false,
+                        topLeft, arcSize, style = glow,
+                    )
+                    drawArc(
+                        color, start, drawn, false,
                         topLeft, arcSize, style = stroke,
                     )
                     start += (n.toFloat() / total) * 360f * fraction.value
@@ -939,18 +976,26 @@ fun Sparkline(samples: List<Float>, modifier: Modifier = Modifier) {
         drawPath(
             fill,
             brush = Brush.verticalGradient(
-                listOf(Accent.copy(alpha = 0.20f), Color.Transparent),
+                listOf(Accent.copy(alpha = 0.34f), Color.Transparent),
                 startY = 0f, endY = size.height,
             ),
         )
-        drawPath(line, Accent.copy(alpha = 0.9f), style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round))
-        drawCircle(Accent, 2.dp.toPx(), androidx.compose.ui.geometry.Offset(size.width, yOf(samples.last())))
+        // Wide faint stroke under the sharp one = the trace glows off the black.
+        drawPath(line, Accent.copy(alpha = 0.22f), style = Stroke(4.dp.toPx(), cap = StrokeCap.Round))
+        drawPath(line, Accent, style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round))
+        val head = androidx.compose.ui.geometry.Offset(size.width, yOf(samples.last()))
+        drawCircle(Accent.copy(alpha = 0.30f), 5.dp.toPx(), head)
+        drawCircle(Accent, 2.dp.toPx(), head)
     }
 }
 
 // ---------------------------------------------------------------- blocks
 
-/** Deep-set mono console block (diagnostic trail, raw frames). */
+/**
+ * Deep-set mono console block (diagnostic trail, raw frames). Its lines are
+ * dim cyan, not grey: this is the car talking, and it should look like a
+ * terminal rather than body copy.
+ */
 @Composable
 fun ConsoleBlock(title: String, lines: List<String>) {
     Column(
@@ -958,7 +1003,7 @@ fun ConsoleBlock(title: String, lines: List<String>) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(9.dp))
             .background(Ink)
-            .border(1.dp, LineSoft, RoundedCornerShape(9.dp))
+            .border(1.dp, Accent.copy(alpha = 0.14f), RoundedCornerShape(9.dp))
             .padding(10.dp)
     ) {
         Text(
@@ -968,7 +1013,7 @@ fun ConsoleBlock(title: String, lines: List<String>) {
         Spacer(Modifier.height(5.dp))
         lines.forEach { line ->
             Text(
-                line, color = TextFaint, fontSize = 10.sp,
+                line, color = Accent.copy(alpha = 0.62f), fontSize = 10.sp,
                 fontFamily = Mono, lineHeight = 15.sp,
             )
         }
@@ -983,8 +1028,8 @@ fun StepRow(index: Int, text: String) {
             Modifier
                 .size(22.dp)
                 .clip(RoundedCornerShape(6.dp))
-                .background(Accent.copy(alpha = 0.16f))
-                .border(1.dp, Accent.copy(alpha = 0.3f), RoundedCornerShape(6.dp)),
+                .background(Accent.copy(alpha = 0.20f))
+                .border(1.dp, Accent.copy(alpha = 0.55f), RoundedCornerShape(6.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -1008,8 +1053,8 @@ fun CautionBox(cautions: List<String>) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(9.dp))
-            .background(Warn.copy(alpha = 0.08f))
-            .border(1.dp, Warn.copy(alpha = 0.32f), RoundedCornerShape(9.dp))
+            .background(Warn.copy(alpha = 0.12f))
+            .border(1.dp, Warn.copy(alpha = 0.55f), RoundedCornerShape(9.dp))
             .padding(11.dp)
     ) {
         cautions.forEachIndexed { i, line ->

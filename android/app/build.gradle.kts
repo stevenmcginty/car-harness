@@ -12,8 +12,8 @@ android {
         applicationId = "com.carharness.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
-        versionName = "2.7"
+        versionCode = 19
+        versionName = "2.8"
     }
 
     buildTypes {
