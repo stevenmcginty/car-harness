@@ -50,6 +50,22 @@ sealed class ConnState {
 data class AdapterRow(val id: String, val name: String, val typeId: String)
 data class ModuleRow(val id: String, val name: String, val profile: String, val builtin: Boolean)
 
+/** Where one leg of the one-tap job got to. */
+enum class StepState { Pending, Running, Done, Failed, Skipped }
+
+/**
+ * One leg of the one-tap job. [note] is the honest detail under the label —
+ * what it found, or why it couldn't. Skipped is not Failed: a car that won't
+ * answer its VIN, or a brand the dongle can't walk, is a wall we name rather
+ * than an error we blame the user for.
+ */
+data class JobStep(
+    val id: String,
+    val label: String,
+    val state: StepState = StepState.Pending,
+    val note: String = "",
+)
+
 @SuppressLint("MissingPermission") // every BT/BLE entry point is permission-gated in MainActivity
 class AppState(private val context: Context, private val scope: CoroutineScope) {
 
@@ -76,6 +92,42 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     var wifiHost by mutableStateOf("192.168.0.10")
     var wifiPort by mutableStateOf("35000")
+
+    // ---- remembered dongle -------------------------------------------------
+    // The whole point of one-tap: the second time you use the app it already
+    // knows which dongle is yours, so "Scan this car" needs no setup at all.
+    private val prefs = context.getSharedPreferences("car_harness_ui", Context.MODE_PRIVATE)
+    var lastAddress: String? = prefs.getString("last_address", null)
+        private set
+    var lastAddressName: String = prefs.getString("last_address_name", "") ?: ""
+        private set
+
+    /**
+     * Only ever called after a link actually came up. Remembering a dongle
+     * that failed would make the next "Scan this car" charge confidently at
+     * an address that has never worked.
+     */
+    private fun rememberTransport(kind: String, address: String?) {
+        val name = (bleDevices + bondedDevices).firstOrNull { it.second == address }?.first
+        val editor = prefs.edit()
+            .putString("last_transport", kind)
+            .putString("last_address", address)
+        if (name != null) editor.putString("last_address_name", name)
+        editor.apply()
+        lastAddress = address
+        if (name != null) lastAddressName = name
+    }
+
+    /** True when one tap can go straight to the car with no picking about. */
+    fun canAutoConnect(): Boolean = when (transportChoice) {
+        "demo", "wifi" -> true
+        else -> lastAddress != null
+    }
+
+    init {
+        // Come back up on whatever transport last worked, not on "demo".
+        prefs.getString("last_transport", null)?.let { transportChoice = it }
+    }
 
     val bleDevices = mutableStateListOf<Pair<String, String>>() // name to address
     var bleScanning by mutableStateOf(false)
@@ -128,10 +180,21 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     fun connect(kind: String, address: String? = null) {
         if (connState is ConnState.Connecting) return
+        scope.launch { connectAwait(kind, address) }
+    }
+
+    /**
+     * The connect the one-tap job waits on. Same work as [connect], but it
+     * suspends until the link is either up (true) or refused (false) so the
+     * scan sequence can decide whether to carry on.
+     */
+    suspend fun connectAwait(kind: String, address: String? = null): Boolean {
+        if (connState is ConnState.Connecting) return false
         stopBleScan()
         disconnect()
         connState = ConnState.Connecting
-        scope.launch(Dispatchers.IO) {
+        transportChoice = kind
+        return withContext(Dispatchers.IO) {
             var transport: ObdTransport? = null
             try {
                 val t: ObdTransport = when (kind) {
@@ -162,7 +225,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                                 disconnect()
                                 connState = ConnState.Error(
                                     "BLE link lost — the dongle went out of range or powered " +
-                                        "off. Reconnect from the Car tab."
+                                        "off. Reconnect from Home."
                                 )
                             }
                         }
@@ -184,8 +247,13 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                     if (session === s) {
                         vehicle = ident
                         identifying = false
+                        applyBrandFromVin(ident?.make)
                     }
+                    // The link came up, so this dongle is worth remembering —
+                    // tomorrow's "Scan this car" then needs no setup at all.
+                    rememberTransport(kind, address)
                 }
+                true
             } catch (e: Exception) {
                 // Elm327Session.open() closes the transport when the init fails,
                 // but a failure before/around it (voltage, wiring) must not leak
@@ -197,8 +265,23 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 withContext(Dispatchers.Main) {
                     connState = ConnState.Error(e.message ?: "Could not connect.")
                 }
+                false
             }
         }
+    }
+
+    /**
+     * Point the manufacturer profile at whatever the VIN says the car is. Only
+     * moves when we actually recognise the make — an unrecognised WMI leaves
+     * the user's own choice standing rather than guessing at it.
+     */
+    private fun applyBrandFromVin(make: String?) {
+        val brand = Brands.forMake(make) ?: return
+        if (brand.id != moduleBrand) {
+            moduleBrand = brand.id
+            modError = ""
+        }
+        moduleBrandFromVin = true
     }
 
     private fun remoteDevice(address: String): BluetoothDevice =
@@ -277,7 +360,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     fun runScan() {
         val ctrl = controller ?: run {
-            faultError = "Connect to the car first (Car tab)."
+            faultError = "Connect to the car first — the button on Home does it for you."
             return
         }
         if (scanning) return
@@ -323,6 +406,8 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     // ------------- manufacturer module scan (see obd/Brands.kt) -------------
     var moduleBrand by mutableStateOf(Brands.all.first().id)
+    /** Set when the VIN chose the brand, so the picker can say "FROM VIN". */
+    var moduleBrandFromVin by mutableStateOf(false)
     var modScanning by mutableStateOf(false)
     var modProgress by mutableStateOf("")
     var modReport by mutableStateOf<UdsScanReport?>(null)
@@ -340,6 +425,9 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     var extrasRunningId by mutableStateOf<String?>(null) // BrandAction.id in flight
 
     fun chooseModuleBrand(brand: String) {
+        // Picking by hand always beats the VIN guess — and stops the picker
+        // claiming "FROM VIN" over a choice the user made themselves.
+        moduleBrandFromVin = false
         if (brand == moduleBrand) return
         moduleBrand = brand
         modError = ""
@@ -347,7 +435,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     fun runModuleScan() {
         val ctrl = controller ?: run {
-            modError = "Connect to the car first (Car tab)."
+            modError = "Connect to the car first — the button on Home does it for you."
             return
         }
         val brand = Brands.byId(moduleBrand) ?: run {
@@ -412,7 +500,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     /** Run one of the selected brand's extra actions (extras / snapshot / …). */
     fun runBrandAction(action: BrandAction) {
         val ctrl = controller ?: run {
-            modError = "Connect to the car first (Car tab)."
+            modError = "Connect to the car first — the button on Home does it for you."
             return
         }
         if (extrasBusy || modScanning) return
@@ -461,7 +549,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     fun runReset(reset: ServiceReset) {
         if (!reset.uds) return // procedures are display-only; UI shows the steps
         val ctrl = controller ?: run {
-            resetMessage = "Connect to the car first (Car tab)."
+            resetMessage = "Connect to the car first — the button on Home does it for you."
             return
         }
         if (resetRunningId != null || modScanning || extrasBusy) return
@@ -490,6 +578,194 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 }
             }
         }
+    }
+
+    // ---------------- the one-tap job ----------------
+    // Everything a dealer actually does to a car on the forecourt, in the
+    // order they'd do it, off one button: link up, find out what the car is,
+    // read the generic codes, then walk the manufacturer's own modules. Each
+    // leg reports for itself so a wall in the middle never looks like a crash.
+
+    var jobRunning by mutableStateOf(false)
+        private set
+    var jobDone by mutableStateOf(false)
+        private set
+    var jobSteps by mutableStateOf<List<JobStep>>(emptyList())
+        private set
+    /** Set when the job can't start on its own and needs the user to set up. */
+    var jobNeedsSetup by mutableStateOf(false)
+        private set
+    private var jobJob: Job? = null
+
+    private fun setStep(id: String, state: StepState, note: String = "") {
+        jobSteps = jobSteps.map {
+            if (it.id == id) it.copy(state = state, note = note) else it
+        }
+    }
+
+    fun cancelFullScan() {
+        jobJob?.cancel()
+        jobJob = null
+        jobRunning = false
+        modScanning = false
+        scanning = false
+        modProgress = ""
+        jobSteps = jobSteps.map {
+            if (it.state == StepState.Running) it.copy(state = StepState.Skipped, note = "Stopped")
+            else it
+        }
+    }
+
+    fun runFullScan() {
+        if (jobRunning) return
+        jobRunning = true
+        jobDone = false
+        jobNeedsSetup = false
+        jobSteps = listOf(
+            JobStep("link", "Connect to the car"),
+            JobStep("id", "Identify the car"),
+            JobStep("faults", "Read fault codes"),
+            JobStep("modules", "Deep scan every module"),
+        )
+        jobJob = scope.launch {
+            try {
+                // ---- 1. link ------------------------------------------------
+                if (connState !is ConnState.Connected) {
+                    if (!canAutoConnect()) {
+                        setStep(
+                            "link", StepState.Failed,
+                            "No dongle picked yet — choose it below, then tap again.",
+                        )
+                        jobNeedsSetup = true
+                        return@launch
+                    }
+                    setStep(
+                        "link", StepState.Running,
+                        if (lastAddressName.isNotEmpty()) "Waking $lastAddressName…"
+                        else "Opening the link…",
+                    )
+                    if (!connectAwait(transportChoice, lastAddress)) {
+                        setStep(
+                            "link", StepState.Failed,
+                            (connState as? ConnState.Error)?.message
+                                ?: "Couldn't reach the dongle.",
+                        )
+                        jobNeedsSetup = true
+                        return@launch
+                    }
+                }
+                val cs = connState as? ConnState.Connected
+                setStep(
+                    "link", StepState.Done,
+                    listOfNotNull(cs?.label, cs?.voltage?.ifEmpty { null })
+                        .joinToString(" · "),
+                )
+
+                // ---- 2. identity --------------------------------------------
+                setStep("id", StepState.Running, "Asking the car for its VIN…")
+                var v = vehicle
+                if (v == null) {
+                    v = withContext(Dispatchers.IO) {
+                        try {
+                            controller?.identify()
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                    vehicle = v
+                    applyBrandFromVin(v?.make)
+                }
+                if (v?.vin != null) {
+                    setStep(
+                        "id", StepState.Done,
+                        listOfNotNull(v.make, v.year?.let { "likely $it" }, v.vin)
+                            .joinToString(" · "),
+                    )
+                } else {
+                    setStep(
+                        "id", StepState.Skipped,
+                        "The car didn't answer the VIN request — is the ignition on?",
+                    )
+                }
+
+                val ctrl = controller ?: run {
+                    setStep("faults", StepState.Failed, "Link dropped before the scan.")
+                    return@launch
+                }
+                setLive(false) // the scan must not fight the dashboard for the ELM
+
+                // ---- 3. generic fault codes ---------------------------------
+                setStep("faults", StepState.Running, "Reading stored and pending codes…")
+                scanning = true
+                try {
+                    val r = withContext(Dispatchers.IO) { ctrl.scan() }
+                    scanResult = r
+                    val n = r.stored.size + r.pending.size + r.permanent.size
+                    setStep(
+                        "faults", StepState.Done,
+                        when {
+                            n == 0 && r.milOn -> "No codes, but the engine light is ON"
+                            n == 0 -> "No fault codes"
+                            n == 1 -> "1 fault code"
+                            else -> "$n fault codes"
+                        },
+                    )
+                } catch (e: Exception) {
+                    faultError = e.message ?: "Scan failed."
+                    setStep("faults", StepState.Failed, faultError)
+                } finally {
+                    scanning = false
+                }
+
+                // ---- 4. manufacturer deep scan ------------------------------
+                val brand = Brands.byId(moduleBrand)
+                if (brand == null) {
+                    setStep("modules", StepState.Skipped, "No manufacturer profile selected.")
+                    return@launch
+                }
+                setStep("modules", StepState.Running, "Walking ${brand.label} control units…")
+                modScanning = true
+                modError = ""
+                try {
+                    val onStep: (String) -> Unit = { step ->
+                        scope.launch { modProgress = step }
+                    }
+                    val report = withContext(Dispatchers.IO) { brand.scan(ctrl, onStep) }
+                    modReport = report
+                    val faulted = report.modules.count { it.dtcs.isNotEmpty() }
+                    val found = report.modules.count { it.present }
+                    if (!report.ok) {
+                        modError = report.message
+                        setStep("modules", StepState.Skipped, report.message)
+                    } else {
+                        setStep(
+                            "modules", StepState.Done,
+                            "$found modules answered · " +
+                                if (faulted == 0) "all clear" else "$faulted holding faults",
+                        )
+                    }
+                } catch (e: Exception) {
+                    modError = e.message ?: "Module scan failed."
+                    setStep("modules", StepState.Failed, modError)
+                } finally {
+                    modScanning = false
+                    modProgress = ""
+                }
+            } finally {
+                jobRunning = false
+                jobDone = jobSteps.any { it.state != StepState.Pending }
+                jobJob = null
+            }
+        }
+    }
+
+    /** Every fault the job turned up — generic codes plus per-module ones. */
+    fun jobFaultTotal(): Int {
+        val generic = scanResult?.let {
+            it.stored.size + it.pending.size + it.permanent.size
+        } ?: 0
+        val perModule = modReport?.modules?.sumOf { it.dtcs.size } ?: 0
+        return generic + perModule
     }
 
     // ---------------- desktop pairing + remote ----------------

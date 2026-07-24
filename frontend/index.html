@@ -2,8 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Car Harness</title>
+<meta name="description" content="Car Harness — multi-brand OBD diagnostics: fault codes, module scans and service resets." />
+<meta name="theme-color" content="#14130e" />
+<meta name="color-scheme" content="dark" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Car Harness" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -12,7 +22,7 @@
   <header class="header">
     <div class="header-left">
       <span class="logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 12h4l2-6 4 12 2-6h6" />
         </svg>
       </span>
@@ -30,14 +40,19 @@
         <select id="adapter-select">
           <option value="">Auto / none</option>
         </select>
-        <button id="add-adapter-btn" class="btn btn-secondary btn-small" type="button">Add adapter…</button>
+      </div>
+      <div class="field">
+        <span class="field-label">Setup</span>
+        <div class="panel-actions">
+          <button id="add-adapter-btn" class="btn btn-secondary btn-small" type="button">Add adapter…</button>
+          <button id="pair-btn" class="btn btn-secondary btn-small" type="button">Pair phone…</button>
+        </div>
       </div>
       <label class="toggle-field" for="simulate-toggle">
         <input type="checkbox" id="simulate-toggle" />
         <span class="toggle-track"><span class="toggle-thumb"></span></span>
         <span class="toggle-text">Simulate (no car)</span>
       </label>
-      <button id="pair-btn" class="btn btn-secondary btn-small" type="button">Pair phone…</button>
     </div>
   </header>
 
@@ -104,7 +119,7 @@
 
     <section class="panel obd-panel" aria-label="OBD-II diagnostics">
       <div class="panel-header">
-        <h2>OBD-II — All cars</h2>
+        <h2>OBD-II<span class="panel-subject">All cars</span></h2>
         <div class="panel-actions">
           <button id="obd-scan-btn" class="btn btn-primary" type="button">Read fault codes</button>
           <button id="obd-clear-btn" class="btn btn-danger" type="button" disabled>Clear codes</button>
@@ -175,6 +190,9 @@
     <section class="panel service-panel" aria-label="Service resets">
       <div class="panel-header">
         <h2>Service resets<span id="service-brand-label" class="panel-subject"></span></h2>
+        <div class="panel-actions">
+          <button id="service-capture-btn" class="btn btn-secondary" type="button">Capture from your scan tool…</button>
+        </div>
       </div>
 
       <p id="service-hint" class="obd-hint">
@@ -186,6 +204,9 @@
 
       <p id="service-message" class="status-message" hidden></p>
       <div id="service-list" class="service-list"></div>
+
+      <h3 id="learned-heading" class="learned-heading" hidden>Learned resets</h3>
+      <div id="learned-list" class="service-list"></div>
     </section>
 
     <section class="panel modules-panel" aria-label="Jobs">
@@ -245,6 +266,32 @@
   </div>
 </div>
 
+<div id="capture-modal" class="modal-overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="capture-modal-title">
+    <div class="modal-header">
+      <h2 id="capture-modal-title" class="modal-title">Capture a service reset</h2>
+      <button id="capture-modal-close" class="modal-close" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+        </svg>
+      </button>
+    </div>
+    <div id="capture-modal-body" class="modal-body"></div>
+  </div>
+</div>
+
 <script src="app.js"></script>
+<script>
+  // Service worker: shell-only cache so the page opens instantly and still
+  // loads when the backend is down. Every /api call stays network-only (see
+  // sw.js) — diagnostics must never be served from a stale cache.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function (err) {
+        console.warn('[car-harness] service worker registration failed', err);
+      });
+    });
+  }
+</script>
 </body>
 </html>

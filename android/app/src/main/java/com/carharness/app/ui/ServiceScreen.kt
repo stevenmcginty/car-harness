@@ -50,7 +50,7 @@ fun ServiceScreen(state: AppState) {
                     if (reset.cautions.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         reset.cautions.forEach {
-                            Text("• $it", color = Amber, fontSize = 12.sp, lineHeight = 17.sp)
+                            Text("• $it", color = Warn, fontSize = 12.sp, lineHeight = 17.sp)
                         }
                     }
                 }
@@ -59,7 +59,7 @@ fun ServiceScreen(state: AppState) {
                 TextButton(onClick = {
                     confirm = null
                     state.runReset(reset)
-                }) { Text("Run reset", color = Green) }
+                }) { Text("Run reset", color = Accent) }
             },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } },
         )
@@ -68,14 +68,14 @@ fun ServiceScreen(state: AppState) {
     LazyColumn(Modifier.fillMaxSize()) {
         item { StatusRail("Service", "Resets & maintenance procedures", state) }
 
-        item { BrandRail(brand) { state.chooseModuleBrand(it) } }
+        item { BrandPicker(brand) { state.chooseModuleBrand(it) } }
 
         item {
             SectionCard {
                 PanelTitle("Service resets")
                 Text(
                     "Reset the service indicators after you've done the work — oil/inspection " +
-                        "counters and brake reminders. Green 'Run reset' items go over the OBD " +
+                        "counters and brake reminders. Gold 'Run reset' items go over the OBD " +
                         "dongle; the rest are manual dash steps to follow.",
                     color = TextMuted, fontFamily = Barlow,
                     fontSize = 13.sp, lineHeight = 18.sp,
@@ -83,7 +83,7 @@ fun ServiceScreen(state: AppState) {
                 if (state.connState !is ConnState.Connected) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Connect to the car on the Car tab to run dongle resets (you can still " +
+                        "Connect from Home to run dongle resets (you can still " +
                             "read the manual steps without a connection).",
                         color = TextFaint, fontFamily = Barlow,
                         fontSize = 12.sp, lineHeight = 17.sp,
@@ -94,7 +94,7 @@ fun ServiceScreen(state: AppState) {
                     SweepBar()
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        state.resetProgress, color = Amber,
+                        state.resetProgress, color = Accent,
                         fontFamily = Mono, fontSize = 11.sp,
                     )
                 }
@@ -141,8 +141,8 @@ fun ServiceScreen(state: AppState) {
 @Composable
 private fun ConfidenceBadge(confidence: String) {
     val (color, label) = when (confidence) {
-        "verified" -> Green to "VERIFIED"
-        "community" -> Amber to "COMMUNITY"
+        "verified" -> Ok to "VERIFIED"
+        "community" -> Warn to "COMMUNITY"
         else -> TextFaint to "EXPERIMENTAL"
     }
     StatusPill(label, color)
@@ -153,7 +153,7 @@ private fun ConfidenceBadge(confidence: String) {
 private fun MethodTag(uds: Boolean) {
     Text(
         if (uds) "OVER THE DONGLE" else "DASH PROCEDURE",
-        color = if (uds) Green else TextFaint,
+        color = if (uds) Accent else TextFaint,
         fontFamily = Barlow, fontSize = 9.sp,
         fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp,
     )
@@ -170,7 +170,7 @@ private fun ResetCard(
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = Panel),
-        border = BorderStroke(1.dp, BorderSoft),
+        border = BorderStroke(1.dp, Line),
         shape = RoundedCornerShape(14.dp),
     ) {
         Column(Modifier.padding(14.dp)) {

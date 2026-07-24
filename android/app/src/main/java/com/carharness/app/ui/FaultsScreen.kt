@@ -41,7 +41,7 @@ fun FaultsScreen(state: AppState) {
                 TextButton(onClick = {
                     confirmClear = false
                     state.runClear()
-                }) { Text("Clear codes", color = Red) }
+                }) { Text("Clear codes", color = Bad) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmClear = false }) { Text("Cancel") }
@@ -73,14 +73,15 @@ fun FaultsScreen(state: AppState) {
                 if (state.connState !is ConnState.Connected) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Connect to the car on the Car tab first (or use Demo).",
+                        "Not connected yet — the button on Home links up and reads " +
+                            "these for you in one go.",
                         color = TextFaint, fontFamily = Barlow, fontSize = 12.sp,
                     )
                 }
                 if (state.faultError.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        state.faultError, color = Red, fontFamily = Barlow,
+                        state.faultError, color = Bad, fontFamily = Barlow,
                         fontSize = 13.sp, lineHeight = 18.sp,
                     )
                 }

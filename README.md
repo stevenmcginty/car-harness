@@ -63,6 +63,18 @@ phone app can reach it over the LAN -- but every non-localhost request is
 rejected unless the phone has paired (see below), so the desktop UI at
 127.0.0.1 stays the only unauthenticated door.
 
+**Install it as an app.** The web UI is a PWA: open it at 127.0.0.1:8765 and
+use Chrome/Edge's install button (address-bar icon, or menu -> Install) to get
+Car Harness in its own window with its own icon. It keeps a copy of the shell,
+so it still opens if the backend isn't running -- but the cache is deliberately
+network-*first* and `/api/*` is never cached, because a diagnostic served from
+cache would be a lie about the car in front of you.
+
+Browsers only allow service workers on a secure origin, and `127.0.0.1` counts
+as one. Reaching the same page from a tablet over plain `http://192.168.x.x`
+does not, so it will run fine there but won't offer to install until it's put
+behind HTTPS.
+
 ## Generic OBD-II scanning (all cars)
 
 1. Add your adapter once via **Add adapter...** (ELM327 USB / Bluetooth /
@@ -84,8 +96,14 @@ The **Simulate** toggle returns clearly-labelled fake results (VIN
 `CarHarness.apk` in the project root (source in `android/`, rebuild with
 `gradle assembleDebug`). Install it on the phone, then:
 
-- **Car tab** -- connect straight to a dongle from the phone (Demo / BLE /
-  Classic Bluetooth / WiFi) and get the same live dashboard.
+- **Home tab** -- the whole job off one button. **Scan this car** connects to
+  the remembered dongle, reads the VIN, picks the manufacturer profile from
+  that VIN, reads the generic fault codes and then walks every module the
+  brand supports -- reporting each leg as it goes, and naming the wall it hit
+  when a leg can't run. The result lands as three tiles (faults / modules /
+  resets) that tap through to the tabs below. Transport setup (Demo / BLE /
+  Classic Bluetooth / WiFi) lives collapsed underneath, because after the
+  first successful link the app remembers the dongle and never asks again.
 - **Faults tab** -- read + clear codes with the same descriptions database.
 - **Modules tab** -- BMW F-series deep scan straight from the phone: walks
   every control unit (engine, gearbox, ABS, airbags, cluster, head unit...)
@@ -106,11 +124,14 @@ The **Simulate** toggle returns clearly-labelled fake results (VIN
   the report says which modules need a PSA pin-swap adapter instead of
   listing them as absent. Each scanned module carries a request->reply
   "diagnostic trail" for field debugging.
-- **Desktop tab** -- pair with this app: on the PC click **Pair phone...**,
-  then on the phone **Find my PC** (UDP discovery on port 8766) and type the
-  6-digit code. Once paired, the phone can run scans *through the desktop's
-  adapters* -- the path to the deeper, proprietary-cable jobs. Un-pair either
-  side at any time (desktop: Pair phone... -> Un-pair).
+- **Live tab** -- the live dashboard on its own screen: big mono values with a
+  trend line under each.
+- **Desktop pairing** (the monitor icon in the Home header, not a bottom tab --
+  it's a once-a-year errand) -- pair with this app: on the PC click
+  **Pair phone...**, then on the phone **Find my PC** (UDP discovery on port
+  8766) and type the 6-digit code. Once paired, the phone can run scans
+  *through the desktop's adapters* -- the path to the deeper, proprietary-cable
+  jobs. Un-pair either side at any time (desktop: Pair phone... -> Un-pair).
 
 Pairing security: codes are one-time and expire after 5 minutes; the phone
 gets a bearer token whose SHA-256 (never the token itself) is stored in

@@ -27,6 +27,10 @@ data class Brand(
     val id: String,
     val label: String,
     val scanHint: String,
+    /** Sub-marques and group names the picker's search should match — "Audi"
+     *  must find VW/Audi, "Land Rover" must find Jaguar/LR. Search aid only,
+     *  not a coverage claim. */
+    val aliases: List<String> = emptyList(),
     val actions: List<BrandAction> = emptyList(),
     val scan: suspend (ObdController, (String) -> Unit) -> UdsScanReport,
     val clear: suspend (ObdController, Int) -> List<UdsDtc>,
@@ -58,7 +62,7 @@ object Brands {
                     cardTitle = "MAZDA LIVE EXTRAS",
                     emptyHint = "This car didn't answer any of the Mazda-specific values. " +
                         "They vary by model year and engine — the generic live " +
-                        "dashboard on the Car tab still works.",
+                        "dashboard on the Live tab still works.",
                     refreshHint = "One-shot read — tap Live extras again to refresh.",
                     run = { ctrl, onStep -> ctrl.mazdaEnhanced(onStep) },
                 ),
@@ -78,6 +82,7 @@ object Brands {
         Brand(
             id = "peugeot",
             label = "Peugeot",
+            aliases = listOf("Citroen", "Citroën", "DS", "PSA"),
             scanHint = "Reads the VIN first (so you always know the car), then walks the " +
                 "PSA control units the dongle can reach — engine, gearbox, ABS/ESP, " +
                 "steering, AdBlue — speaking both UDS and Peugeot's own KWP dialect. " +
@@ -103,6 +108,7 @@ object Brands {
         Brand(
             id = "vw",
             label = "VW/Audi",
+            aliases = listOf("Volkswagen", "Audi", "Skoda", "Škoda", "SEAT", "Cupra", "VAG"),
             scanHint = "Reads the VIN first (so you always know the car), then walks the VAG " +
                 "control units — engine, gearbox/DSG, gateway, cluster, ABS, airbag, " +
                 "steering and more — as pure UDS, reading each one's own fault memory. " +
@@ -130,6 +136,7 @@ object Brands {
         Brand(
             id = "mercedes",
             label = "Mercedes",
+            aliases = listOf("Benz", "AMG"),
             scanHint = "Reads the VIN first (so you always know the car), then the two modules a " +
                 "dongle reaches at manufacturer depth on a Mercedes — the engine and the automatic " +
                 "gearbox — reading each one's own fault memory, laddering UDS then Mercedes' " +
@@ -145,7 +152,7 @@ object Brands {
                     cardTitle = "MERCEDES LIVE EXTRAS",
                     emptyHint = "This car didn't answer any of the Mercedes-specific values. " +
                         "Make sure the ignition is ON — the 722.9/9G ATF temp is the one " +
-                        "Mercedes-specific extra, and the generic live dashboard on the Car tab " +
+                        "Mercedes-specific extra, and the generic live dashboard on the Live tab " +
                         "still works.",
                     refreshHint = "One-shot read-only pass — tap Live extras again to refresh. " +
                         "Values this car doesn't support are skipped.",
@@ -158,6 +165,7 @@ object Brands {
         Brand(
             id = "fiat",
             label = "Fiat/Alfa",
+            aliases = listOf("Alfa Romeo", "Abarth", "Jeep", "FCA"),
             scanHint = "Reads the VIN first (so you always know the car), then walks the Fiat / Alfa " +
                 "modules. On a UDS-era FCA (Alfa Giulia/Stelvio, Fiat 500X/Tipo/124, Jeep Renegade, " +
                 "≈2014+) it reads engine, gearbox, ABS/ESC, steering and the body computer over 29-bit " +
@@ -188,6 +196,7 @@ object Brands {
         Brand(
             id = "jlr",
             label = "Jaguar/LR",
+            aliases = listOf("Jaguar", "Land Rover", "Range Rover"),
             scanHint = "Reads the VIN first (so you always know the car), then the modules a " +
                 "dongle genuinely reaches on a 2006-2016 CAN-era Jaguar / Land Rover — engine, " +
                 "ZF automatic gearbox and (where fitted) the rear e-diff — laddering UDS then " +
@@ -246,7 +255,7 @@ object Brands {
                     emptyHint = "This car didn't answer any of the Porsche-specific values. " +
                         "Make sure the ignition is ON — the KWP oil-temperature read is a " +
                         "997/987-era value; UDS-era, DoIP-era and K-line cars fall back to the " +
-                        "generic set, and the live dashboard on the Car tab still works.",
+                        "generic set, and the live dashboard on the Live tab still works.",
                     refreshHint = "One-shot read-only pass — tap Live extras again to refresh. " +
                         "Single-source scaling; verify against the car. Values this car doesn't " +
                         "support are skipped.",
@@ -259,4 +268,28 @@ object Brands {
     )
 
     fun byId(id: String): Brand? = all.firstOrNull { it.id == id }
+
+    /**
+     * Which brand profile handles a make decoded from the VIN — so the one-tap
+     * scan can pick the manufacturer itself instead of making the user do it.
+     *
+     * Keyed on the exact make strings VinDecode produces. A make we have no
+     * profile for returns null: the caller leaves the user's own choice alone
+     * rather than guessing, because scanning a Ford with the BMW walker would
+     * just waste time on a bus that will never answer.
+     */
+    fun forMake(make: String?): Brand? {
+        val id = when (make?.trim()?.lowercase()) {
+            "bmw", "mini" -> "bmw"
+            "mazda" -> "mazda"
+            "peugeot", "citroen", "citroën", "ds automobiles" -> "peugeot"
+            "volkswagen", "audi", "skoda", "škoda", "seat", "cupra" -> "vw"
+            "mercedes-benz", "mercedes", "smart" -> "mercedes"
+            "fiat", "alfa romeo", "lancia", "abarth", "jeep" -> "fiat"
+            "jaguar", "land rover" -> "jlr"
+            "porsche" -> "porsche"
+            else -> return null
+        }
+        return byId(id)
+    }
 }

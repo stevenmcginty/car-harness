@@ -17,6 +17,7 @@ handlers wrap their blocking calls in run_in_threadpool -- one slow BLE
 connect must never freeze the whole API.
 """
 
+import mimetypes
 import shutil
 import sys
 import tempfile
@@ -40,6 +41,11 @@ from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
+
+# Windows has no registry entry for .webmanifest, so StaticFiles would hand it
+# out as application/octet-stream and Chrome would refuse to install the PWA.
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("text/javascript", ".js")
 
 app = FastAPI(title="car-harness", version="0.3.0")
 

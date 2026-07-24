@@ -94,7 +94,7 @@ fun UpdateCard() {
             UpdateStage.UpToDate -> {
                 Text(
                     "✓ You're on the latest version (${release?.tag}).",
-                    color = Green, fontFamily = Barlow, fontSize = 13.sp,
+                    color = Ok, fontFamily = Barlow, fontSize = 13.sp,
                 )
                 Spacer(Modifier.height(8.dp))
                 GhostButton("Check again", onClick = { check() })
@@ -105,7 +105,7 @@ fun UpdateCard() {
                 if (info != null) {
                     Text(
                         "Update available: ${info.tag}",
-                        color = Amber, fontFamily = Barlow, fontSize = 14.sp,
+                        color = Accent, fontFamily = Barlow, fontSize = 14.sp,
                     )
                     if (info.title.isNotEmpty() && info.title != info.tag) {
                         Spacer(Modifier.height(2.dp))
@@ -133,8 +133,8 @@ fun UpdateCard() {
                     LinearProgressIndicator(
                         progress = { progress / 100f },
                         modifier = Modifier.fillMaxWidth(),
-                        color = Green,
-                        trackColor = PanelRaised,
+                        color = Accent,
+                        trackColor = PanelHi,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -144,8 +144,8 @@ fun UpdateCard() {
                 } else {
                     LinearProgressIndicator(
                         modifier = Modifier.fillMaxWidth(),
-                        color = Green,
-                        trackColor = PanelRaised,
+                        color = Accent,
+                        trackColor = PanelHi,
                     )
                 }
             }
@@ -155,7 +155,7 @@ fun UpdateCard() {
                     Text(
                         "Android needs your one-time OK first: flip on “Allow from this " +
                             "source” in the screen that just opened, come back, and tap Install.",
-                        color = Amber, fontFamily = Barlow,
+                        color = Warn, fontFamily = Barlow,
                         fontSize = 12.sp, lineHeight = 17.sp,
                     )
                 } else {
@@ -179,7 +179,7 @@ fun UpdateCard() {
         if (error.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(
-                error, color = Red, fontFamily = Barlow,
+                error, color = Bad, fontFamily = Barlow,
                 fontSize = 12.sp, lineHeight = 17.sp,
             )
         }

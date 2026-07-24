@@ -70,7 +70,7 @@ fun ModulesScreen(state: AppState) {
                 TextButton(onClick = {
                     confirmAddr = null
                     state.runModuleClear(addr)
-                }) { Text("Clear module", color = Red) }
+                }) { Text("Clear module", color = Bad) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmAddr = null }) { Text("Cancel") }
@@ -84,7 +84,7 @@ fun ModulesScreen(state: AppState) {
     LazyColumn(Modifier.fillMaxSize()) {
         item { StatusRail("Modules", "Deep scan, straight to each control unit", state) }
 
-        item { BrandRail(brand) { state.chooseModuleBrand(it) } }
+        item { BrandPicker(brand) { state.chooseModuleBrand(it) } }
 
         item {
             SectionCard {
@@ -120,14 +120,15 @@ fun ModulesScreen(state: AppState) {
                 if (state.connState !is ConnState.Connected) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Connect to the car on the Car tab first (or use Demo).",
+                        "Not connected yet — the button on Home links up and walks " +
+                            "every module for you in one go.",
                         color = TextFaint, fontFamily = Barlow, fontSize = 12.sp,
                     )
                 }
                 if (state.modError.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        state.modError, color = Red, fontFamily = Barlow,
+                        state.modError, color = Bad, fontFamily = Barlow,
                         fontSize = 13.sp, lineHeight = 18.sp,
                     )
                 }
@@ -153,13 +154,13 @@ fun ModulesScreen(state: AppState) {
                             val warn = r.value.startsWith("⚠")
                             Row(Modifier.padding(vertical = 3.dp)) {
                                 Text(
-                                    r.name, color = if (warn) Red else TextMuted,
+                                    r.name, color = if (warn) Bad else TextMuted,
                                     fontFamily = Barlow, fontSize = 13.sp,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
                                     if (r.unit.isEmpty()) r.value else "${r.value} ${r.unit}",
-                                    color = if (warn) Red else TextMain, fontSize = 12.sp,
+                                    color = if (warn) Bad else TextMain, fontSize = 12.sp,
                                     fontFamily = Mono, fontWeight = FontWeight.Medium,
                                 )
                             }
@@ -195,7 +196,7 @@ fun ModulesScreen(state: AppState) {
                 SectionCard {
                     PanelTitle("Scan result")
                     if (it.simulated) {
-                        StatusPill("SIMULATED — no real car connected", Amber)
+                        StatusPill("SIMULATED — no real car connected", Warn)
                         Spacer(Modifier.height(10.dp))
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -213,7 +214,7 @@ fun ModulesScreen(state: AppState) {
                             )
                             ident.year?.let { y ->
                                 Text(
-                                    "Likely $y", color = Blue, fontFamily = Barlow,
+                                    "Likely $y", color = Info, fontFamily = Barlow,
                                     fontSize = 13.sp, fontWeight = FontWeight.Medium,
                                 )
                             }
@@ -226,7 +227,7 @@ fun ModulesScreen(state: AppState) {
                             }
                             Spacer(Modifier.height(8.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                StatusDot(Green)
+                                StatusDot(Ok)
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     "$clean clean", color = TextMuted,
@@ -234,7 +235,7 @@ fun ModulesScreen(state: AppState) {
                                 )
                                 if (faulted > 0) {
                                     Spacer(Modifier.width(10.dp))
-                                    StatusDot(Red)
+                                    StatusDot(Bad)
                                     Spacer(Modifier.width(6.dp))
                                     Text(
                                         "$faulted with faults", color = TextMuted,
@@ -243,7 +244,7 @@ fun ModulesScreen(state: AppState) {
                                 }
                                 if (noData > 0) {
                                     Spacer(Modifier.width(10.dp))
-                                    StatusDot(Amber)
+                                    StatusDot(Warn)
                                     Spacer(Modifier.width(6.dp))
                                     Text(
                                         "$noData no data", color = TextMuted,
@@ -255,7 +256,7 @@ fun ModulesScreen(state: AppState) {
                     }
                     it.vin?.let { vin ->
                         Spacer(Modifier.height(12.dp))
-                        Row { InfoChip("VIN", vin, Blue) }
+                        Row { InfoChip("VIN", vin, Info) }
                     }
                     Spacer(Modifier.height(10.dp))
                     Text(
@@ -311,9 +312,9 @@ private fun ModuleCard(
 ) {
     val faults = module.dtcs.size
     val statusColor = when {
-        module.error != null -> Amber
-        faults == 0 -> Green
-        else -> Red
+        module.error != null -> Warn
+        faults == 0 -> Ok
+        else -> Bad
     }
     val statusLabel = when {
         module.error != null -> "no data"
@@ -327,7 +328,7 @@ private fun ModuleCard(
             .padding(horizontal = 14.dp, vertical = 4.dp)
             .clickable(onClick = onToggle),
         colors = CardDefaults.cardColors(containerColor = Panel),
-        border = BorderStroke(1.dp, BorderSoft),
+        border = BorderStroke(1.dp, Line),
         shape = RoundedCornerShape(14.dp),
     ) {
         Column(Modifier.padding(14.dp).animateContentSize()) {
@@ -370,7 +371,7 @@ private fun ModuleCard(
                             )
                             Text(
                                 value,
-                                color = if (label == "VIN") Blue else TextMain,
+                                color = if (label == "VIN") Info else TextMain,
                                 fontSize = 11.sp, fontFamily = Mono,
                             )
                         }
@@ -379,17 +380,17 @@ private fun ModuleCard(
                 module.error?.let {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        it, color = Amber, fontFamily = Barlow,
+                        it, color = Warn, fontFamily = Barlow,
                         fontSize = 12.sp, lineHeight = 17.sp,
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 if (module.dtcs.isEmpty() && module.error == null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        StatusDot(Green)
+                        StatusDot(Ok)
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "No faults stored in this module.", color = Green,
+                            "No faults stored in this module.", color = Ok,
                             fontFamily = Barlow, fontSize = 13.sp,
                         )
                     }
@@ -406,7 +407,7 @@ private fun ModuleCard(
                         if (clearing) "Clearing…" else "Clear this module",
                         onClick = onClear,
                         enabled = !clearing,
-                        tint = Red,
+                        tint = Bad,
                     )
                 }
             }
@@ -433,7 +434,7 @@ private fun AbsentCard(absent: List<UdsModuleResult>, hint: String?) {
             absent.forEach { m ->
                 Box(
                     Modifier
-                        .background(PanelRaised, RoundedCornerShape(999.dp))
+                        .background(PanelHi, RoundedCornerShape(999.dp))
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
                     Text(
@@ -454,14 +455,14 @@ private fun UdsDtcCard(dtc: UdsDtc, ai: AiFaultContext? = null) {
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(PanelRaised)
+            .background(PanelHi)
             .height(IntrinsicSize.Min)
     ) {
         Box(
             Modifier
                 .width(3.dp)
                 .fillMaxHeight()
-                .background(Red)
+                .background(Bad)
         )
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -472,7 +473,7 @@ private fun UdsDtcCard(dtc: UdsDtc, ai: AiFaultContext? = null) {
                 Spacer(Modifier.width(10.dp))
                 if (dtc.hex.isNotEmpty()) {
                     Text(
-                        dtc.hex, color = Amber,
+                        dtc.hex, color = Accent,
                         fontSize = 11.sp, fontFamily = Mono,
                     )
                 }

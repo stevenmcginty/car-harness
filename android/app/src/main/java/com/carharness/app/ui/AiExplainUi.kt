@@ -70,19 +70,19 @@ fun AiExplainBlock(code: String, rawHex: String?, ctx: AiFaultContext) {
     Spacer(Modifier.height(6.dp))
     when {
         busy -> Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp, color = Blue)
+            CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp, color = Info)
             Spacer(Modifier.width(8.dp))
             Text("Asking the AI…", color = TextFaint, fontSize = 12.sp)
         }
         answer != null -> Column(
             Modifier
                 .fillMaxWidth()
-                .background(Bg, RoundedCornerShape(10.dp))
-                .border(1.dp, RuleInner, RoundedCornerShape(10.dp))
+                .background(Ink, RoundedCornerShape(10.dp))
+                .border(1.dp, LineSoft, RoundedCornerShape(10.dp))
                 .padding(10.dp),
         ) {
             Text(
-                "AI EXPLANATION", color = Blue, fontFamily = Barlow, fontSize = 9.sp,
+                "AI EXPLANATION", color = Info, fontFamily = Barlow, fontSize = 10.sp,
                 letterSpacing = 1.4.sp, fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(4.dp))
@@ -96,12 +96,12 @@ fun AiExplainBlock(code: String, rawHex: String?, ctx: AiFaultContext) {
         else -> Column {
             Text(
                 "✨ Explain with AI",
-                color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                color = Info, fontSize = 12.sp, fontWeight = FontWeight.Medium,
                 modifier = Modifier.clickable { ask() },
             )
             error?.let {
                 Spacer(Modifier.height(3.dp))
-                Text(it, color = Amber, fontSize = 11.sp, lineHeight = 15.sp)
+                Text(it, color = Warn, fontSize = 11.sp, lineHeight = 15.sp)
             }
         }
     }
@@ -145,7 +145,7 @@ private fun AiKeyDialog(onDismiss: () -> Unit, onSave: (String) -> Unit) {
         },
         confirmButton = {
             TextButton(onClick = { if (key.isNotBlank()) onSave(key) }) {
-                Text("Save & ask", color = Green, fontWeight = FontWeight.SemiBold)
+                Text("Save & ask", color = Accent, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {

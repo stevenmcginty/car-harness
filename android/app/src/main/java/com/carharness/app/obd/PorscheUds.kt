@@ -713,7 +713,7 @@ object PorscheUds {
         if (!protocolSupported(session)) {
             throw ObdException(
                 "Not on the 11-bit/500k CAN a Porsche's live values use — a 996/986 on K-line has " +
-                    "no Porsche-specific extras; the generic dashboard on the Car tab still works.",
+                    "no Porsche-specific extras; the generic dashboard on the Live tab still works.",
                 ObdException.Kind.PROTOCOL
             )
         }

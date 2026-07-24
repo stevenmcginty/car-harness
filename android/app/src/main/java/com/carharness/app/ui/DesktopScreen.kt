@@ -54,7 +54,7 @@ fun DesktopScreen(state: AppState) {
                                 .fillMaxWidth()
                                 .padding(top = 6.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(PanelRaised)
+                                .background(PanelHi)
                                 .padding(12.dp)
                         ) {
                             Text(
@@ -104,7 +104,7 @@ fun DesktopScreen(state: AppState) {
                     if (state.desktopError.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            state.desktopError, color = Red, fontFamily = Barlow,
+                            state.desktopError, color = Bad, fontFamily = Barlow,
                             fontSize = 12.sp, lineHeight = 17.sp,
                         )
                     }
@@ -115,11 +115,11 @@ fun DesktopScreen(state: AppState) {
                 SectionCard {
                     PanelTitle("Desktop")
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        PulseDot(Green)
+                        PulseDot(Ok)
                         Spacer(Modifier.width(8.dp))
                         Text(
                             "Paired with ${state.harness.serverName()}",
-                            color = Green, fontFamily = Barlow,
+                            color = Ok, fontFamily = Barlow,
                             fontSize = 13.sp, fontWeight = FontWeight.Medium,
                         )
                     }
@@ -136,7 +136,7 @@ fun DesktopScreen(state: AppState) {
                     if (state.desktopError.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            state.desktopError, color = Red, fontFamily = Barlow,
+                            state.desktopError, color = Bad, fontFamily = Barlow,
                             fontSize = 12.sp, lineHeight = 17.sp,
                         )
                     }
@@ -192,7 +192,7 @@ fun DesktopScreen(state: AppState) {
                     if (state.remoteMessage.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            state.remoteMessage, color = Amber, fontFamily = Barlow,
+                            state.remoteMessage, color = Warn, fontFamily = Barlow,
                             fontSize = 12.sp, lineHeight = 17.sp,
                         )
                     }
@@ -215,7 +215,7 @@ fun DesktopScreen(state: AppState) {
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(PanelRaised)
+                                    .background(PanelHi)
                                     .padding(12.dp)
                             ) {
                                 Text(

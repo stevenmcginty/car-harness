@@ -3,11 +3,13 @@ package com.carharness.app.ui
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -48,47 +50,50 @@ import com.carharness.app.obd.VehicleIdentity
 import com.carharness.app.obd.VinDecode
 
 private val scheme = darkColorScheme(
-    primary = Green,
-    onPrimary = GreenInk,
-    background = Bg,
+    primary = Accent,
+    onPrimary = AccentInk,
+    background = Ink,
     surface = Panel,
-    surfaceVariant = PanelRaised,
+    surfaceVariant = PanelHi,
     onBackground = TextMain,
     onSurface = TextMain,
-    secondary = Blue,
-    outline = BorderSoft,
-    error = Red,
+    secondary = Info,
+    outline = Line,
+    error = Bad,
 )
 
 private data class TabDef(val label: String, val icon: Int)
 
+/**
+ * Five tabs, and the first one is the whole job. Faults / Modules / Service
+ * are where Home sends you when you tap a result; Live is the dashboard.
+ * Desktop pairing is a once-a-year errand, so it sits behind the icon in the
+ * Home header rather than eating a fifth of the bottom bar forever.
+ */
 private val TABS = listOf(
-    TabDef("Car", R.drawable.ic_car),
+    TabDef("Home", R.drawable.ic_car),
     TabDef("Faults", R.drawable.ic_faults),
     TabDef("Modules", R.drawable.ic_modules),
     TabDef("Service", R.drawable.ic_service),
-    TabDef("Desktop", R.drawable.ic_desktop),
+    TabDef("Live", R.drawable.ic_live),
 )
+
+private const val TAB_DESKTOP = 5
 
 @Composable
 fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
     MaterialTheme(colorScheme = scheme, typography = AppTypography) {
         var tab by remember { mutableIntStateOf(0) }
         Scaffold(
-            containerColor = Bg,
+            containerColor = Ink,
             bottomBar = {
                 Column(Modifier.background(Panel)) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(BorderSoft)
-                    )
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Line))
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .navigationBarsPadding()
-                            .height(60.dp)
+                            .height(64.dp)
                     ) {
                         TABS.forEachIndexed { i, def ->
                             val active = tab == i
@@ -106,19 +111,19 @@ fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
                             ) {
                                 Box(
                                     Modifier
-                                        .width(18.dp)
-                                        .height(2.dp)
+                                        .width(26.dp)
+                                        .height(3.dp)
                                         .background(
-                                            if (active) Green else Color.Transparent,
+                                            if (active) Accent else Color.Transparent,
                                             RoundedCornerShape(99.dp),
                                         )
                                 )
-                                Spacer(Modifier.height(5.dp))
+                                Spacer(Modifier.height(7.dp))
                                 Icon(
                                     painterResource(def.icon),
                                     contentDescription = def.label,
-                                    modifier = Modifier.size(21.dp),
-                                    tint = if (active) Green else TextFaint,
+                                    modifier = Modifier.size(22.dp),
+                                    tint = if (active) Accent else TextFaint,
                                 )
                                 Spacer(Modifier.height(3.dp))
                                 Text(
@@ -126,7 +131,7 @@ fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
                                     color = if (active) TextMain else TextFaint,
                                     fontFamily = Barlow,
                                     fontSize = 10.sp,
-                                    fontWeight = if (active) FontWeight.SemiBold
+                                    fontWeight = if (active) FontWeight.Bold
                                     else FontWeight.Medium,
                                 )
                             }
@@ -136,8 +141,8 @@ fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
             }
         ) { padding ->
             Surface(
-                modifier = Modifier.fillMaxSize().padding(padding).background(Bg),
-                color = Bg
+                modifier = Modifier.fillMaxSize().padding(padding).background(Ink),
+                color = Ink
             ) {
                 Crossfade(
                     targetState = tab,
@@ -145,15 +150,44 @@ fun CarHarnessApp(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
                     label = "tab",
                 ) { t ->
                     when (t) {
-                        0 -> CarScreen(state, requestBt)
+                        0 -> HomeScreen(
+                            state,
+                            requestBt,
+                            onOpenTab = { tab = it },
+                            onOpenDesktop = { tab = TAB_DESKTOP },
+                        )
                         1 -> FaultsScreen(state)
                         2 -> ModulesScreen(state)
                         3 -> ServiceScreen(state)
-                        else -> DesktopScreen(state)
+                        4 -> LiveScreen(state)
+                        else -> Column {
+                            BackRow("Desktop pairing") { tab = 0 }
+                            DesktopScreen(state)
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/** Header for the screens that aren't in the bottom bar. */
+@Composable
+private fun BackRow(title: String, onBack: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Panel)
+            .clickable(onClick = onBack)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("‹", color = Accent, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            title.uppercase(), color = TextMuted, fontFamily = Barlow,
+            fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
+        )
     }
 }
 
@@ -186,14 +220,14 @@ fun VehicleIdentityCard(vehicle: VehicleIdentity?, identifying: Boolean) {
                     Text(
                         vehicle.make,
                         color = TextMain, fontFamily = Barlow,
-                        fontSize = 24.sp, fontWeight = FontWeight.SemiBold,
-                        letterSpacing = (-0.3).sp,
+                        fontSize = 26.sp, fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.6).sp,
                     )
                     vehicle.year?.let { y ->
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            "Likely $y", color = Blue, fontFamily = Barlow,
-                            fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                            "Likely $y", color = Info, fontFamily = Barlow,
+                            fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
                         )
                     }
                     vehicle.marketNote?.let {
@@ -203,7 +237,7 @@ fun VehicleIdentityCard(vehicle: VehicleIdentity?, identifying: Boolean) {
                     HairlineDivider()
                     Text(
                         vin,
-                        color = Blue, fontFamily = Mono,
+                        color = TextMain, fontFamily = Mono,
                         fontSize = 15.sp, fontWeight = FontWeight.Medium,
                         letterSpacing = 1.sp,
                     )
@@ -226,17 +260,17 @@ fun VehicleIdentityCard(vehicle: VehicleIdentity?, identifying: Boolean) {
                 }
             }
             identifying -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Blue)
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Accent)
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "Reading VIN…", color = TextMuted,
-                    fontFamily = Barlow, fontSize = 13.sp,
+                    fontFamily = Barlow, fontSize = 14.sp,
                 )
             }
             else -> Text(
                 "VIN not answered — is the ignition on? The app asked the car for its VIN " +
                     "over OBD Mode 09 the moment it connected.",
-                color = Amber, fontFamily = Barlow, fontSize = 13.sp, lineHeight = 18.sp,
+                color = Warn, fontFamily = Barlow, fontSize = 14.sp, lineHeight = 19.sp,
             )
         }
     }
@@ -246,40 +280,41 @@ fun VehicleIdentityCard(vehicle: VehicleIdentity?, identifying: Boolean) {
 @Composable
 fun DtcCard(record: DtcRecord, ai: AiFaultContext? = null) {
     val tagColor = when (record.status) {
-        "stored" -> Red
-        "pending" -> Amber
+        "stored" -> Bad
+        "pending" -> Warn
         else -> TextFaint
     }
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(PanelRaised)
-            .height(androidx.compose.foundation.layout.IntrinsicSize.Min)
+            .padding(vertical = 5.dp)
+            .clip(RoundedCornerShape(11.dp))
+            .background(PanelHi)
+            .border(1.dp, Line, RoundedCornerShape(11.dp))
+            .height(IntrinsicSize.Min)
     ) {
         Box(
             Modifier
-                .width(3.dp)
+                .width(4.dp)
                 .fillMaxHeight()
                 .background(tagColor)
         )
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(13.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     record.code,
                     color = TextMain,
-                    fontSize = 16.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = Mono,
                 )
                 Spacer(Modifier.width(10.dp))
                 StatusPill(record.status, tagColor)
             }
-            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
                 record.description, color = TextMuted, fontFamily = Barlow,
-                fontSize = 13.sp, lineHeight = 18.sp,
+                fontSize = 14.sp, lineHeight = 19.sp,
             )
             if (ai != null) AiExplainBlock(record.code, null, ai)
         }
@@ -289,7 +324,7 @@ fun DtcCard(record: DtcRecord, ai: AiFaultContext? = null) {
 @Composable
 fun ScanResultView(result: ScanResult, vehicle: VehicleIdentity? = null) {
     if (result.simulated) {
-        StatusPill("SIMULATED — no real car connected", Amber)
+        StatusPill("SIMULATED — no real car connected", Warn)
         Spacer(Modifier.height(10.dp))
     }
     val all = result.stored + result.pending + result.permanent
@@ -299,13 +334,13 @@ fun ScanResultView(result: ScanResult, vehicle: VehicleIdentity? = null) {
     ) {
         StatusPill(
             if (result.milOn) "ENGINE LIGHT ON" else "ENGINE LIGHT OFF",
-            if (result.milOn) Red else Green,
+            if (result.milOn) Bad else Ok,
         )
         if (result.voltage.isNotEmpty()) InfoChip("Battery", result.voltage)
     }
     result.vin?.let {
         Spacer(Modifier.height(6.dp))
-        Row { InfoChip("VIN", it, Blue) }
+        Row { InfoChip("VIN", it, Info) }
     }
     if (result.protocol.isNotEmpty()) {
         Spacer(Modifier.height(8.dp))
@@ -314,7 +349,7 @@ fun ScanResultView(result: ScanResult, vehicle: VehicleIdentity? = null) {
     Spacer(Modifier.height(8.dp))
     Text(
         result.message, color = TextMuted, fontFamily = Barlow,
-        fontSize = 13.sp, lineHeight = 18.sp,
+        fontSize = 14.sp, lineHeight = 19.sp,
     )
     Spacer(Modifier.height(8.dp))
     // Give the AI the same picture the dealer has: who the car is (connect-time
@@ -325,11 +360,11 @@ fun ScanResultView(result: ScanResult, vehicle: VehicleIdentity? = null) {
     )
     if (all.isEmpty()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusDot(Green)
+            StatusDot(Ok)
             Spacer(Modifier.width(8.dp))
             Text(
-                "No fault codes.", color = Green,
-                fontFamily = Barlow, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                "No fault codes.", color = Ok,
+                fontFamily = Barlow, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
             )
         }
     } else {

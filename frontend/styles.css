@@ -1,35 +1,76 @@
-/* Car Harness — v1 UI
-   Dark, technical, diagnostic-instrument look. No external assets. */
+/* Car Harness — "Garage Slate"
+   A tool off the van, not a web app. Warm graphite ground, warm panels with a
+   machined top edge, one gold-amber accent that always means "press this".
+   Status colours stay strictly separate from the accent so gold never has to
+   mean two things at once. No external assets, no webfonts, no network. */
 
 :root {
-  --bg: #0b0f14;
-  --bg-alt: #0e141b;
-  --panel: #131a22;
-  --panel-raised: #17202b;
-  --border: #24313f;
-  --border-soft: #1b2530;
-  --text: #e6edf3;
-  --text-muted: #93a3b3;
-  --text-faint: #5c6b7a;
+  /* --- surfaces --- */
+  --ink: #14130e;
+  --ink-raised: #1a1811;
+  --panel: #1f1c15;
+  --panel-hi: #2a2619;
+  --panel-top: #423b2c;
+  --line: #332e23;
+  --line-soft: #272319;
 
-  --green: #35c766;
-  --green-dim: #1d3d29;
-  --amber: #e8a53d;
-  --amber-dim: #453416;
-  --red: #d5695f;
-  --red-dim: #3c2320;
-  --grey: #6e7f90;
-  --grey-dim: #1c2530;
+  /* --- ink --- */
+  --text: #f5f0e6;
+  --text-muted: #a9a08d;
+  --text-faint: #6e6759;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  /* --- meaning --- */
+  --accent: #ffb020;
+  --accent-dim: #b57a12;
+  --accent-ink: #1a1200;
+  --accent-wash: rgba(255, 176, 32, 0.12);
+  --ok: #86c34a;
+  --ok-wash: rgba(134, 195, 74, 0.12);
+  --warn: #ff8a2b;
+  --warn-wash: rgba(255, 138, 43, 0.12);
+  --bad: #ff5449;
+  --bad-wash: rgba(255, 84, 73, 0.12);
+  --info: #74b4ff;
+  --info-wash: rgba(116, 180, 255, 0.12);
+
+  /* --- legacy aliases: older rules and inline styles still resolve --- */
+  --bg: var(--ink);
+  --bg-alt: var(--ink-raised);
+  --panel-raised: var(--panel-hi);
+  --border: var(--line);
+  --border-soft: var(--line-soft);
+  --green: var(--ok);
+  --green-dim: rgba(134, 195, 74, 0.18);
+  --amber: var(--warn);
+  --amber-dim: rgba(255, 138, 43, 0.18);
+  --red: var(--bad);
+  --red-dim: rgba(255, 84, 73, 0.18);
+  --grey: var(--text-faint);
+  --grey-dim: var(--panel-hi);
+
+  --font-sans: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "Cascadia Mono",
+    Consolas, "Liberation Mono", monospace;
+  --mono: var(--font-mono);
 
   --radius: 10px;
   --radius-lg: 14px;
+  --radius-sm: 7px;
+
+  --eyebrow: 700 11px/1 var(--font-sans);
+  --track: 0.16em;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* app.js hides things with the `hidden` attribute. A class that sets
+   display:flex/grid outranks the UA's [hidden] rule, so banners and grids
+   would be stuck visible forever — this keeps `hidden` meaning hidden. */
+[hidden] {
+  display: none !important;
 }
 
 html, body {
@@ -40,11 +81,12 @@ html, body {
 }
 
 body {
-  background: var(--bg);
+  background: var(--ink);
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 .app {
@@ -54,76 +96,133 @@ body {
   max-width: 100%;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ---------- Header ---------- */
 
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 16px 24px;
-  background: var(--bg-alt);
-  border-bottom: 1px solid var(--border-soft);
+  padding: 14px 22px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* The machined highlight along the header's top edge. */
+.header::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--panel-top) 20%,
+    var(--panel-top) 80%,
+    transparent
+  );
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.logo {
-  display: inline-flex;
-  color: var(--green);
+  gap: 11px;
+  min-width: 0;
 }
 
 .header h1 {
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
   margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 2px 0 var(--accent-dim);
+  flex: none;
 }
 
 .header-right {
   display: flex;
-  align-items: center;
-  gap: 20px;
+  align-items: flex-end;
+  gap: 14px;
   flex-wrap: wrap;
 }
 
 .field {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
 
 .field-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
+  font: var(--eyebrow);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 select {
-  background: var(--panel-raised);
+  appearance: none;
+  min-height: 42px;
+  padding: 9px 34px 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background-color: var(--panel-hi);
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: right 15px center, right 10px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 13px;
-  font-family: var(--font-sans);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 select:disabled {
-  color: var(--text-faint);
+  opacity: 0.45;
+  cursor: not-allowed;
 }
+
+/* The manufacturer picked top-right is the subject of half the page — make it
+   read as a primary control, not a form field. */
+.field-manufacturer select {
+  min-width: 190px;
+  border-color: var(--accent-dim);
+  background-color: var(--accent-wash);
+  color: var(--accent);
+}
+
+/* ---------- Switches & checkboxes ---------- */
 
 .toggle-field {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   cursor: pointer;
   user-select: none;
+  padding-bottom: 9px;
 }
 
 .toggle-field input {
@@ -135,90 +234,51 @@ select:disabled {
 
 .toggle-track {
   position: relative;
-  width: 34px;
-  height: 19px;
+  width: 42px;
+  height: 24px;
   border-radius: 999px;
-  background: var(--panel-raised);
-  border: 1px solid var(--border);
+  background: var(--panel-hi);
+  border: 1px solid var(--line);
   transition: background 0.15s ease, border-color 0.15s ease;
-  flex-shrink: 0;
+  flex: none;
 }
 
 .toggle-thumb {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 13px;
-  height: 13px;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--text-muted);
+  background: var(--text-faint);
   transition: transform 0.15s ease, background 0.15s ease;
 }
 
 .toggle-field input:checked + .toggle-track {
-  background: var(--amber-dim);
-  border-color: var(--amber);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .toggle-field input:checked + .toggle-track .toggle-thumb {
-  transform: translateX(15px);
-  background: var(--amber);
+  transform: translateX(18px);
+  background: var(--accent-ink);
+}
+
+.toggle-field input:focus-visible + .toggle-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .toggle-text {
   font-size: 13px;
   color: var(--text-muted);
-}
-
-/* ---------- Main / panels ---------- */
-
-.main {
-  flex: 1;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  max-width: 860px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  padding: 20px 22px;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-
-.panel-header h2 {
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  margin: 0;
-}
-
-.panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  white-space: nowrap;
 }
 
 .checkbox-field {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 13px;
   color: var(--text-muted);
   cursor: pointer;
@@ -226,63 +286,172 @@ select:disabled {
 }
 
 .checkbox-field input {
-  accent-color: var(--green);
-  width: 14px;
-  height: 14px;
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 /* ---------- Buttons ---------- */
 
 .btn {
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  padding: 8px 14px;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
-  background: var(--panel-raised);
+  --btn-edge: var(--line);
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 11px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-hi);
   color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--btn-edge);
+  transition: transform 0.05s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
 .btn:hover {
   border-color: var(--text-faint);
 }
 
+/* Physical press — the button actually goes down onto its edge. */
+.btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 var(--btn-edge);
+}
+
 .btn:disabled {
-  opacity: 0.5;
-  cursor: default;
+  opacity: 0.42;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .btn-primary {
-  background: var(--green-dim);
-  border-color: var(--green);
-  color: var(--green);
+  --btn-edge: var(--accent-dim);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #204a30;
+  background: #ffbe45;
+  border-color: #ffbe45;
 }
 
 .btn-secondary {
-  background: var(--panel-raised);
-  border-color: var(--border);
-}
-
-.btn-small {
-  padding: 5px 10px;
-  font-size: 12px;
+  background: var(--panel-hi);
+  color: var(--text-muted);
 }
 
 .btn-danger {
-  background: var(--red-dim);
-  border-color: var(--red);
-  color: var(--red);
+  --btn-edge: rgba(255, 84, 73, 0.35);
+  background: var(--bad-wash);
+  border-color: rgba(255, 84, 73, 0.45);
+  color: var(--bad);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #4a2b28;
+  background: rgba(255, 84, 73, 0.2);
+  border-color: var(--bad);
+}
+
+.btn-small {
+  min-height: 36px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+
+/* ---------- Main / panels ---------- */
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px;
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.panel {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  overflow: hidden;
+}
+
+/* Machined top edge — the one shared detail across every surface. */
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--panel-top) 15%,
+    var(--panel-top) 85%,
+    transparent
+  );
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.panel-subject {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Subtle cue when the brand panel swaps manufacturer. */
+.panel-swap {
+  animation: panel-swap 0.32s ease;
+}
+
+@keyframes panel-swap {
+  from {
+    opacity: 0.35;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ---------- Banners ---------- */
@@ -291,219 +460,238 @@ select:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
-  border-radius: var(--radius);
-  font-size: 13px;
-  margin-bottom: 16px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-hi);
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 14px;
 }
 
 .banner-icon {
-  flex-shrink: 0;
-}
-
-.banner-waiting {
-  background: var(--grey-dim);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
+  flex: none;
 }
 
 .banner-amber {
-  background: var(--amber-dim);
-  border: 1px solid var(--amber);
-  color: var(--amber);
-  font-weight: 600;
+  border-color: rgba(255, 138, 43, 0.4);
+  background: var(--warn-wash);
+  color: var(--warn);
+}
+
+.banner-waiting {
+  border-color: rgba(116, 180, 255, 0.35);
+  background: var(--info-wash);
+  color: var(--info);
 }
 
 /* ---------- Overall badge ---------- */
 
 .overall-wrap {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 22px 0 26px;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
 }
 
 .overall-badge {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 22px;
-  border-radius: 999px;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  border: 1px solid transparent;
+  gap: 9px;
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-hi);
+  font: 700 12px/1 var(--font-sans);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  flex: none;
 }
 
 .overall-dot {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: currentColor;
+  flex: none;
 }
 
 .overall-badge.state-connected {
-  background: var(--green-dim);
-  border-color: var(--green);
-  color: var(--green);
+  color: var(--ok);
+  border-color: rgba(134, 195, 74, 0.4);
+  background: var(--ok-wash);
 }
 
 .overall-badge.state-partial {
-  background: var(--amber-dim);
-  border-color: var(--amber);
-  color: var(--amber);
+  color: var(--warn);
+  border-color: rgba(255, 138, 43, 0.4);
+  background: var(--warn-wash);
 }
 
 .overall-badge.state-disconnected {
-  background: var(--red-dim);
-  border-color: var(--red);
-  color: var(--red);
+  color: var(--bad);
+  border-color: rgba(255, 84, 73, 0.4);
+  background: var(--bad-wash);
 }
 
 .overall-badge.state-offline {
-  background: var(--grey-dim);
-  border-color: var(--border);
-  color: var(--grey);
+  color: var(--text-faint);
 }
 
 .status-message {
   margin: 0;
-  font-size: 13px;
   color: var(--text-muted);
-  text-align: center;
-  min-height: 1.2em;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 /* ---------- Ladder ---------- */
 
 .ladder {
   list-style: none;
-  margin: 0;
+  margin: 0 0 16px;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
+  background: var(--ink);
   overflow: hidden;
+}
+
+.ladder:empty {
+  display: none;
 }
 
 .ladder-step {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 16px;
-  background: var(--panel-raised);
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
 }
 
 .ladder-step + .ladder-step {
-  border-top: 1px solid var(--border-soft);
+  border-top: 1px solid var(--line-soft);
 }
 
 .step-icon {
+  display: grid;
+  place-items: center;
   width: 22px;
   height: 22px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border-radius: 50%;
+  flex: none;
+  margin-top: 1px;
+  color: var(--text-faint);
+  background: var(--panel-hi);
 }
 
 .step-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 13px;
+  height: 13px;
 }
 
 .step-icon.icon-ok {
-  color: var(--green);
+  color: var(--ok);
+  background: var(--ok-wash);
 }
 
 .step-icon.icon-fail {
-  color: var(--grey);
+  color: var(--bad);
+  background: var(--bad-wash);
 }
 
 .step-icon.icon-pending .spinner {
-  width: 14px;
-  height: 14px;
+  display: block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
   border-radius: 50%;
-  border: 2px solid var(--border);
-  border-top-color: var(--amber);
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.7s linear infinite;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .step-body {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 0;
 }
 
+/* app.js emits these as spans — force block so the label and its detail
+   stack instead of running together as one sentence. */
 .step-label {
-  font-size: 13.5px;
+  display: block;
   font-weight: 600;
-  color: var(--text);
+  font-size: 14px;
 }
 
 .step-detail {
+  display: block;
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
+  color: var(--text-faint);
+  word-break: break-word;
 }
 
 /* ---------- Vehicle card ---------- */
 
 .vehicle-card {
-  margin-top: 18px;
-  padding: 16px 18px;
-  background: var(--panel-raised);
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: var(--panel-hi);
+  padding: 15px;
 }
 
 .vehicle-vin-row {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 11px;
   flex-wrap: wrap;
-  margin-bottom: 12px;
 }
 
 .vehicle-vin-label {
-  font-size: 11px;
+  font: var(--eyebrow);
+  letter-spacing: var(--track);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
+  color: var(--text-faint);
 }
 
 .vehicle-vin {
   font-family: var(--font-mono);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
+  letter-spacing: 0.06em;
   color: var(--text);
-  letter-spacing: 0.03em;
   word-break: break-all;
 }
 
 .vehicle-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line-soft);
 }
 
 .vehicle-meta-item {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 
 .meta-label {
-  font-size: 10.5px;
+  font: var(--eyebrow);
+  letter-spacing: var(--track);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: var(--text-faint);
 }
 
@@ -514,101 +702,457 @@ select:disabled {
   word-break: break-all;
 }
 
-/* ---------- Modules panel ---------- */
+/* ---------- OBD-II panel (all cars) ---------- */
+
+.obd-hint {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+  max-width: 78ch;
+}
+
+.obd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.obd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-hi);
+}
+
+.obd-chip-label {
+  font: var(--eyebrow);
+  font-size: 9.5px;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.obd-chip-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.obd-chip.is-good .obd-chip-value {
+  color: var(--ok);
+}
+
+.obd-chip.is-bad {
+  border-color: rgba(255, 84, 73, 0.4);
+  background: var(--bad-wash);
+}
+
+.obd-chip.is-bad .obd-chip-value {
+  color: var(--bad);
+}
+
+.obd-chip.is-mono .obd-chip-value {
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+/* ---------- Fault codes ---------- */
+
+.dtc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dtc-card {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--bad);
+  border-radius: var(--radius-sm);
+  background: var(--panel-hi);
+  padding: 13px 15px;
+}
+
+.dtc-card-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.dtc-code {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.dtc-desc {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.dtc-desc.is-mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.dtc-none {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ok);
+  font-weight: 600;
+  font-size: 14.5px;
+}
+
+/* ---------- Tags ---------- */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--panel-hi);
+  font: 700 10.5px/1.4 var(--font-sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dtc-tag.is-stored {
+  color: var(--bad);
+  border-color: rgba(255, 84, 73, 0.4);
+  background: var(--bad-wash);
+}
+
+.dtc-tag.is-pending {
+  color: var(--warn);
+  border-color: rgba(255, 138, 43, 0.4);
+  background: var(--warn-wash);
+}
+
+.dtc-tag.is-permanent {
+  color: var(--info);
+  border-color: rgba(116, 180, 255, 0.4);
+  background: var(--info-wash);
+}
+
+.dtc-tag.is-good {
+  color: var(--ok);
+  border-color: rgba(134, 195, 74, 0.4);
+  background: var(--ok-wash);
+}
+
+.tag-builtin {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--accent-wash);
+}
+
+/* Transport badge next to the brand panel title (ENET cable vs OBD dongle). */
+.transport-tag {
+  color: var(--info);
+  border-color: rgba(116, 180, 255, 0.4);
+  background: var(--info-wash);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-hi);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* ---------- Live data ---------- */
+
+.obd-live-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 22px 0 14px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.obd-live-header h3 {
+  margin: 0;
+  font: 700 12px/1 var(--font-sans);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.live-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.live-cell {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-hi);
+  padding: 13px 14px;
+}
+
+.live-top {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.live-label {
+  display: block;
+  font: var(--eyebrow);
+  font-size: 9.5px;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+.live-value {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text);
+}
+
+.live-unit {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.live-message {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+/* ---------- Module rows (brand scan + service resets) ---------- */
+
+.module-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.module-row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-hi);
+  padding: 13px 15px;
+}
+
+.module-row.is-absent {
+  opacity: 0.55;
+}
+
+.module-row-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-wrap: wrap;
+}
+
+.module-row-name {
+  font-weight: 700;
+  font-size: 15px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.module-row-addr {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.module-row-head .btn {
+  margin-left: auto;
+}
+
+.module-row .dtc-card {
+  margin-top: 11px;
+}
+
+.module-trace {
+  margin-top: 11px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-soft);
+  background: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--text-faint);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* Service resets panel: reuses .module-row rows */
+
+.service-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.service-list .module-row-head {
+  align-items: flex-start;
+}
+
+.service-list .btn-small {
+  margin-left: auto;
+}
+
+.service-steps {
+  margin: 11px 0 0;
+  padding-left: 20px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+.service-steps li {
+  margin-bottom: 3px;
+}
+
+/* ---------- Learned resets (capture & replay) ---------- */
+
+.learned-heading {
+  margin: 22px 0 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-soft);
+  font: 700 12px/1 var(--font-sans);
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.capture-live {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--warn);
+  margin: 0 0 12px;
+}
+
+.capture-log {
+  margin: 11px 0 0;
+  padding-left: 20px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  line-height: 1.6;
+}
+
+.capture-log li {
+  margin-bottom: 2px;
+}
+
+.learned-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 11px;
+}
+
+/* ---------- Jobs / modules panel ---------- */
 
 .modules-empty {
+  margin: 0;
   color: var(--text-faint);
-  font-size: 13px;
-  margin: 4px 0;
+  font-size: 14px;
 }
 
 .modules-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
   gap: 12px;
 }
 
 .module-card {
-  padding: 14px 16px;
-  background: var(--panel-raised);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-hi);
+  padding: 15px;
 }
 
 .module-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   flex-wrap: wrap;
 }
 
 .module-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.tag {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 2px 7px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-
-.tag-builtin {
-  background: var(--grey-dim);
-  color: var(--grey);
-  border: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 15px;
 }
 
 .module-description {
   margin: 0;
-  font-size: 12.5px;
   color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+  flex: 1;
 }
 
 .module-meta {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 9px;
   flex-wrap: wrap;
-}
-
-.chip {
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--grey-dim);
-  color: var(--grey);
-  border: 1px solid var(--border);
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 
 .module-size {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-faint);
 }
 
 .module-actions {
   display: flex;
-  justify-content: flex-end;
+  gap: 9px;
+  flex-wrap: wrap;
 }
 
 /* ---------- Footer ---------- */
 
 .footer {
-  padding: 12px 24px;
-  text-align: center;
-  font-size: 11.5px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--ink-raised);
   color: var(--text-faint);
-  border-top: 1px solid var(--border-soft);
+  font-size: 12px;
+  font-family: var(--font-mono);
 }
 
 /* ---------- Adapter modal / wizard ---------- */
@@ -616,13 +1160,13 @@ select:disabled {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 60;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding: 40px 16px;
-  overflow-y: auto;
-  background: rgba(4, 7, 10, 0.72);
+  padding: 22px;
+  background: rgba(6, 5, 3, 0.78);
+  backdrop-filter: blur(3px);
 }
 
 .modal-overlay[hidden] {
@@ -630,102 +1174,68 @@ select:disabled {
 }
 
 .modal {
-  width: 100%;
-  max-width: 560px;
-  max-height: calc(100vh - 80px);
+  position: relative;
+  width: min(620px, 100%);
+  max-height: min(86vh, 780px);
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.modal::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--panel-top) 15%,
+    var(--panel-top) 85%,
+    transparent
+  );
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-soft);
+  gap: 14px;
+  padding: 17px 20px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .modal-title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .modal-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-hi);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  flex: none;
 }
 
 .modal-close:hover {
-  background: var(--panel-raised);
-  border-color: var(--border);
   color: var(--text);
-}
-
-.wizard-progress {
-  list-style: none;
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 0;
-  padding: 14px 20px 0;
-}
-
-.wizard-progress li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  color: var(--text-faint);
-}
-
-.wizard-progress li .wizard-step-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--panel-raised);
-  font-size: 10.5px;
-  font-weight: 600;
-}
-
-.wizard-progress li.is-active {
-  color: var(--green);
-}
-
-.wizard-progress li.is-active .wizard-step-num {
-  border-color: var(--green);
-  background: var(--green-dim);
-  color: var(--green);
-}
-
-.wizard-progress li.is-done .wizard-step-num {
-  border-color: var(--border);
-  color: var(--text-muted);
+  border-color: var(--text-faint);
 }
 
 .modal-body {
-  padding: 18px 20px;
+  padding: 20px;
   overflow-y: auto;
   flex: 1;
 }
@@ -735,134 +1245,114 @@ select:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--border-soft);
+  padding: 15px 20px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--ink-raised);
 }
 
 .modal-footer-right {
   display: flex;
-  align-items: center;
   gap: 10px;
+  margin-left: auto;
+}
+
+/* Wizard progress */
+
+.wizard-progress {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--ink-raised);
+  overflow-x: auto;
+}
+
+.wizard-progress li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.wizard-progress li .wizard-step-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel-hi);
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+}
+
+.wizard-progress li.is-active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.wizard-progress li.is-active .wizard-step-num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.wizard-progress li.is-done .wizard-step-num {
+  background: var(--ok-wash);
+  border-color: rgba(134, 195, 74, 0.45);
+  color: var(--ok);
 }
 
 /* Wizard content blocks */
 
 .wizard-section-title {
-  font-size: 11px;
+  font: 700 12px/1 var(--font-sans);
+  letter-spacing: var(--track);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  margin: 0 0 10px;
+  color: var(--text-faint);
+  margin-bottom: 11px;
 }
 
 .wizard-section + .wizard-section {
   margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-soft);
 }
 
 .wizard-hint {
-  font-size: 12.5px;
   color: var(--text-muted);
-  margin: 0 0 12px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0 0 14px;
 }
 
 .wizard-note {
-  font-size: 12.5px;
   color: var(--text-faint);
-  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin-top: 10px;
 }
 
-/* Existing adapters list */
-
-.adapter-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.adapter-list-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  background: var(--panel-raised);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-}
-
-.adapter-list-info {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.adapter-list-name {
+.wizard-empty {
+  color: var(--text-faint);
   font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text);
-  overflow-wrap: anywhere;
+  padding: 18px 0;
+  text-align: center;
 }
 
-.adapter-list-meta {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
-.adapter-list-test {
-  font-size: 11.5px;
-}
-
-.adapter-list-test.is-ok {
-  color: var(--green);
-}
-
-.adapter-list-test.is-fail {
-  color: var(--red);
-}
-
-/* Type choice cards */
-
-.type-choices {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.type-choice {
-  text-align: left;
-  width: 100%;
-  padding: 12px 14px;
-  background: var(--panel-raised);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  cursor: pointer;
-  color: var(--text);
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.type-choice:hover {
-  border-color: var(--text-faint);
-}
-
-.type-choice.is-selected {
-  border-color: var(--green);
-  background: var(--green-dim);
-}
-
-.type-choice-name {
-  display: block;
+.wizard-error {
+  color: var(--bad);
+  background: var(--bad-wash);
+  border: 1px solid rgba(255, 84, 73, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px;
   font-size: 13.5px;
-  font-weight: 600;
-  margin-bottom: 3px;
-}
-
-.type-choice-desc {
-  display: block;
-  font-size: 12px;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
+  margin-bottom: 14px;
 }
 
 /* Dynamic config form */
@@ -870,7 +1360,7 @@ select:disabled {
 .wizard-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 15px;
 }
 
 .form-row {
@@ -880,56 +1370,143 @@ select:disabled {
 }
 
 .form-row-label {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text);
+  color: var(--text-muted);
 }
 
 .form-row-label .req {
-  color: var(--red);
+  color: var(--bad);
   margin-left: 3px;
 }
 
-.form-row-help {
-  font-size: 11.5px;
-  color: var(--text-faint);
-}
-
 .form-input {
-  background: var(--panel-raised);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 13px;
-  font-family: var(--font-sans);
   width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--ink);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: var(--green);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
 }
 
 .form-input.is-invalid {
-  border-color: var(--red);
+  border-color: var(--bad);
+}
+
+.form-row-help {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
 }
 
 .form-comport-row {
   display: flex;
-  gap: 8px;
+  gap: 9px;
   align-items: center;
 }
 
 .form-comport-row .form-input {
   flex: 1;
+}
+
+/* Type choice cards */
+
+.type-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.type-choice {
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-hi);
+  padding: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.type-choice:hover {
+  border-color: var(--text-faint);
+}
+
+.type-choice.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.type-choice-name {
+  font-weight: 700;
+  font-size: 14.5px;
+  margin-bottom: 4px;
+}
+
+.type-choice-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Existing adapters list */
+
+.adapter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.adapter-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-hi);
+  padding: 12px 14px;
+  flex-wrap: wrap;
+}
+
+.adapter-list-info {
+  flex: 1;
   min-width: 0;
 }
 
-.wizard-error {
+.adapter-list-name {
+  font-weight: 700;
+  font-size: 14.5px;
+}
+
+.adapter-list-meta {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-faint);
+  word-break: break-all;
+}
+
+.adapter-list-test {
   font-size: 12.5px;
-  color: var(--red);
-  margin: 4px 0 0;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+
+.adapter-list-test.is-ok {
+  color: var(--ok);
+}
+
+.adapter-list-test.is-fail {
+  color: var(--bad);
 }
 
 /* Test result panel */
@@ -937,414 +1514,159 @@ select:disabled {
 .test-result {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 12px;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
+  background: var(--panel-hi);
+  padding: 14px;
   margin-top: 14px;
-  font-size: 12.5px;
-}
-
-.test-result-icon {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.test-result-icon svg {
-  width: 16px;
-  height: 16px;
 }
 
 .test-result.is-ok {
-  background: var(--green-dim);
-  border: 1px solid var(--green);
-  color: var(--green);
+  border-color: rgba(134, 195, 74, 0.4);
+  background: var(--ok-wash);
 }
 
 .test-result.is-fail {
-  background: var(--red-dim);
-  border: 1px solid var(--red);
-  color: var(--red);
+  border-color: rgba(255, 84, 73, 0.4);
+  background: var(--bad-wash);
+}
+
+.test-result-icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.test-result-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.test-result.is-ok .test-result-icon {
+  color: var(--ok);
+}
+
+.test-result.is-fail .test-result-icon {
+  color: var(--bad);
 }
 
 .test-result-detail {
-  overflow-wrap: anywhere;
-}
-
-.wizard-empty {
-  font-size: 12.5px;
-  color: var(--text-faint);
-  padding: 8px 0;
-}
-
-/* ---------- Responsive ---------- */
-
-@media (max-width: 640px) {
-  .header {
-    padding: 14px 16px;
-  }
-
-  .main {
-    padding: 16px;
-  }
-
-  .panel {
-    padding: 16px;
-  }
-
-  .vehicle-vin {
-    font-size: 16px;
-  }
-
-  .modal-overlay {
-    padding: 16px 10px;
-  }
-
-  .modal {
-    max-height: calc(100vh - 32px);
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* OBD-II panel (all cars)                                             */
-/* ------------------------------------------------------------------ */
-
-.obd-hint {
-  margin: 0 0 14px;
-  color: var(--text-muted);
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-
-.obd-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.obd-chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 7px;
-  padding: 6px 11px;
-  background: var(--panel-raised);
-  border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  font-size: 12.5px;
-}
-
-.obd-chip-label {
-  color: var(--text-faint);
-  text-transform: uppercase;
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-}
-
-.obd-chip-value {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.obd-chip.is-mono .obd-chip-value {
   font-family: var(--font-mono);
-  letter-spacing: 0.04em;
-}
-
-.obd-chip.is-bad {
-  border-color: var(--red);
-}
-.obd-chip.is-bad .obd-chip-value {
-  color: var(--red);
-}
-.obd-chip.is-good .obd-chip-value {
-  color: var(--green);
-}
-
-.dtc-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.dtc-card {
-  background: var(--panel-raised);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-}
-
-.dtc-card-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.dtc-code {
-  font-family: var(--font-mono);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.dtc-tag {
-  text-transform: uppercase;
-  font-size: 10px;
-  letter-spacing: 0.07em;
-  padding: 3px 8px;
-  border-radius: 999px;
-}
-.dtc-tag.is-stored {
-  background: var(--red-dim);
-  color: var(--red);
-}
-.dtc-tag.is-pending {
-  background: var(--amber-dim);
-  color: var(--amber);
-}
-.dtc-tag.is-permanent {
-  background: var(--grey-dim);
-  color: var(--grey);
-}
-
-.dtc-desc {
-  margin: 7px 0 0;
+  font-size: 12px;
   color: var(--text-muted);
-  font-size: 13.5px;
-  line-height: 1.45;
+  margin-top: 5px;
+  word-break: break-word;
 }
 
-.dtc-none {
-  margin: 4px 0 0;
-  color: var(--green);
-  font-size: 14px;
-}
-
-.obd-live-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-soft);
-}
-
-.obd-live-header h3 {
-  margin: 0;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-}
-
-.live-message {
-  margin: 10px 0 0;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.live-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.live-cell {
-  background: var(--panel-raised);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-}
-
-.live-top {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-}
-
-.live-value {
-  font-family: var(--font-mono);
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.live-unit {
-  color: var(--text-faint);
-  font-size: 11.5px;
-}
-
-.live-label {
-  display: block;
-  margin-top: 3px;
-  color: var(--text-muted);
-  font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-/* ------------------------------------------------------------------ */
-/* Phone pairing modal                                                 */
-/* ------------------------------------------------------------------ */
+/* ---------- Phone pairing modal ---------- */
 
 .pair-code {
   font-family: var(--font-mono);
   font-size: 40px;
   font-weight: 700;
-  letter-spacing: 0.35em;
+  letter-spacing: 0.22em;
+  color: var(--accent);
   text-align: center;
-  padding: 18px 10px 18px 20px;
-  margin: 14px 0;
-  background: var(--panel-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text);
+  padding: 22px 0 8px;
 }
 
 .pair-meta {
-  margin: 0 0 16px;
+  text-align: center;
   color: var(--text-muted);
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-
-/* ---------- Manufacturer brand panel (module rows shared with resets) ---------- */
-
-.module-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.module-row {
-  background: var(--panel-raised);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-}
-
-.module-row.is-absent {
-  opacity: 0.45;
-}
-
-.module-trace {
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-faint);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.module-row-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.module-row-name {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.module-row-addr {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.module-row-head .btn {
-  margin-left: auto;
-}
-
-.module-row .dtc-card {
-  margin-top: 8px;
-}
-
-.dtc-tag.is-good {
-  background: var(--green-dim, rgba(52, 199, 89, 0.14));
-  color: var(--green);
-}
-
-/* The manufacturer picked top-right is the panel's subject -- make the
-   dropdown read as a primary control, not a form field. */
-.field-manufacturer select {
-  border-color: var(--green);
-  font-weight: 600;
-  min-width: 110px;
-}
-
-/* Transport badge next to the brand panel title (ENET cable vs OBD dongle). */
-.transport-tag {
-  margin-left: 10px;
-  background: var(--grey-dim);
-  color: var(--grey);
-  border: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-/* "Service resets — Mazda" / "Jobs — Mazda" suffix in panel titles. */
-.panel-subject {
-  color: var(--green);
-}
-
-/* Subtle cue when the brand panel swaps manufacturer. */
-.panel-swap {
-  animation: panel-swap 0.25s ease;
-}
-
-@keyframes panel-swap {
-  from { opacity: 0.35; transform: translateY(3px); }
-  to { opacity: 1; transform: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .panel-swap {
-    animation: none;
-  }
-}
-
-/* Service resets panel: reuses .module-row rows */
-.service-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.service-list .module-row-head {
-  justify-content: space-between;
-}
-
-.service-list .btn-small {
-  margin-top: 10px;
-}
-
-.service-steps {
-  margin: 8px 0 2px;
-  padding-left: 20px;
-  color: var(--text-muted);
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.6;
 }
 
-.service-steps li {
-  margin-bottom: 2px;
+/* ---------- Responsive ---------- */
+
+@media (max-width: 900px) {
+  .header {
+    align-items: flex-start;
+  }
+
+  .header-right {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .field-manufacturer select {
+    min-width: 0;
+  }
+
+  .field {
+    flex: 1 1 150px;
+  }
 }
 
-.dtc-desc.is-mono {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-muted);
+@media (max-width: 640px) {
+  .header {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .main {
+    padding: 14px;
+    gap: 14px;
+  }
+
+  .panel {
+    padding: 15px;
+    border-radius: var(--radius);
+  }
+
+  .panel-header h2 {
+    font-size: 18px;
+  }
+
+  .panel-actions {
+    width: 100%;
+  }
+
+  /* Full-width actions beat cramped side-by-side buttons on a phone. */
+  .panel-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .live-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  }
+
+  .live-value {
+    font-size: 22px;
+  }
+
+  .modules-list {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-overlay {
+    padding: 0;
+  }
+
+  .modal {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    border: none;
+  }
+
+  .pair-code {
+    font-size: 30px;
+    letter-spacing: 0.16em;
+  }
+
+  .footer {
+    padding: 12px 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
