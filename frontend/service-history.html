@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service history — Car Harness</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Page-specific only. Tokens and primitives come from styles.css. */
+  .sh-wrap { max-width: 1120px; margin: 0 auto; padding: 24px 20px 64px; }
+  .sh-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+             margin-bottom: 6px; }
+  .sh-head h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+  .sh-head .sh-back { margin-left: auto; color: var(--text-muted);
+                      text-decoration: none; font-size: 13px; }
+  .sh-head .sh-back:hover { color: var(--accent); }
+  .sh-sub { color: var(--text-muted); margin: 0 0 20px; max-width: 74ch;
+            line-height: 1.55; }
+
+  .sh-card { background: var(--panel); border: 1px solid var(--line);
+             border-radius: 12px; padding: 18px 20px; margin-bottom: 18px;
+             position: relative; overflow: hidden; }
+  .sh-card::before { content: ""; position: absolute; inset: 0 0 auto 0;
+                     height: 1px; background: var(--panel-top); }
+  .sh-card h2 { margin: 0 0 4px; font-size: 15px; letter-spacing: 0.04em;
+                text-transform: uppercase; color: var(--text); }
+  .sh-card .sh-note { color: var(--text-muted); font-size: 13px; margin: 0 0 14px;
+                      line-height: 1.55; max-width: 78ch; }
+
+  .sh-grid { display: grid; gap: 14px 18px;
+             grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  /* min-width:0 — without it a grid item refuses to shrink below its content
+     and the units dropdown spills over the next field. */
+  .sh-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .sh-field input, .sh-field select { min-width: 0; max-width: 100%; }
+  .sh-field label { font-size: 12px; letter-spacing: 0.05em;
+                    text-transform: uppercase; color: var(--text-faint); }
+  .sh-field input, .sh-field select {
+    background: var(--ink-raised); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+    font: inherit; font-size: 14px; }
+  .sh-field input:focus, .sh-field select:focus {
+    outline: none; border-color: var(--accent); }
+  .sh-field .sh-hint { font-size: 11px; color: var(--text-faint); }
+  .sh-field .sh-hint.bad { color: var(--bad); }
+  .sh-row2 { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 8px; }
+  .sh-row2 select { padding-left: 8px; padding-right: 4px; }
+
+  .sh-items { display: grid; gap: 8px;
+              grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .sh-item { display: grid; grid-template-columns: 20px 1fr auto;
+             align-items: center; gap: 10px; padding: 9px 11px;
+             background: var(--ink-raised); border: 1px solid var(--line);
+             border-radius: 8px; cursor: pointer; }
+  .sh-item:hover { border-color: var(--panel-top); }
+  .sh-item.on { border-color: var(--accent); background: var(--accent-wash); }
+  .sh-item input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .sh-item .sh-code { font-family: var(--mono, ui-monospace, monospace);
+                      font-size: 11px; color: var(--text-faint); }
+  .sh-item .sh-name { font-size: 14px; }
+  .sh-more { background: none; border: 0; color: var(--accent); cursor: pointer;
+             font: inherit; font-size: 13px; padding: 10px 0 0; }
+
+  .sh-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+                margin-top: 16px; }
+  .sh-btn { background: var(--accent); color: var(--accent-ink); border: 0;
+            border-bottom: 3px solid var(--accent-dim); border-radius: 9px;
+            padding: 11px 20px; font: inherit; font-weight: 700; font-size: 14px;
+            letter-spacing: 0.02em; cursor: pointer; }
+  .sh-btn:active { transform: translateY(1px); border-bottom-width: 2px; }
+  .sh-btn.ghost { background: transparent; color: var(--text);
+                  border: 1px solid var(--line); border-bottom-width: 1px; }
+  .sh-btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+  .sh-out { display: none; }
+  .sh-out.show { display: block; }
+  .sh-arg { font-family: var(--mono, ui-monospace, monospace); font-size: 13px;
+            line-height: 1.7; word-break: break-all; background: var(--ink);
+            border: 1px solid var(--line); border-left: 3px solid var(--accent);
+            border-radius: 8px; padding: 13px 15px; color: var(--text);
+            user-select: all; }
+  .sh-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+  .sh-chip { font-size: 12px; padding: 5px 10px; border-radius: 999px;
+             background: var(--ink-raised); border: 1px solid var(--line);
+             color: var(--text-muted); }
+  .sh-chip b { color: var(--text); font-weight: 600; }
+  .sh-warn { margin: 14px 0 0; padding: 12px 14px; border-radius: 8px;
+             background: var(--warn-wash); border: 1px solid var(--line);
+             border-left: 3px solid var(--warn); }
+  .sh-warn ul { margin: 0; padding-left: 18px; }
+  .sh-warn li { font-size: 13px; line-height: 1.6; color: var(--text-muted);
+                margin-bottom: 6px; }
+  .sh-warn li:last-child { margin-bottom: 0; }
+  .sh-err { display: none; margin-top: 14px; padding: 12px 14px;
+            border-radius: 8px; background: var(--bad-wash);
+            border: 1px solid var(--line); border-left: 3px solid var(--bad);
+            font-size: 13px; line-height: 1.6; }
+  .sh-err.show { display: block; }
+
+  .sh-steps { counter-reset: step; margin: 0; padding: 0; list-style: none; }
+  .sh-steps li { counter-increment: step; position: relative;
+                 padding: 0 0 12px 34px; font-size: 14px; line-height: 1.6;
+                 color: var(--text-muted); }
+  .sh-steps li::before { content: counter(step); position: absolute; left: 0;
+    top: 0; width: 22px; height: 22px; border-radius: 6px;
+    background: var(--panel-hi); color: var(--accent); font-size: 12px;
+    font-weight: 700; display: grid; place-items: center; }
+  .sh-steps li b, .sh-steps li code { color: var(--text); }
+  code { font-family: var(--mono, ui-monospace, monospace); font-size: 13px;
+         background: var(--ink); padding: 1px 5px; border-radius: 4px; }
+
+  table.sh-hu { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.sh-hu th { text-align: left; font-size: 11px; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--text-faint); padding: 0 12px 8px 0;
+    border-bottom: 1px solid var(--line); font-weight: 600; }
+  table.sh-hu td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line-soft);
+    color: var(--text-muted); vertical-align: top; }
+  table.sh-hu td:first-child { color: var(--text); white-space: nowrap; }
+  table.sh-hu td.prg { font-family: var(--mono, ui-monospace, monospace);
+    color: var(--accent); white-space: nowrap; }
+  .sh-scroll { overflow-x: auto; }
+  .sh-two { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 860px) { .sh-two { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="sh-wrap">
+
+  <div class="sh-head">
+    <h1>Service history</h1>
+    <span class="sh-chip">BMW &amp; MINI · iDrive</span>
+    <a class="sh-back" href="/">&larr; back to Car Harness</a>
+  </div>
+  <p class="sh-sub">
+    Modern BMWs and MINIs have no paper service book. This builds the entry that
+    appears in the car's own service history, so a car you serviced says so on
+    the customer's screen. It writes text, not the car — the last step is a
+    Tool32 job over the ENET cable, and the run sheet is at the bottom.
+  </p>
+
+  <section class="sh-card">
+    <h2>The service</h2>
+    <p class="sh-note" id="sh-lead">Loading catalogue…</p>
+    <div class="sh-grid">
+      <div class="sh-field">
+        <label for="sh-date">Date of service</label>
+        <input type="date" id="sh-date">
+      </div>
+      <div class="sh-field">
+        <label for="sh-odo">Odometer</label>
+        <div class="sh-row2">
+          <input type="number" id="sh-odo" min="0" step="1" placeholder="48210">
+          <select id="sh-units">
+            <option value="mi" selected>miles</option>
+            <option value="km">km</option>
+          </select>
+        </div>
+        <span class="sh-hint">Stored as km. Pick miles and it converts.</span>
+      </div>
+      <div class="sh-field">
+        <label for="sh-dealer">Dealer name</label>
+        <input type="text" id="sh-dealer" maxlength="7" value="RADLETT">
+        <span class="sh-hint" id="sh-dealer-hint">7 characters, that's the field size.</span>
+      </div>
+      <div class="sh-field">
+        <label for="sh-who">Who serviced it</label>
+        <select id="sh-who">
+          <option value="0" selected>Independent (you)</option>
+          <option value="1">BMW / MINI main dealer</option>
+        </select>
+      </div>
+      <div class="sh-field">
+        <label for="sh-status">Service status</label>
+        <select id="sh-status"></select>
+      </div>
+    </div>
+  </section>
+
+  <section class="sh-card">
+    <h2>What was done</h2>
+    <p class="sh-note">
+      Tick everything carried out at this visit — up to 13. These are the items
+      the car understands; anything else (wheels, thermostat, bodywork) belongs
+      on your invoice, the car has no code for it.
+    </p>
+    <div class="sh-items" id="sh-items"></div>
+    <button class="sh-more" id="sh-toggle-all" type="button">Show all codes</button>
+  </section>
+
+  <div class="sh-actions">
+    <button class="sh-btn" id="sh-build" type="button">Build the entry</button>
+    <button class="sh-btn ghost" id="sh-copy" type="button" disabled>Copy argument</button>
+  </div>
+  <div class="sh-err" id="sh-err"></div>
+
+  <section class="sh-card sh-out" id="sh-out" style="margin-top:18px">
+    <h2>Argument for <code>steuern_servicehistory_add</code></h2>
+    <p class="sh-note">Paste this into the Tool32 argument box, then run the job.</p>
+    <div class="sh-arg" id="sh-arg"></div>
+    <div class="sh-summary" id="sh-chips"></div>
+    <div class="sh-warn"><ul id="sh-notes"></ul></div>
+  </section>
+
+  <div class="sh-two">
+    <section class="sh-card">
+      <h2>Which .prg to load</h2>
+      <p class="sh-note">
+        The job lives inside the head unit's own file. Load the wrong one and
+        the job list simply won't have it. Run a module scan first — the head
+        unit is address <code>0x63</code>.
+      </p>
+      <div class="sh-scroll">
+        <table class="sh-hu">
+          <thead><tr><th>Head unit</th><th>File</th><th>Reported</th></tr></thead>
+          <tbody id="sh-hu"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="sh-card">
+      <h2>At the car</h2>
+      <ol class="sh-steps">
+        <li>ENET cable in the OBD port, ignition on, battery support on if it'll be a while.</li>
+        <li>Tool32 → <b>Configuration → EDIABAS → interface <code>ENET</code></b>.</li>
+        <li><b>File → Load SGBD</b> and pick the <code>.prg</code> for this car's head unit.</li>
+        <li>Select the job <code>steuern_servicehistory_add</code>.</li>
+        <li>Paste the argument above, then run it — <b>double-clicking the job runs it immediately, there's no confirmation.</b></li>
+        <li>Run <code>STEUERGERAETE_RESET</code> (or cycle the ignition) or the entry won't show.</li>
+        <li>Check it on the screen: <b>Vehicle info → Service history</b>.</li>
+      </ol>
+      <p class="sh-note" style="margin:6px 0 0">
+        Entering an older service? Add them <b>oldest first</b> — they append in
+        the order you write them.
+      </p>
+    </section>
+  </div>
+
+  <section class="sh-card">
+    <h2>The other record — BMW's own</h2>
+    <p class="sh-note" id="sh-central">
+      This page writes the car. BMW also keeps a central Digital Service Book on
+      its own servers — that's the one a main dealer sees, and the one that can
+      overwrite what you put in the car. <b>There is no route to it over any
+      cable.</b> It's a registered-workshop login: <code>aos.bmwgroup.com</code>,
+      then the service goes in through KaSIO. Independent access is a
+      right-to-repair entitlement, not a favour — you register the business and
+      pay per ticket rather than joining a scheme.
+    </p>
+  </section>
+
+</div>
+<script src="service-history.js"></script>
+</body>
+</html>

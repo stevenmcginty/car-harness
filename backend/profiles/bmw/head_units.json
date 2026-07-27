@@ -1,0 +1,189 @@
+{
+  "_comment": [
+    "The g_mmi SGBD family -- every BMW/MINI head unit, address 0x63.",
+    "g_mmi = 'Grosses Multimedia Infotainment'. It is a GROUP file, and that is",
+    "the whole point: you load g_mmi.grp and EDIABAS asks the car which variant",
+    "it is, then loads the right .prg itself. So the workflow is global by",
+    "default -- CIC, NBT, EVO, MGU, whatever rolls onto the ramp. The per-variant",
+    ".prg column below is a reference and a fallback, not the normal route.",
+    "",
+    "THIS FILE IS DATA ON PURPOSE. Add a row when a new head unit turns up;",
+    "no code change, no rebuild, restart the backend and it's there.",
+    "",
+    "confidence: 'verified'  = seen working, or reported working on a real car,",
+    "                          or the job is present in the decompiled SGBD",
+    "            'listed'    = the variant is documented in the g_mmi family,",
+    "                          but nobody has reported writing history to it",
+    "            'unlikely'  = predates the service-history feature",
+    "",
+    "hasAddJob: does the SGBD actually declare STEUERN_SERVICEHISTORY_ADD?",
+    "            'confirmed' = read out of the decompiled SGBD (2026-07-27,",
+    "                          github.com/emdzej/ediabasx-docs-sgbd, fetched and",
+    "                          grepped directly -- not a forum claim)",
+    "            'absent'    = checked, the job is NOT in that SGBD",
+    "            'unchecked' = not looked at yet",
+    "This is the honest column. 'confirmed' means the unit CAN hold a record; it",
+    "does not promise the car has an iDrive menu to show it (needs a Control",
+    "Display, and the SERVICE_HISTORY FDL parameter must be coded active).",
+    "'seen' is where we log real cars WE have read, VIN-anonymised. That is how",
+    "this table gets better -- from the ramp, not from guessing."
+  ],
+  "groupFile": "g_mmi.grp",
+  "address": "0x63",
+  "job": "steuern_servicehistory_add",
+
+  "_indexMapComment": [
+    "BMW's OWN index -> variant table, lifted verbatim from T_GRTB.PRG in a real",
+    "EDIABAS install (C:\\EDIABAS\\ECU) on 2026-07-27, XOR-0xF7 decoded.",
+    "",
+    "THIS IS THE WHOLE IDENTIFICATION PROBLEM SOLVED. Read DID 0xF150 from the",
+    "head unit at 0x63, take the 3 bytes, look them up here. That is exactly what",
+    "g_mmi.grp does internally -- but doing it from this table means car-harness",
+    "can name any BMW/MINI head unit with ONE read, offline, with no SGBD files",
+    "and no EDIABAS installed. It ends the 'the HU will not name its own variant'",
+    "dead end recorded in 'seen' below: it will not tell you its NAME, but F150",
+    "always answers, and F150 plus this table IS the name.",
+    "",
+    "chassis is the lead platform BMW files the variant under, not a limit -- an",
+    "F56 MINI can and does carry NBT, which is filed under F10."
+  ],
+  "indexMap": {
+    "0F12D0": {"sgbd": "cic",      "chassis": "F01", "label": "Car Infotainment Computer CIC"},
+    "0F1580": {"sgbd": "champ2",   "chassis": "F01", "label": "Audio System Kontroller CHAMP2"},
+    "0F15B0": {"sgbd": "cicm",     "chassis": "F01", "label": "Car Infotainment Computer CIC MID"},
+    "0F1770": {"sgbd": "rad12",    "chassis": "F25", "label": "Radio 1.2"},
+    "0F1820": {"sgbd": "entry",    "chassis": "F20", "label": "Entry HeadUnit"},
+    "0F1A30": {"sgbd": "nbt",      "chassis": "F10", "label": "Next Big Thing NBT (CIC Nachfolger)"},
+    "0F1BE0": {"sgbd": "entrynav", "chassis": "F20", "label": "Entry HeadUnit mit und ohne NAV"},
+    "0F1CD0": {"sgbd": "rad_ukl",  "chassis": "F56", "label": "Radio UKL"},
+    "0F2230": {"sgbd": "nbtevo",   "chassis": "F23", "label": "Next Big Thing Evolution NBTevo"},
+    "0F2330": {"sgbd": "enavevo",  "chassis": "G30", "label": "Entry Nav Evolution ENAVevo"},
+    "0F25B0": {"sgbd": "hu_mgu",   "chassis": "G05", "label": "Head Unit - Media Graphics Unit"},
+    "0F2700": {"sgbd": "bis01",    "chassis": "F56", "label": "Basis Infotainment System (Radio UKL NF)"},
+    "0F2E50": {"sgbd": "mgu_02_l", "chassis": "G70", "label": "HU-MGU_02_L"},
+    "0F2E60": {"sgbd": "mgu_02_a", "chassis": "J01", "label": "HU-MGU_02_A"},
+    "0F3230": {"sgbd": "idcevo25", "chassis": "NA5", "label": "Infotainment Domain Controller Evo"}
+  },
+
+  "variants": [
+    {
+      "id": "champ2", "prg": "champ2.prg", "label": "CHAMP2",
+      "class": "Radio / basic nav", "era": "approx 2010-2015",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "note": "WAS graded 'unlikely' here and that was WRONG. champ2.prg carries STEUERN_SERVICEHISTORY_ADD -- read out of the decompiled SGBD 2026-07-27. Whether a given car has the iDrive menu to display it is a separate question (needs a Control Display)."
+    },
+    {
+      "id": "cic", "prg": "cic.prg", "label": "CIC",
+      "class": "Car Infotainment Computer", "era": "approx 2008-2013",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "note": "cic.prg DOES carry the job (decompiled SGBD, 2026-07-27) -- the old 'unlikely' grade here was wrong. Caveat from the field: F-series CIC cars show the history list, E-series CIC cars generally show only CBS 'distance to next service'. So the job exists; the display may not."
+    },
+    {
+      "id": "cicm", "prg": "cicm.prg", "label": "CIC (mid)",
+      "class": "Car Infotainment Computer CIC MID", "era": "approx 2008-2013",
+      "history": "no", "confidence": "verified", "hasAddJob": "absent",
+      "note": "Checked the decompiled SGBD 2026-07-27: cicm.prg has NO steuern_servicehistory_add job at all. This unit cannot hold a service record. Don't try."
+    },
+    {
+      "id": "rad12", "prg": "rad12.prg", "label": "Radio",
+      "class": "Radio", "era": "unknown",
+      "history": "no", "confidence": "verified", "hasAddJob": "absent",
+      "sgbdIndex": "0F1770",
+      "note": "CHECKED in a real EDIABAS install 2026-07-27: RAD12.prg has NO service-history job. The 'unlikely' grade here was right. RAD2 and RAD_83 are the same story."
+    },
+    {
+      "id": "entry", "prg": "entry.prg", "label": "Entry (HU-B, no navigation)",
+      "class": "Entry HeadUnit", "era": "F20/F21 era",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "note": "SETTLED 2026-07-27: entry.prg carries the job. The forums never answered this; the decompiled SGBD does. A rejected job still writes nothing, so it is safe to attempt."
+    },
+    {
+      "id": "nbt", "prg": "nbt.prg", "label": "NBT",
+      "class": "Headunit High", "era": "approx 2012-2016",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "note": "The best-documented one. Tool32, HU-ServiceManager and BlackBox SHM all reported working, and the job is confirmed in the decompiled SGBD."
+    },
+    {
+      "id": "rad_ukl", "prg": "rad_ukl.prg", "label": "Radio (UKL)",
+      "class": "Radio UKL", "era": "UKL platform -- MINI F55/F56/F60, BMW F45/F46",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "sgbdIndex": "0F1CD0",
+      "note": "UKL radio without navigation -- the MINI stock unit. Job confirmed in the decompiled SGBD 2026-07-27. Its own header reads 'Radio UKL SGBD-Index 0F1CD0 hex'. NOTE: our F56 read F150 = 0F1A30, which is NOT this index and NOT entrynav's 0F1BE0 -- so do not assume rad_ukl for that car; read F150 and match, or just load g_mmi.grp and let EDIABAS resolve it."
+    },
+    {
+      "id": "entrynav", "prg": "entrynav.prg", "label": "EntryNav (pre-EVO)",
+      "class": "Entry HeadUnit mit und ohne NAV", "era": "F25/F26 2013-2016",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "sgbdIndex": "0F1BE0", "address": "0x63",
+      "note": "Steve's X4 F26. ANSWERED AT LAST 2026-07-27: the forums never resolved this, but the decompiled SGBD shows entrynav.prg carries the job, and its header names address 63, index 0F1BE0. Reminder: the record lives IN this box -- swapping or virginising the HU takes the history with it."
+    },
+    {
+      "id": "nbtevo", "prg": "nbtevo.prg", "label": "NBT EVO (iDrive 5/6)",
+      "class": "Headunit High", "era": "approx 2016-2020",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "note": "Reads as HU_NBTevo in ISTA/E-Sys. Tool32 tutorial confirmed; SHM Lite also used here. Job confirmed in the decompiled SGBD."
+    },
+    {
+      "id": "enavevo", "prg": "enavevo.prg", "label": "EntryNav EVO / EntryNav2",
+      "class": "Headunit Basis", "era": "approx 2016+",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "note": "Reads as HU_ENTRYNAV2 in ISTA/E-Sys. THE likely unit in a MINI F60. Tool32 works; the GUI tools (BlackBox SHM) are reported to WIPE history on these -- do not use them here."
+    },
+    {
+      "id": "bis01", "prg": "bis01.prg", "label": "BIS01",
+      "class": "Basis Infotainment System (Radio UKL NF)", "era": "later UKL builds",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "note": "The later UKL radio -- successor to rad_ukl, so the other candidate for MINI stock. Job confirmed in the decompiled SGBD 2026-07-27."
+    },
+    {
+      "id": "hu_mgu", "prg": "hu_mgu.prg", "label": "MGU (iDrive 7)",
+      "class": "Head Unit - Media Graphics Unit", "era": "approx 2018+",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "note": "Reads as HU_MGU. SHM Lite is the tool people mention for MGU. Newer cars are also the ones most likely to have a live BMW cloud record, so check what is already there before writing."
+    },
+    {
+      "id": "mgu_02_l", "prg": "mgu_02_l.prg", "label": "MGU 02 (L)",
+      "class": "Head Unit - Media Graphics Unit HU-MGU_02_L", "era": "approx 2021+ (G70)",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "sgbdIndex": "0F2E50"
+    },
+    {
+      "id": "mgu_02_a", "prg": "mgu_02_a.prg", "label": "MGU 02 (A)",
+      "class": "Head Unit - Media Graphics Unit HU-MGU_02_A", "era": "approx 2021+",
+      "history": "yes", "confidence": "verified", "hasAddJob": "confirmed",
+      "sgbdIndex": "0F2E60"
+    },
+    {
+      "id": "idcevo25", "prg": "idcevo25.prg", "label": "IDCevo (iDrive 9 / Neue Klasse)",
+      "class": "Infotainment Domain Controller Evo", "era": "approx 2024+",
+      "history": "unconfirmed", "confidence": "listed",
+      "sgbdIndex": "0F3230",
+      "note": "The newest one, found in BMW's T_GRTB index table (chassis NA5). Not checked for the service-history job yet -- no .prg inspected. Newest cars are also the ones most likely to hold a live BMW cloud record, so read what's already there before writing anything."
+    }
+  ],
+  "seen": [
+    {
+      "date": "2026-07-27",
+      "car": "MINI F56 hatch, build date 09/01/2015 (from HU DID F18B)",
+      "vinPrefix": "WMWXS72",
+      "link": "ENET / HSFZ, gateway 169.254.21.23, HU 0x63 answered",
+      "screen": "round centre dial, ~6.5in colour, MINI radial menu, no touch -- looks like Visual Boost / Entry family",
+      "variant": "nbt",
+      "variantResolved": "SETTLED 2026-07-27 from BMW's own T_GRTB.PRG lookup table: F150 = 0F1A30 = NBT, 'Next Big Thing (CIC Nachfolger)'. Every guess made from the SCREEN was wrong -- it was called Entry, then EntryNav, then Radio UKL, by three different passes. It is an NBT. LESSON: do not infer the head unit from what the dashboard looks like; read F150 and use indexMap. Good news too -- NBT is the best-documented unit for service history, with Tool32, HU-ServiceManager and BlackBox SHM all reported working on it.",
+      "likelyVariantWasWrong": "entry or entrynav (pre-EVO)",
+      "identDids": {
+        "F150": "0F1A30",
+        "F15A": "1604128A72C101000001230000",
+        "F186": "0381",
+        "F18A": "000020",
+        "F18B": "150109",
+        "F18C": "0007972089 (serial)",
+        "F190": "VIN",
+        "F101-F107": "SVK/software-version blobs"
+      },
+      "finding": "THIS UNIT DOES NOT SELF-DESCRIBE ITS VARIANT OVER RAW UDS. F187 part number, F191 hardware, F189 software and F197 name all return NRC 0x31 (request out of range), in the default session AND after 10 03. KWP 0x1A ReadEcuIdentification returns NRC 0x11 (service not supported) for every sub-function tried. So text-matching a variant name off a plain UDS scan is a dead end on this family -- which is exactly why g_mmi.grp exists. Load the group file and let EDIABAS resolve it.",
+      "modulesAnswered": 11,
+      "faultsStored": 16
+    }
+  ]
+}
