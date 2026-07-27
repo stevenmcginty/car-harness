@@ -1,9 +1,14 @@
-"""J2534 Pass-Thru adapter -- PLACEHOLDER.
+"""J2534 Pass-Thru adapter.
 
-A real SAE J2534 integration would load the vendor DLL and issue PassThru API
-calls. This placeholder does NONE of that: ``test()`` only checks that the
-configured DLL path exists and can be loaded via ``ctypes.WinDLL``. No PassThru
-calls are made and nothing is written to any car.
+A J2534 device speaks a binary C API through a vendor DLL. ``test()`` here only
+loads that DLL (a read-only connectivity check -- no PassThru calls, nothing
+written to any car). The real diagnostics live in backend/obd/j2534_link.py: the
+Peugeot / PSA module scan drives a J2534 link when this adapter is selected, so
+a genuine PSA "DiagBox / Lexia" cable (wired to the pins-3/8 diagnostic CAN,
+which a standard dongle can't reach) can scan the body modules too.
+
+Windows-only, and the DLL's bitness must match the Python running the backend --
+a 32-bit DLL will not load into 64-bit Python (WinError 193).
 """
 
 import ctypes
@@ -15,11 +20,12 @@ from backend.core.models import AdapterField, AdapterTestResult
 
 class J2534Adapter(Adapter):
     id = "j2534"
-    name = "J2534 Pass-Thru device (placeholder)"
+    name = "J2534 Pass-Thru cable"
     description = (
-        "PLACEHOLDER for a SAE J2534 Pass-Thru pro device. Only checks the "
-        "vendor DLL exists and loads -- no PassThru calls are made and nothing "
-        "is written to any car."
+        "SAE J2534 pass-thru pro cable (incl. a PSA DiagBox/Lexia cable via a "
+        "J2534 DLL). Used by the Peugeot module scan to reach the pins-3/8 "
+        "diagnostic CAN. The test only loads the vendor DLL; real reads happen "
+        "during a scan. Windows-only; DLL bitness must match the backend's Python."
     )
     builtin = True
     fields = [
@@ -52,16 +58,27 @@ class J2534Adapter(Adapter):
         try:
             win_dll(dll)
         except OSError as exc:
+            if getattr(exc, "winerror", None) == 193:
+                return AdapterTestResult(
+                    ok=False,
+                    detail=(
+                        f"{dll} is the wrong architecture for this Python -- a 32-bit "
+                        "J2534 DLL needs 32-bit Python. Run the backend on a Python "
+                        "matching the DLL's bitness."
+                    ),
+                    info={"dll": dll},
+                )
             return AdapterTestResult(
                 ok=False,
-                detail=f"PLACEHOLDER: found {dll} but it failed to load ({exc}).",
+                detail=f"Found {dll} but it failed to load ({exc}).",
                 info={"dll": dll},
             )
         return AdapterTestResult(
             ok=True,
             detail=(
-                f"PLACEHOLDER: {dll} exists and loaded. No PassThru calls were "
-                "made -- full J2534 support is not implemented yet."
+                f"{dll} loaded. A Peugeot module scan on this adapter will drive "
+                "real J2534 PassThru reads. (This test made no PassThru calls and "
+                "did not touch a car -- run a scan to confirm the cable + car.)"
             ),
             info={"dll": dll},
         )

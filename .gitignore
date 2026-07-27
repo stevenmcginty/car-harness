@@ -18,4 +18,13 @@ android/.gradle/
 android/.kotlin/
 android/build/
 android/app/build/
+android/core/build/
 android/.idea/
+
+# Third-party APK teardown -- reference material, not ours to redistribute.
+android/autel/
+
+# Server logs. Noise, and they can carry VINs.
+*.log
+*.err
+server.log.err

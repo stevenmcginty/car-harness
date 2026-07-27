@@ -85,24 +85,41 @@ RESETS: List[dict] = [
         "method": "procedure",
         "confidence": "verified",
         "source": "BMW F-series CBS reset (BC-stalk method); ISTA CBS_RESET job",
-        "models": "F-series BMW + UKL MINI (F20/F30/F26 X4, F54/F55/F56/F60), ~2011–2019",
+        "models": "F-series BMW + UKL MINI (F20/F30/F26 X4, F54/F55/F56/F57/F60), ~2011–2019",
         "cautions": [
+            "THE BUTTON IS NOT THE SAME ON BOTH. A UKL MINI has no BC button on "
+            "the indicator stalk — use the trip-odometer button on the speedo. "
+            "Following the BMW steps on a MINI just gets you nowhere.",
             "Scroll to the specific item (oil, brakes…) before confirming — you "
             "reset one item at a time.",
             "Only reset an item you've actually serviced; the cluster records the "
             "reset date and mileage.",
         ],
+        # Two different cars, two different buttons. Kept as separate lists
+        # because merging them into one "press the button" fudge is what sends
+        # someone hunting round a MINI for a stalk control it hasn't got.
         "procedure": [
-            "Get in, don't start the engine. Press Start/Stop once WITHOUT a foot "
-            "on the brake to wake the car (terminal 15 / ignition on).",
-            "Press and hold the BC button on the end of the indicator stalk until "
-            "the service (CBS) menu appears in the cluster.",
-            "Short-press the BC button to step through the CBS items to the one "
-            "you serviced (e.g. Engine oil).",
-            "Press and hold the BC button again — a 'Reset?' prompt appears.",
-            "Confirm with another press/hold. The item's remaining life returns to "
-            "100% and the service date/mileage are stamped.",
-            "Switch the ignition off to finish.",
+            "MINI (F54/F55/F56/F57/F60) — the trip-odometer button:",
+            "1. Don't start the engine. Foot OFF the brake, press Start/Stop once "
+            "to wake the car (ignition on).",
+            "2. Press and HOLD the trip-odometer button on the speedo face — it "
+            "sits at about the 5 o'clock position.",
+            "3. Keep holding through 'Ignition turned on!' until the car-on-a-lift "
+            "symbol appears (it may say 'RESET possible'). Release.",
+            "4. Short-press to step through the items (service / oil / brakes) to "
+            "the one you serviced.",
+            "5. Press and HOLD until 'Reset?' appears, then release.",
+            "6. Hold once more to confirm. Ignition off.",
+            "",
+            "BMW F-series (F20/F30/F26 etc.) — the indicator-stalk BC button:",
+            "1. Don't start the engine. Foot OFF the brake, press Start/Stop once "
+            "to wake the car (terminal 15).",
+            "2. Press and hold the BC button on the end of the indicator stalk "
+            "until the service (CBS) menu appears in the cluster.",
+            "3. Short-press the BC button to step to the item you serviced.",
+            "4. Press and hold again — a 'Reset?' prompt appears.",
+            "5. Confirm with another press/hold. The item returns to 100% and the "
+            "date and mileage are stamped. Ignition off.",
         ],
     },
 ]

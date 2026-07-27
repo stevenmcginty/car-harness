@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Live Data — Car Harness</title>
+<meta name="theme-color" content="#000000" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="icon" href="/icons/icon-192.png" />
+<link rel="stylesheet" href="/live.css" />
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+
+<header class="bar" id="bar">
+  <div class="bar__inner">
+    <a class="bar__back" href="/index.html" aria-label="Back to Car Harness">
+      <svg viewBox="0 0 12 20" aria-hidden="true" focusable="false"><path d="M10 1 2 10l8 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Harness</span>
+    </a>
+    <h1 class="bar__title">Live Data</h1>
+    <p class="bar__status" id="status" role="status" aria-live="polite">
+      <span class="dot" id="status-dot" data-state="idle"></span>
+      <span id="status-text">Not reading</span>
+    </p>
+  </div>
+</header>
+
+<main>
+
+  <!-- ---------------------------------------------------------------- setup -->
+  <section class="setup" aria-label="Connection">
+    <div class="wrap">
+      <div class="setup__grid">
+        <label class="field">
+          <span class="field__label">Adapter</span>
+          <select id="adapter" class="select"></select>
+        </label>
+        <label class="field">
+          <span class="field__label">Manufacturer</span>
+          <select id="brand" class="select"></select>
+        </label>
+        <div class="field">
+          <span class="field__label">Source</span>
+          <div class="segmented" role="radiogroup" aria-label="Data source">
+            <button type="button" class="segmented__opt is-on" data-mode="real" role="radio" aria-checked="true">Live car</button>
+            <button type="button" class="segmented__opt" data-mode="sim" role="radio" aria-checked="false">Simulated</button>
+          </div>
+        </div>
+        <div class="field field--go">
+          <button type="button" class="btn btn--primary" id="detect">Detect what this car gives</button>
+        </div>
+      </div>
+      <p class="setup__note" id="setup-note">
+        The car is asked which values it supports, so the list below is this exact vehicle —
+        never a guess from the badge on the bonnet.
+      </p>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------------- hero -->
+  <section class="hero" id="hero">
+    <div class="wrap">
+      <h2 class="hero__title" data-reveal>Every value this car<br />will give you.</h2>
+      <p class="hero__lede" data-reveal style="--d:120ms">
+        Standard OBD-II works on anything built since about 2001, whatever the badge.
+        Manufacturer extras stack on top where we have them. Pick a source above and
+        detect to begin.
+      </p>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------------- watching -->
+  <section class="watch" id="watch" hidden aria-label="Values being watched">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 class="section-head__title">Watching</h2>
+        <div class="section-head__tools">
+          <p class="rate" id="rate"></p>
+          <button type="button" class="btn btn--ghost" id="record">Record</button>
+          <button type="button" class="btn btn--ghost" id="reset-holds">Reset min/max</button>
+          <button type="button" class="btn btn--primary" id="stream">Start</button>
+        </div>
+      </div>
+      <p class="cost" id="cost" hidden></p>
+      <div class="gauges" id="gauges"></div>
+      <p class="empty" id="watch-empty">
+        Nothing selected yet. Choose values from the list below — over a Bluetooth dongle
+        each one costs time, so a focused handful updates far faster than everything at once.
+      </p>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------------- catalog -->
+  <section class="catalog" id="catalog" hidden aria-label="All available values">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 class="section-head__title">Available on this car</h2>
+        <p class="section-head__meta" id="catalog-meta"></p>
+      </div>
+
+      <div class="filters">
+        <label class="search">
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m11 11 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <input type="search" id="search" placeholder="Search values" aria-label="Search values" autocomplete="off" />
+        </label>
+        <div class="pills" id="group-pills" role="group" aria-label="Filter by group"></div>
+      </div>
+
+      <div id="channel-groups"></div>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------- freeze frame -->
+  <section class="freeze" id="freeze" aria-label="Freeze frame">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 class="section-head__title">Freeze frame</h2>
+        <button type="button" class="btn btn--ghost" id="freeze-btn">Read stored frame</button>
+      </div>
+      <p class="freeze__lede">
+        The live data as it was at the instant a fault stored. A P0300 tells you the car
+        misfired; the freeze frame tells you it misfired at 1,100&nbsp;rpm pulling away from
+        cold rather than at motorway load — same code, a different bill.
+      </p>
+      <div id="freeze-out"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p id="foot-note">Read-only. Nothing on this screen writes to the car.</p>
+  </div>
+</footer>
+
+<script src="/live.js"></script>
+</body>
+</html>

@@ -11,8 +11,14 @@ light up its routes:
                     and may expose discover()
     pids.py      live(adapter, mode)      brand-specific live values
                  -- "enet-doip" profiles use live(mode), like scan/clear
+                 -- ALSO feeds the Live Data dashboard automatically; see the
+                    contract in backend/obd/livefeed.py. A brand with no
+                    pids.py still gets the full standard OBD-II set.
     snapshot.py  snapshot(adapter, mode)  passive broadcast capture
     resets.py    list_resets(), perform(adapter, mode, reset_id, confirm)
+    service_history.py
+                 catalogue(), build_argument(...)  the car's own service book
+                 -- text only, no car contact; see the BMW one for why
 
 profile.json may also carry a "panel" object (title/hint/actions) that the
 desktop front-end renders verbatim -- the UI for a new brand is data, not code.
@@ -77,5 +83,7 @@ def features(brand: str) -> dict:
         "report": pids_mod is not None and hasattr(pids_mod, "report"),
         "snapshot": brand_module(brand, "snapshot") is not None,
         "resets": brand_module(brand, "resets") is not None,
+        # Building the car's own service-history entry (BMW/MINI iDrive).
+        "serviceHistory": brand_module(brand, "service_history") is not None,
         "needsAdapter": needs_adapter(brand),
     }

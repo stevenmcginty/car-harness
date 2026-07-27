@@ -12,13 +12,19 @@ import sys
 
 SUITES = [
     "backend.tools.hsfz_selftest",
+    "backend.tools.doip_selftest",
     "backend.tools.mazda_selftest",
     "backend.tools.peugeot_selftest",
     "backend.tools.vw_selftest",
     "backend.tools.mercedes_selftest",
     "backend.tools.fiat_selftest",
     "backend.tools.jlr_selftest",
+    "backend.tools.taycan_selftest",
+    "backend.tools.readiness_selftest",
+    "backend.tools.livedata_selftest",
+    "backend.tools.j2534_selftest",
     "backend.tools.resets_selftest",
+    "backend.tools.service_history_selftest",
 ]
 
 

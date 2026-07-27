@@ -24,6 +24,8 @@
   var state = {
     profiles: [],
     currentProfileId: DEFAULT_PROFILE_ID,
+    brandChosenByUser: false,
+    autoSelectedFromVin: false,
     simulate: false,
     autoRefresh: false,
     autoRefreshTimer: null,
@@ -98,10 +100,12 @@
     brandTitle: document.getElementById("brand-title"),
     brandActions: document.getElementById("brand-actions"),
     brandScanBtn: document.getElementById("brand-scan-btn"),
+    brandClearAllBtn: document.getElementById("brand-clear-all-btn"),
     brandSimBanner: document.getElementById("brand-sim-banner"),
     brandHint: document.getElementById("brand-hint"),
     brandResult: document.getElementById("brand-result"),
     brandChips: document.getElementById("brand-chips"),
+    brandClearNote: document.getElementById("brand-clear-note"),
     brandMessage: document.getElementById("brand-message"),
     brandModules: document.getElementById("brand-modules"),
     brandExtras: document.getElementById("brand-extras"),
@@ -116,7 +120,13 @@
     pairBtn: document.getElementById("pair-btn"),
     pairModal: document.getElementById("pair-modal"),
     pairModalClose: document.getElementById("pair-modal-close"),
-    pairModalBody: document.getElementById("pair-modal-body")
+    pairModalBody: document.getElementById("pair-modal-body"),
+    serviceCaptureBtn: document.getElementById("service-capture-btn"),
+    learnedHeading: document.getElementById("learned-heading"),
+    learnedList: document.getElementById("learned-list"),
+    captureModal: document.getElementById("capture-modal"),
+    captureModalClose: document.getElementById("capture-modal-close"),
+    captureModalBody: document.getElementById("capture-modal-body")
   };
 
   // OBD-II + pairing + brand-panel state.
@@ -131,6 +141,26 @@
   var pair = { open: false, info: null, devices: [], error: "" };
   var brand = { scanInFlight: false, clearInFlight: false, extrasInFlight: false };
   var service = { loading: false, runningId: null };
+  var learned = { items: [], loading: false, runningId: null, logs: {} };
+  // Capture & replay modal state. phase: "intro" | "recording" | "review".
+  var capture = {
+    open: false,
+    phase: "intro",
+    captureId: null,
+    running: false,
+    frames: 0,
+    steps: [],
+    vin: "",
+    needsSecurity: false,
+    message: "",
+    name: "",
+    model: "",
+    startInFlight: false,
+    stopInFlight: false,
+    saveInFlight: false,
+    pollTimer: null,
+    error: ""
+  };
 
   // ---------- Helpers ----------
 
@@ -447,6 +477,50 @@
       });
   }
 
+  // The ENET cable reaches several makes on the same OBD pins, so "a car
+  // answered" never meant "the selected manufacturer is right" -- a Porsche
+  // Taycan answers BMW's own discovery broadcast. The backend now decodes the
+  // VIN's WMI and says which profile should be driving. Switch to it once,
+  // automatically, unless the user has picked a manufacturer by hand.
+  function applyDetectedMake(data) {
+    if (!data || state.simulate) return;
+    var suggestion = data.suggestedProfile;
+    if (!suggestion || suggestion === state.currentProfileId) return;
+    if (state.brandChosenByUser) {
+      renderMakeMismatch(data.detectedMake, suggestion);
+      return;
+    }
+    var known = state.profiles.some(function (p) { return p.id === suggestion; });
+    if (!known) return;
+
+    state.currentProfileId = suggestion;
+    if (el.profileSelect) el.profileSelect.value = suggestion;
+    state.autoSelectedFromVin = true;
+    renderMakeMismatch(null, null);
+    renderBrandPanel();
+    renderBrandLabels();
+    loadServiceResets();
+  }
+
+  function renderMakeMismatch(make, suggestion) {
+    var host = el.statusMessage;
+    if (!host) return;
+    var existing = document.getElementById("make-mismatch");
+    if (!make || !suggestion) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (!existing) {
+      existing = document.createElement("p");
+      existing.id = "make-mismatch";
+      existing.className = "make-mismatch";
+      host.parentNode.insertBefore(existing, host.nextSibling);
+    }
+    existing.textContent =
+      "This car's VIN says " + make + ", but the manufacturer is set to " +
+      state.currentProfileId + ". Switch it to read the car properly.";
+  }
+
   function refreshStatus() {
     var mode = state.simulate ? "sim" : "real";
     var url = "/api/status?profile=" + encodeURIComponent(state.currentProfileId) + "&mode=" + mode;
@@ -463,6 +537,7 @@
         renderOverall(data.overall, data.message);
         renderVehicle(data.vehicle);
         renderSimulatedBanner(!!data.simulated);
+        applyDetectedMake(data);
       })
       .catch(function () {
         renderStatusOffline();
@@ -1457,6 +1532,8 @@
   // action buttons, busy text -- comes from the profile's own metadata
   // (profile.json "panel" + "features"), so a new brand needs no UI code.
 
+  var CLEAR_ALL_LABEL = "Clear ALL modules";
+
   function brandFeatures(p) {
     return (p && p.features) || {};
   }
@@ -1475,15 +1552,65 @@
     el.brandChips.innerHTML = "";
     el.brandModules.innerHTML = "";
     el.brandMessage.textContent = "";
+    el.brandClearNote.hidden = true;
+    el.brandClearNote.textContent = "";
     el.brandExtras.hidden = true;
     el.brandExtrasChips.innerHTML = "";
     el.brandExtrasMessage.textContent = "";
     el.brandExtrasHint.hidden = true;
     el.brandScanBtn.disabled = false;
     el.brandScanBtn.textContent = "Scan all modules";
+    el.brandClearAllBtn.disabled = false;
+    el.brandClearAllBtn.textContent = CLEAR_ALL_LABEL;
   }
 
   // Rebuild the panel for the selected manufacturer (dropdown change, load).
+  // Fetch the PDF as a blob rather than pointing the browser at the URL: the
+  // read takes half a minute on a real car, and a plain link would look frozen
+  // and give no way to report a car that could not be read.
+  function runBrandReport(btn) {
+    var brand = state.currentProfileId;
+    var mode = state.simulate ? "sim" : "real";
+    var original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Reading the car…";
+    setClearNote("Reading the battery for the report. This takes about 30 seconds.");
+
+    fetch("/api/" + encodeURIComponent(brand) + "/report.pdf?mode=" + mode +
+          "&dealer=" + encodeURIComponent(state.dealerName || ""))
+      .then(function (res) {
+        if (!res.ok) {
+          return res.json().then(
+            function (body) { throw new Error(body.detail || "Could not build the report."); },
+            function () { throw new Error("Could not build the report (HTTP " + res.status + ")."); }
+          );
+        }
+        var name = "battery-report.pdf";
+        var disposition = res.headers.get("Content-Disposition") || "";
+        var match = disposition.match(/filename="?([^";]+)"?/);
+        if (match) name = match[1];
+        return res.blob().then(function (blob) { return { blob: blob, name: name }; });
+      })
+      .then(function (file) {
+        var url = URL.createObjectURL(file.blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+        setClearNote("Report saved as " + file.name + ".");
+      })
+      .catch(function (err) {
+        setClearNote(err.message || "Could not build the report.");
+      })
+      .finally(function () {
+        btn.disabled = false;
+        btn.textContent = original;
+      });
+  }
+
   function renderBrandPanel() {
     var p = currentProfile();
     var f = brandFeatures(p);
@@ -1518,8 +1645,28 @@
       btn.addEventListener("click", function () {
         runBrandExtras(a, btn);
       });
-      el.brandActions.appendChild(btn);
+      // Extras sit between Scan and Clear ALL -- the destructive button stays
+      // last in the row (and last in the tab order).
+      el.brandActions.insertBefore(btn, el.brandClearAllBtn);
     });
+
+    // Printable customer report, for brands that publish one. The backend takes
+    // its own fresh reading, so the document's timestamp belongs to a real
+    // measurement rather than to whatever happens to be on screen.
+    if (f.report) {
+      var pdfBtn = document.createElement("button");
+      pdfBtn.type = "button";
+      pdfBtn.className = "btn btn-secondary brand-extra-btn";
+      pdfBtn.textContent = panel.reportLabel || "Battery report (PDF)";
+      pdfBtn.addEventListener("click", function () {
+        runBrandReport(pdfBtn);
+      });
+      el.brandActions.insertBefore(pdfBtn, el.brandClearAllBtn);
+    }
+
+    // "Clear ALL modules" needs no per-brand UI code: /api/{brand}/clear with
+    // no address already walks that brand's own module table.
+    el.brandClearAllBtn.hidden = !f.clear;
 
     resetBrandPanel();
 
@@ -1656,7 +1803,17 @@
     });
   }
 
-  function runBrandScan() {
+  // The clear summary sits above the scan message: a clear kicks off a fresh
+  // scan, and that scan rewrites the message -- the note keeps the record of
+  // what was actually cleared on screen next to the proof.
+  function setClearNote(text) {
+    el.brandClearNote.textContent = text || "";
+    el.brandClearNote.hidden = !text;
+  }
+
+  // ``keepNote`` is passed only by the clear paths, which have just written a
+  // summary they want to survive the confirming re-scan.
+  function runBrandScan(keepNote) {
     var p = currentProfile();
     if (!p || brand.scanInFlight) return;
     if (
@@ -1670,11 +1827,13 @@
     var panel = p.panel || {};
     brand.scanInFlight = true;
     el.brandScanBtn.disabled = true;
+    el.brandClearAllBtn.disabled = true;
     var original = el.brandScanBtn.textContent;
     el.brandScanBtn.textContent = "Scanning…";
     el.brandResult.hidden = false;
     el.brandChips.innerHTML = "";
     el.brandModules.innerHTML = "";
+    if (keepNote !== true) setClearNote("");
     el.brandMessage.textContent =
       panel.scanBusy || "Walking the modules… (absent modules time out quietly)";
 
@@ -1688,8 +1847,20 @@
       .then(function () {
         brand.scanInFlight = false;
         el.brandScanBtn.disabled = false;
+        el.brandClearAllBtn.disabled = brand.clearInFlight;
         el.brandScanBtn.textContent = original;
       });
+  }
+
+  // Body for /api/{brand}/clear. No ``address`` key = every module that
+  // answers, which is exactly what the backend's clear(address=None) does.
+  function brandClearBody(p, address) {
+    var body = { mode: obdMode(), confirm: true };
+    if (address) body.address = address;
+    if (brandNeedsAdapter(p) && !state.simulate && state.currentAdapterId) {
+      body.adapter = state.currentAdapterId;
+    }
+    return body;
   }
 
   function runBrandClear(address, label) {
@@ -1704,24 +1875,113 @@
       return;
     }
     brand.clearInFlight = true;
-    var body = { mode: obdMode(), confirm: true, address: address };
-    if (brandNeedsAdapter(p) && !state.simulate && state.currentAdapterId) {
-      body.adapter = state.currentAdapterId;
-    }
+    el.brandClearAllBtn.disabled = true;
     apiFetch("/api/" + encodeURIComponent(p.id) + "/clear", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
+      body: JSON.stringify(brandClearBody(p, address))
     })
       .then(function (data) {
-        el.brandMessage.textContent = (data && data.message) || "";
-        if (data && data.ok) runBrandScan();
+        setClearNote((data && data.message) || "");
+        brand.clearInFlight = false;
+        if (data && data.ok) runBrandScan(true);
       })
       .catch(function () {
-        el.brandMessage.textContent = "Couldn't reach the backend to clear.";
+        setClearNote("Couldn't reach the backend to clear.");
       })
       .then(function () {
         brand.clearInFlight = false;
+        el.brandClearAllBtn.disabled = brand.scanInFlight;
+      });
+  }
+
+  // ---- "Clear ALL modules" ------------------------------------------------
+  //
+  // One button per manufacturer, not per module: the backend walks that
+  // brand's own ECU table, probes what actually answers and clears each one,
+  // so no prior scan is needed. On a dongle brand the generic (engine-light)
+  // codes get cleared in the same run -- "clear everything" that left the MIL
+  // on would be a lie. Every leg is reported, including the ones that failed.
+  function runBrandClearAll() {
+    var p = currentProfile();
+    if (!p || brand.clearInFlight || brand.scanInFlight) return;
+    if (
+      !guardAdapterPicked(p, function (msg) {
+        el.brandResult.hidden = false;
+        el.brandMessage.textContent = msg;
+      })
+    ) {
+      return;
+    }
+
+    // Generic OBD-II runs over an ELM327-style adapter only; a native-cable
+    // brand (BMW ENET) has no dongle in the loop, so there is nothing to add.
+    var alsoGeneric = brandNeedsAdapter(p) && (state.simulate || !!state.currentAdapterId);
+    if (
+      !window.confirm(
+        "Clear the fault memory of EVERY " + p.name + " module that answers" +
+          (alsoGeneric ? ", plus the generic engine-light codes" : "") +
+          "?\n\nIgnition ON, engine off, and leave everything alone until it " +
+          "finishes. Faults will come straight back if the underlying problem " +
+          "is still there" +
+          (alsoGeneric ? ", and readiness monitors reset (matters for an MOT)." : ".")
+      )
+    ) {
+      return;
+    }
+
+    brand.clearInFlight = true;
+    el.brandClearAllBtn.disabled = true;
+    el.brandScanBtn.disabled = true;
+    el.brandClearAllBtn.textContent = "Clearing…";
+    el.brandResult.hidden = false;
+    setClearNote(
+      "Clearing every module that answers… (walks the whole list — give it a moment)"
+    );
+
+    var notes = [];
+    apiFetch("/api/" + encodeURIComponent(p.id) + "/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(brandClearBody(p, null))
+    })
+      .then(
+        function (data) {
+          notes.push("Modules: " + ((data && data.message) || "no answer from the clear."));
+        },
+        function () {
+          notes.push("Modules: couldn't reach the backend to clear.");
+        }
+      )
+      .then(function () {
+        if (!alsoGeneric) return null;
+        return apiFetch("/api/obd/clear", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            adapter: state.simulate ? null : state.currentAdapterId,
+            mode: obdMode(),
+            confirm: true
+          })
+        }).then(
+          function (data) {
+            notes.push("Engine light: " + ((data && data.message) || "no answer."));
+            // The codes on screen in the OBD panel are now stale either way.
+            resetObdPanel();
+          },
+          function () {
+            notes.push("Engine light: couldn't reach the backend to clear codes.");
+          }
+        );
+      })
+      .then(function () {
+        setClearNote(notes.join("  "));
+        brand.clearInFlight = false;
+        el.brandClearAllBtn.disabled = false;
+        el.brandScanBtn.disabled = false;
+        el.brandClearAllBtn.textContent = CLEAR_ALL_LABEL;
+        // Re-scan is the proof: whatever is still listed did not clear.
+        runBrandScan(true);
       });
   }
 
@@ -1862,6 +2122,7 @@
   function loadServiceResets() {
     var p = currentProfile();
     el.serviceList.innerHTML = "";
+    loadLearnedResets(); // captured resets aren't gated behind the brand's catalogue
     if (!p || !brandFeatures(p).resets) {
       el.serviceMessage.hidden = false;
       el.serviceMessage.textContent = "No service resets catalogued for this manufacturer yet.";
@@ -1909,6 +2170,541 @@
       .then(function () {
         service.runningId = null;
         loadServiceResets();
+      });
+  }
+
+  // ---------- Learned resets (capture & replay) ----------
+
+  // A step's compact one-line label for display, e.g. "22F190 — Read VIN".
+  function stepLabel(s) {
+    if (!s) return "";
+    var desc = s.desc || "";
+    var sid = s.sid || "";
+    if (sid && desc && desc.indexOf(sid) === -1) return sid + " — " + desc;
+    return desc || sid;
+  }
+
+  function appendStepList(steps) {
+    if (!steps || !steps.length) return;
+    var ol = document.createElement("ol");
+    ol.className = "capture-log";
+    steps.forEach(function (s) {
+      var li = document.createElement("li");
+      li.textContent = stepLabel(s);
+      ol.appendChild(li);
+    });
+    el.captureModalBody.appendChild(ol);
+  }
+
+  function buildLearnedRow(r) {
+    var row = document.createElement("div");
+    row.className = "module-row";
+
+    var head = document.createElement("div");
+    head.className = "module-row-head";
+
+    var title = document.createElement("span");
+    title.className = "module-row-name";
+    title.textContent = r.name;
+    head.appendChild(title);
+    head.appendChild(confidenceTag(r.confidence));
+    row.appendChild(head);
+
+    if (r.model) {
+      var model = document.createElement("p");
+      model.className = "obd-hint";
+      model.textContent = r.model;
+      row.appendChild(model);
+    }
+
+    if (r.note) {
+      var note = document.createElement("p");
+      note.className = "dtc-desc";
+      note.textContent = r.note;
+      row.appendChild(note);
+    }
+
+    if (r.steps && r.steps.length) {
+      var sends = document.createElement("p");
+      sends.className = "dtc-desc is-mono";
+      sends.textContent =
+        "Sends: " + r.steps.map(function (s) { return stepLabel(s); }).join("  ·  ");
+      row.appendChild(sends);
+    }
+
+    if (r.needsSecurity) {
+      var warn = document.createElement("p");
+      warn.className = "dtc-desc";
+      warn.textContent = "⚠ Uses security access — may not replay identically on another car.";
+      row.appendChild(warn);
+    }
+
+    var log = learned.logs[r.id];
+    if (log && log.length) {
+      var logList = document.createElement("ol");
+      logList.className = "capture-log";
+      log.forEach(function (line) {
+        var li = document.createElement("li");
+        li.textContent = line;
+        logList.appendChild(li);
+      });
+      row.appendChild(logList);
+    }
+
+    var actions = document.createElement("div");
+    actions.className = "learned-actions";
+
+    var runBtn = document.createElement("button");
+    runBtn.type = "button";
+    runBtn.className = "btn btn-primary btn-small";
+    runBtn.textContent = learned.runningId === r.id ? "Running…" : "Run";
+    runBtn.disabled = learned.runningId !== null;
+    runBtn.addEventListener("click", function () {
+      runLearnedReset(r);
+    });
+    actions.appendChild(runBtn);
+
+    var delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn btn-danger btn-small";
+    delBtn.textContent = "Delete";
+    delBtn.disabled = learned.runningId !== null;
+    delBtn.addEventListener("click", function () {
+      deleteLearnedReset(r);
+    });
+    actions.appendChild(delBtn);
+
+    row.appendChild(actions);
+    return row;
+  }
+
+  function renderLearnedResets() {
+    el.learnedList.innerHTML = "";
+    if (!learned.items.length) {
+      el.learnedHeading.hidden = true;
+      return;
+    }
+    el.learnedHeading.hidden = false;
+    learned.items.forEach(function (r) {
+      el.learnedList.appendChild(buildLearnedRow(r));
+    });
+  }
+
+  function loadLearnedResets() {
+    var p = currentProfile();
+    if (!p) {
+      learned.items = [];
+      el.learnedList.innerHTML = "";
+      el.learnedHeading.hidden = true;
+      return;
+    }
+    learned.loading = true;
+    apiFetch("/api/captures?brand=" + encodeURIComponent(p.id))
+      .then(function (data) {
+        learned.items = (data && data.captures) || [];
+        renderLearnedResets();
+      })
+      .catch(function () {
+        learned.items = [];
+        renderLearnedResets();
+      })
+      .then(function () {
+        learned.loading = false;
+      });
+  }
+
+  function runLearnedReset(reset) {
+    var p = currentProfile();
+    if (!p || learned.runningId) return;
+    if (
+      !window.confirm(
+        "Run '" + reset.name + "'? This sends the reset over the dongle and changes the car."
+      )
+    ) {
+      return;
+    }
+    learned.runningId = reset.id;
+    renderLearnedResets();
+    var body = {
+      resetId: reset.id,
+      adapter: state.simulate ? null : state.currentAdapterId,
+      mode: obdMode(),
+      confirm: true
+    };
+    apiFetch("/api/capture/replay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    })
+      .then(function (res) {
+        el.serviceMessage.hidden = false;
+        el.serviceMessage.textContent =
+          (res && res.message) || (res && res.ok ? "Reset finished." : "Reset failed.");
+        learned.logs[reset.id] = (res && res.log) || [];
+      })
+      .catch(function () {
+        el.serviceMessage.hidden = false;
+        el.serviceMessage.textContent = "Couldn't reach the backend to run the reset.";
+        learned.logs[reset.id] = [];
+      })
+      .then(function () {
+        learned.runningId = null;
+        renderLearnedResets();
+      });
+  }
+
+  function deleteLearnedReset(reset) {
+    if (learned.runningId) return;
+    if (!window.confirm("Delete '" + reset.name + "'? This cannot be undone.")) return;
+    apiFetch("/api/captures/" + encodeURIComponent(reset.id), { method: "DELETE" })
+      .then(function () {
+        delete learned.logs[reset.id];
+        loadLearnedResets();
+      })
+      .catch(function () {
+        /* backend banner already surfaced by apiFetch */
+      });
+  }
+
+  // ---------- Capture modal ----------
+
+  function stopCapturePoll() {
+    if (capture.pollTimer) {
+      clearInterval(capture.pollTimer);
+      capture.pollTimer = null;
+    }
+  }
+
+  function openCaptureModal() {
+    stopCapturePoll();
+    capture.open = true;
+    capture.phase = "intro";
+    capture.captureId = null;
+    capture.running = false;
+    capture.frames = 0;
+    capture.steps = [];
+    capture.vin = "";
+    capture.needsSecurity = false;
+    capture.message = "";
+    capture.name = "";
+    capture.model = "";
+    capture.startInFlight = false;
+    capture.stopInFlight = false;
+    capture.saveInFlight = false;
+    capture.error = "";
+    el.captureModal.hidden = false;
+    renderCaptureModal();
+  }
+
+  function closeCaptureModal() {
+    capture.open = false;
+    stopCapturePoll();
+    el.captureModal.hidden = true;
+  }
+
+  function renderCaptureModal() {
+    el.captureModalBody.innerHTML = "";
+    if (capture.phase === "recording") renderCaptureRecording();
+    else if (capture.phase === "review") renderCaptureReview();
+    else renderCaptureIntro();
+  }
+
+  function renderCaptureIntro() {
+    var hint = document.createElement("p");
+    hint.className = "wizard-hint";
+    hint.textContent =
+      "Plug your scan tool AND the dongle into the car with an OBD splitter, then " +
+      "start — the harness will watch your tool do the reset.";
+    el.captureModalBody.appendChild(hint);
+
+    if (!currentProfile()) {
+      var noProfile = document.createElement("p");
+      noProfile.className = "wizard-error";
+      noProfile.textContent = "Pick a manufacturer (top right) first.";
+      el.captureModalBody.appendChild(noProfile);
+      return;
+    }
+
+    if (!state.simulate && !state.currentAdapterId) {
+      var warn = document.createElement("p");
+      warn.className = "wizard-error";
+      warn.textContent = "Pick an ELM327-style adapter (top right) first, or turn on Simulate.";
+      el.captureModalBody.appendChild(warn);
+      return;
+    }
+
+    if (capture.error) {
+      var err = document.createElement("p");
+      err.className = "wizard-error";
+      err.textContent = capture.error;
+      el.captureModalBody.appendChild(err);
+    }
+
+    var startBtn = document.createElement("button");
+    startBtn.type = "button";
+    startBtn.className = "btn btn-primary";
+    startBtn.textContent = capture.startInFlight ? "Starting…" : "Start";
+    startBtn.disabled = capture.startInFlight;
+    startBtn.addEventListener("click", startCapture);
+    el.captureModalBody.appendChild(startBtn);
+  }
+
+  function renderCaptureRecording() {
+    var live = document.createElement("p");
+    live.className = "capture-live";
+    live.textContent =
+      "Recording… " + capture.frames + " frame" + (capture.frames === 1 ? "" : "s") + " seen.";
+    el.captureModalBody.appendChild(live);
+
+    if (capture.vin) {
+      var vin = document.createElement("p");
+      vin.className = "wizard-hint";
+      vin.textContent = "VIN: " + capture.vin;
+      el.captureModalBody.appendChild(vin);
+    }
+
+    if (capture.message) {
+      var msg = document.createElement("p");
+      msg.className = "wizard-hint";
+      msg.textContent = capture.message;
+      el.captureModalBody.appendChild(msg);
+    }
+
+    appendStepList(capture.steps);
+
+    if (capture.error) {
+      var err = document.createElement("p");
+      err.className = "wizard-error";
+      err.textContent = capture.error;
+      el.captureModalBody.appendChild(err);
+    }
+
+    var stopBtn = document.createElement("button");
+    stopBtn.type = "button";
+    stopBtn.className = "btn btn-danger";
+    stopBtn.textContent = capture.stopInFlight ? "Stopping…" : "Stop";
+    stopBtn.disabled = capture.stopInFlight;
+    stopBtn.addEventListener("click", stopCapture);
+    el.captureModalBody.appendChild(stopBtn);
+  }
+
+  function renderCaptureReview() {
+    if (capture.message) {
+      var msg = document.createElement("p");
+      msg.className = "wizard-hint";
+      msg.textContent = capture.message;
+      el.captureModalBody.appendChild(msg);
+    }
+
+    appendStepList(capture.steps);
+    if (!capture.steps.length) {
+      var none = document.createElement("p");
+      none.className = "wizard-empty";
+      none.textContent = "No steps captured.";
+      el.captureModalBody.appendChild(none);
+    }
+
+    if (capture.needsSecurity) {
+      var secWarn = document.createElement("p");
+      secWarn.className = "wizard-error";
+      secWarn.textContent =
+        "⚠ This reset used security access — it may not replay identically on another car.";
+      el.captureModalBody.appendChild(secWarn);
+    }
+
+    var nameRow = document.createElement("div");
+    nameRow.className = "form-row";
+    var nameLabel = document.createElement("label");
+    nameLabel.className = "form-row-label";
+    nameLabel.htmlFor = "capture-name-input";
+    nameLabel.textContent = "Name";
+    var req = document.createElement("span");
+    req.className = "req";
+    req.textContent = "*";
+    nameLabel.appendChild(req);
+    nameRow.appendChild(nameLabel);
+    var nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.id = "capture-name-input";
+    nameInput.className = "form-input";
+    nameInput.value = capture.name || "";
+    nameInput.addEventListener("input", function () {
+      capture.name = nameInput.value;
+    });
+    nameRow.appendChild(nameInput);
+    el.captureModalBody.appendChild(nameRow);
+
+    var modelRow = document.createElement("div");
+    modelRow.className = "form-row";
+    var modelLabel = document.createElement("label");
+    modelLabel.className = "form-row-label";
+    modelLabel.htmlFor = "capture-model-input";
+    modelLabel.textContent = "Model (optional)";
+    modelRow.appendChild(modelLabel);
+    var modelInput = document.createElement("input");
+    modelInput.type = "text";
+    modelInput.id = "capture-model-input";
+    modelInput.className = "form-input";
+    modelInput.value = capture.model || "";
+    modelInput.addEventListener("input", function () {
+      capture.model = modelInput.value;
+    });
+    modelRow.appendChild(modelInput);
+    el.captureModalBody.appendChild(modelRow);
+
+    if (capture.error) {
+      var err = document.createElement("p");
+      err.className = "wizard-error";
+      err.textContent = capture.error;
+      el.captureModalBody.appendChild(err);
+    }
+
+    var saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "btn btn-primary";
+    saveBtn.textContent = capture.saveInFlight ? "Saving…" : "Save";
+    saveBtn.disabled = capture.saveInFlight || !(capture.name || "").trim();
+    saveBtn.addEventListener("click", saveCapture);
+    el.captureModalBody.appendChild(saveBtn);
+  }
+
+  function startCapture() {
+    var p = currentProfile();
+    if (!p || capture.startInFlight) return;
+    capture.startInFlight = true;
+    capture.error = "";
+    renderCaptureModal();
+
+    apiFetch("/api/capture/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adapter: state.simulate ? null : state.currentAdapterId,
+        brand: p.id,
+        mode: obdMode()
+      })
+    })
+      .then(function (res) {
+        capture.startInFlight = false;
+        if (!res || !res.ok) {
+          capture.error = (res && res.message) || "Couldn't start the capture.";
+          renderCaptureModal();
+          return;
+        }
+        capture.captureId = res.captureId;
+        capture.message = res.message || "";
+        capture.frames = 0;
+        capture.steps = [];
+        capture.running = true;
+        capture.phase = "recording";
+        renderCaptureModal();
+        startCapturePoll();
+      })
+      .catch(function () {
+        capture.startInFlight = false;
+        capture.error = "Couldn't reach the backend to start the capture.";
+        renderCaptureModal();
+      });
+  }
+
+  function capturePollTick() {
+    if (!capture.captureId || capture.phase !== "recording") return;
+    apiFetch("/api/capture/" + encodeURIComponent(capture.captureId))
+      .then(function (res) {
+        if (!capture.open || capture.phase !== "recording" || !res) return;
+        capture.frames = res.frames || 0;
+        capture.steps = res.steps || [];
+        capture.vin = res.vin || "";
+        capture.message = res.message || "";
+        capture.running = !!res.running;
+        renderCaptureModal();
+      })
+      .catch(function () {
+        /* keep polling; backend banner already surfaced by apiFetch */
+      });
+  }
+
+  function startCapturePoll() {
+    stopCapturePoll();
+    capturePollTick();
+    capture.pollTimer = setInterval(capturePollTick, 1200);
+  }
+
+  function stopCapture() {
+    if (!capture.captureId || capture.stopInFlight) return;
+    capture.stopInFlight = true;
+    capture.error = "";
+    renderCaptureModal();
+
+    apiFetch("/api/capture/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ captureId: capture.captureId })
+    })
+      .then(function (res) {
+        capture.stopInFlight = false;
+        stopCapturePoll();
+        if (!res || !res.ok) {
+          capture.error = (res && res.message) || "Couldn't stop the capture.";
+          renderCaptureModal();
+          return;
+        }
+        capture.running = !!res.running;
+        capture.frames = res.frames || 0;
+        capture.steps = res.steps || [];
+        capture.needsSecurity = !!res.needsSecurity;
+        capture.message = res.message || "";
+        var p = currentProfile();
+        capture.name = (p ? p.name + " " : "") + "service reset";
+        capture.phase = "review";
+        renderCaptureModal();
+      })
+      .catch(function () {
+        capture.stopInFlight = false;
+        capture.error = "Couldn't reach the backend to stop the capture.";
+        renderCaptureModal();
+      });
+  }
+
+  function saveCapture() {
+    var p = currentProfile();
+    if (!p || capture.saveInFlight) return;
+    var name = (capture.name || "").trim();
+    if (!name) {
+      capture.error = "Please enter a name.";
+      renderCaptureModal();
+      return;
+    }
+    capture.saveInFlight = true;
+    capture.error = "";
+    renderCaptureModal();
+
+    apiFetch("/api/capture/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        captureId: capture.captureId,
+        brand: p.id,
+        name: name,
+        model: (capture.model || "").trim()
+      })
+    })
+      .then(function (res) {
+        capture.saveInFlight = false;
+        if (!res || !res.ok) {
+          capture.error = (res && res.message) || "Couldn't save this reset.";
+          renderCaptureModal();
+          return;
+        }
+        closeCaptureModal();
+        el.serviceMessage.hidden = false;
+        el.serviceMessage.textContent = "Saved '" + name + "' as a learned reset.";
+        loadLearnedResets();
+      })
+      .catch(function () {
+        capture.saveInFlight = false;
+        capture.error = "Couldn't reach the backend to save this reset.";
+        renderCaptureModal();
       });
   }
 
@@ -2057,6 +2853,10 @@
 
   el.profileSelect.addEventListener("change", function () {
     state.currentProfileId = el.profileSelect.value;
+    // A deliberate choice wins over VIN auto-detection from here on: the app
+    // must never fight the user for the dropdown.
+    state.brandChosenByUser = true;
+    renderMakeMismatch(null, null);
     renderBrandPanel();
     renderBrandLabels();
     loadServiceResets();
@@ -2119,7 +2919,11 @@
 
   el.obdScanBtn.addEventListener("click", runObdScan);
   el.obdClearBtn.addEventListener("click", runObdClear);
-  el.brandScanBtn.addEventListener("click", runBrandScan);
+  // Wrapped so the click event can't arrive as runBrandScan's keepNote flag.
+  el.brandScanBtn.addEventListener("click", function () {
+    runBrandScan();
+  });
+  el.brandClearAllBtn.addEventListener("click", runBrandClearAll);
   el.liveToggle.addEventListener("change", function () {
     setLive(el.liveToggle.checked);
   });
@@ -2128,6 +2932,12 @@
   el.pairModalClose.addEventListener("click", closePairModal);
   el.pairModal.addEventListener("click", function (e) {
     if (e.target === el.pairModal) closePairModal();
+  });
+
+  el.serviceCaptureBtn.addEventListener("click", openCaptureModal);
+  el.captureModalClose.addEventListener("click", closeCaptureModal);
+  el.captureModal.addEventListener("click", function (e) {
+    if (e.target === el.captureModal) closeCaptureModal();
   });
 
   el.addAdapterBtn.addEventListener("click", openWizard);
@@ -2146,6 +2956,11 @@
     if (pair.open && e.key === "Escape") {
       e.preventDefault();
       closePairModal();
+      return;
+    }
+    if (capture.open && e.key === "Escape") {
+      e.preventDefault();
+      closeCaptureModal();
       return;
     }
     if (!wizard.open) return;

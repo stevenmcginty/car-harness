@@ -29,9 +29,12 @@ if errorlevel 1 (
     )
 )
 
-REM --- Open the browser ONLY once the server actually answers ----------------
-echo The browser will open automatically once the server is ready...
-start "" /b powershell -NoProfile -Command "for($i=0;$i -lt 60;$i++){try{$null=Invoke-WebRequest 'http://127.0.0.1:8765/api/profiles' -UseBasicParsing -TimeoutSec 1; break}catch{Start-Sleep -Milliseconds 500}}; Start-Process 'http://127.0.0.1:8765'"
+REM --- Open the app window ONLY once the server actually answers -------------
+REM open-app.ps1 opens Chrome/Edge in --app mode: its own window and its own
+REM taskbar icon, not a browser tab. Keep the logic in the .ps1 - quoting a
+REM PowerShell one-liner inside a batch file is how it used to go wrong.
+echo Car Harness will open in its own window once the server is ready...
+start "" /b powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0open-app.ps1"
 
 REM --- Run the server (Ctrl+C to stop) ---------------------------------------
 echo Starting car-harness on http://127.0.0.1:8765  ^(press Ctrl+C to stop^)

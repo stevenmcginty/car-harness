@@ -14,7 +14,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from backend.obd import dtc, sim
+from backend.obd import dtc, readiness, sim
 from backend.obd.elm327 import Elm327Session, ObdError
 from backend.obd.pids import DASHBOARD_KEYS, PIDS_BY_KEY, read_supported_pids
 from backend.obd.transport import TransportError, transport_for_adapter
@@ -133,14 +133,40 @@ def scan(adapter: dict, mode: str) -> dict:
 
         mil_on = False
         dtc_count = 0
+        monitors = None
         try:
             payloads = session.query(0x01, 0x01, timeout=8.0)
             for payload in payloads:
                 if len(payload) >= 3 and payload[1] == 0x01:
                     mil_on = mil_on or bool(payload[2] & 0x80)
                     dtc_count += payload[2] & 0x7F
+                    # The same response carries the emissions readiness monitors;
+                    # we were throwing three of its four bytes away.
+                    if monitors is None:
+                        monitors = readiness.decode_monitors(payload[2:])
         except (ObdError, TransportError):
             pass
+
+        def read_pid(key):
+            """One mode-01 PID, or None if the car does not answer it."""
+            pid = PIDS_BY_KEY.get(key)
+            if pid is None:
+                return None
+            try:
+                payloads = session.query(0x01, pid.pid, timeout=4.0)
+            except (ObdError, TransportError):
+                return None
+            for payload in payloads:
+                if len(payload) >= 2 and payload[1] == pid.pid:
+                    return pid.decode(payload[2:])
+            return None
+
+        since_clear = {
+            "distanceKm": read_pid("distance_since_clear"),
+            "minutes": read_pid("minutes_since_clear"),
+            "warmups": read_pid("warmups_since_clear"),
+        }
+        since_clear = {k: v for k, v in since_clear.items() if v is not None}
 
         def read(service):
             try:
@@ -174,6 +200,12 @@ def scan(adapter: dict, mode: str) -> dict:
                 " MIL (engine light) is ON." if mil_on else ""
             )
 
+        assessment = readiness.assess(
+            monitors, since_clear, len(permanent or []), n_stored
+        )
+        if assessment["recentlyCleared"]:
+            summary += " " + assessment["verdict"]
+
         return {
             "ok": True,
             "simulated": False,
@@ -186,6 +218,9 @@ def scan(adapter: dict, mode: str) -> dict:
             "stored": codes(stored, "stored"),
             "pending": codes(pending, "pending"),
             "permanent": codes(permanent, "permanent"),
+            "readiness": monitors,
+            "sinceClear": since_clear,
+            "clearCheck": assessment,
             "message": summary + ("" if vin else " (The car did not report a VIN over OBD.)"),
             "timestamp": _now(),
         }

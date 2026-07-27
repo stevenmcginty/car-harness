@@ -9,7 +9,7 @@ import math
 import time
 from datetime import datetime, timezone
 
-from backend.obd import dtc
+from backend.obd import dtc, readiness
 from backend.obd.pids import DASHBOARD_KEYS, PIDS_BY_KEY
 
 SIM_VIN = "SIMULATED0CAR0001"
@@ -38,6 +38,32 @@ def scan() -> dict:
     stored = [] if cleared else _codes(_SIM_STORED, "stored")
     pending = [] if cleared else _codes(_SIM_PENDING, "pending")
     n = len(stored)
+
+    # A permanent code survives a clear -- that is the whole point of them, and
+    # simulating it lets the "was this car just wiped?" check be demonstrated
+    # without a car: clear the sim, re-scan, and watch the verdict change.
+    permanent = _codes(["P0420"], "permanent") if cleared else []
+
+    # Mode 01 PID 01 body (A B C D). After a clear the emissions monitors reset
+    # to not-complete, exactly as they do on a real car.
+    if cleared:
+        monitor_payload = bytes([0x00, 0x77, 0x61, 0x61])
+        since_clear = {"distanceKm": 0, "minutes": 2, "warmups": 0}
+    else:
+        monitor_payload = bytes([0x80 | n, 0x07, 0x61, 0x00])
+        since_clear = {"distanceKm": 4210, "minutes": 9860, "warmups": 96}
+
+    monitors = readiness.decode_monitors(monitor_payload)
+    assessment = readiness.assess(monitors, since_clear, len(permanent), n)
+
+    message = "SIMULATED — no real car connected. " + (
+        "No fault codes (they were 'cleared')."
+        if cleared
+        else f"{n} stored fault code(s), MIL (engine light) ON."
+    )
+    if assessment["recentlyCleared"]:
+        message += " " + assessment["verdict"]
+
     return {
         "ok": True,
         "simulated": True,
@@ -49,15 +75,11 @@ def scan() -> dict:
         "dtcCount": n,
         "stored": stored,
         "pending": pending,
-        "permanent": [],
-        "message": (
-            "SIMULATED — no real car connected. "
-            + (
-                "No fault codes (they were 'cleared')."
-                if cleared
-                else f"{n} stored fault code(s), MIL (engine light) ON."
-            )
-        ),
+        "permanent": permanent,
+        "readiness": monitors,
+        "sinceClear": since_clear,
+        "clearCheck": assessment,
+        "message": message,
         "timestamp": _now(),
     }
 

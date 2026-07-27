@@ -46,6 +46,7 @@
         <div class="panel-actions">
           <button id="add-adapter-btn" class="btn btn-secondary btn-small" type="button">Add adapter…</button>
           <button id="pair-btn" class="btn btn-secondary btn-small" type="button">Pair phone…</button>
+          <a id="live-data-link" class="btn btn-primary btn-small" href="/live.html">Live data</a>
         </div>
       </div>
       <label class="toggle-field" for="simulate-toggle">
@@ -161,6 +162,7 @@
         <h2 id="brand-title">Manufacturer</h2>
         <div class="panel-actions" id="brand-actions">
           <button id="brand-scan-btn" class="btn btn-primary" type="button">Scan all modules</button>
+          <button id="brand-clear-all-btn" class="btn btn-danger" type="button">Clear ALL modules</button>
         </div>
       </div>
 
@@ -175,6 +177,7 @@
 
       <div id="brand-result" hidden>
         <div id="brand-chips" class="obd-chips"></div>
+        <p id="brand-clear-note" class="status-message clear-note" hidden></p>
         <p id="brand-message" class="status-message"></p>
         <div id="brand-modules" class="module-rows"></div>
       </div>

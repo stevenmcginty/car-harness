@@ -234,9 +234,12 @@ fun VehicleIdentityCard(vehicle: VehicleIdentity?, identifying: Boolean) {
         val vin = vehicle?.vin
         when {
             vin != null -> {
-                if (vehicle.make != null) {
+                // Captured locally: these properties live in the :core module
+                // now, and Kotlin won't smart-cast across a module boundary.
+                val make = vehicle.make
+                if (make != null) {
                     Text(
-                        vehicle.make,
+                        make,
                         color = TextMain, fontFamily = Barlow,
                         fontSize = 26.sp, fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.6).sp,

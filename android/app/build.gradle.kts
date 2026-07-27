@@ -10,10 +10,14 @@ android {
 
     defaultConfig {
         applicationId = "com.carharness.app"
-        minSdk = 26
+        // Android 5.0. The floor for Jetpack Compose, and low enough for the
+        // Autel MaxiPRO MP808 workshop tablet. Nothing in this app needs 26:
+        // the only two API-gated calls (canRequestPackageInstalls, the S
+        // Bluetooth permissions) are already behind SDK_INT checks.
+        minSdk = 21
         targetSdk = 35
-        versionCode = 19
-        versionName = "2.8"
+        versionCode = 20
+        versionName = "2.9"
     }
 
     buildTypes {
@@ -34,6 +38,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":core"))
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")

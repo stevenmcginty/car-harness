@@ -223,10 +223,13 @@ private fun HomeHeader(state: AppState, onOpenDesktop: () -> Unit) {
 @Composable
 private fun VehicleHero(state: AppState) {
     val v = state.vehicle
-    SectionCard(accent = v?.vin != null) {
+    // Captured locally: `vin` lives in the :core module now, and Kotlin won't
+    // smart-cast a property across a module boundary.
+    val vin = v?.vin
+    SectionCard(accent = vin != null) {
         PanelTitle("Vehicle")
         when {
-            v?.vin != null -> {
+            v != null && vin != null -> {
                 Text(
                     v.make ?: "Unknown make",
                     color = TextMain, fontFamily = Barlow,
@@ -247,7 +250,7 @@ private fun VehicleHero(state: AppState) {
                 }
                 HairlineDivider()
                 Text(
-                    v.vin, color = TextMain, fontFamily = Mono,
+                    vin, color = TextMain, fontFamily = Mono,
                     fontSize = 16.sp, fontWeight = FontWeight.Medium,
                     letterSpacing = 1.2.sp,
                 )

@@ -121,8 +121,15 @@ def decode_dtc(b0: int, b1: int, b2: int) -> dict:
     return {"code": code, "hex": f"{b0:02X}{b1:02X}{b2:02X}", "failureType": f"{b2:02X}"}
 
 
-def status_flags(status: int) -> List[str]:
-    return [name for bit, name in STATUS_BITS if status & bit]
+def status_flags(status: int, availability: int = 0xFF) -> List[str]:
+    """Human-readable status bits, limited to the ones the ECU says it supports.
+
+    The 0x19 reply carries a DTCStatusAvailabilityMask saying which of the eight
+    bits this ECU actually implements. Bits outside it are undefined, not zero,
+    so reporting them either way would be inventing information. Default 0xFF
+    keeps every existing caller behaving as before.
+    """
+    return [name for bit, name in STATUS_BITS if status & bit & availability]
 
 
 def read_dtcs(client, dst: int, timeout: float = 3.0) -> List[dict]:
@@ -143,6 +150,10 @@ def read_dtcs(client, dst: int, timeout: float = 3.0) -> List[dict]:
         raise last_error
 
     # Reply: 0x59 0x02 <availabilityMask> then 4-byte records [dtc x3][status].
+    # The availability mask tells us which status bits this ECU implements at
+    # all; anything outside it is undefined and must not be rendered as though
+    # it meant something.
+    availability = payload[2] if len(payload) >= 3 else 0xFF
     records = payload[3:]
     dtcs = []
     for i in range(0, len(records) - 3, 4):
@@ -151,9 +162,38 @@ def read_dtcs(client, dst: int, timeout: float = 3.0) -> List[dict]:
             continue
         entry = decode_dtc(b0, b1, b2)
         entry["status"] = f"{status:02X}"
-        entry["flags"] = status_flags(status)
+        entry["statusAvailability"] = f"{availability:02X}"
+        entry["flags"] = status_flags(status, availability)
+        entry["state"] = fault_state(status, availability)
         dtcs.append(entry)
     return dtcs
+
+
+# Which bits, in priority order, decide the one thing a dealer needs to know:
+# is this fault happening now, or is it history?
+def fault_state(status: int, availability: int = 0xFF) -> dict:
+    """Collapse eight status bits into one plain-English state.
+
+    The bit meanings are ISO 14229; the collapse is our judgement, made so a
+    dealer can tell "failing right now" from "stored years ago" at a glance
+    instead of reading a row of flag names.
+    """
+    live = status & availability
+    if live & 0x80:
+        return {"label": "lamp on", "detail": "The warning light is on because of this fault.", "severity": "active"}
+    if live & 0x01:
+        return {"label": "active now", "detail": "Failing at the last time the test ran.", "severity": "active"}
+    if live & 0x02:
+        return {"label": "failed this drive", "detail": "Present since the ignition was switched on, but not at this instant -- typically intermittent.", "severity": "recent"}
+    if live & 0x04 and not live & 0x08:
+        return {"label": "pending", "detail": "Seen once or twice and not yet confirmed.", "severity": "recent"}
+    if live & 0x10:
+        return {"label": "not re-tested since clear", "detail": "The self-test has not run since the fault memory was cleared.", "severity": "unproven"}
+    if live & 0x08:
+        return {"label": "historic", "detail": "Stored in fault memory, not present this cycle. May be old.", "severity": "historic"}
+    if live & 0x20:
+        return {"label": "failed since clear", "detail": "Has failed at least once since the memory was wiped, but not today.", "severity": "historic"}
+    return {"label": "stored", "detail": "Recorded by the module.", "severity": "historic"}
 
 
 def clear_dtcs(client, dst: int, timeout: float = 5.0) -> None:

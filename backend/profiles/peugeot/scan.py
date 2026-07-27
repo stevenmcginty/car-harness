@@ -32,6 +32,15 @@ from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.psa_uds_elm327 import PsaElm327UdsClient
+from backend.obd.psa_j2534 import PsaJ2534UdsClient
+
+
+def _make_j2534_link(config: Optional[dict]):
+    """Build (not open) a J2534 link from a saved j2534 adapter's config. Split
+    out so the self-test can substitute a simulated device."""
+    from backend.obd.j2534_link import J2534Link
+
+    return J2534Link(str((config or {}).get("dll") or "").strip())
 
 # Curated PSA diagnostic address table for the modules a dealer actually cares
 # about on a pre-sale check. Each row is (request_id, response_id, code, name,
@@ -262,13 +271,193 @@ def _read_dtcs(client: PsaElm327UdsClient, req_id: int, trace: List[str]) -> Lis
         return _read_dtcs_kwp(client, req_id, trace)
 
 
+def _walk_and_report(client, obd_vin, adapter_name, protocol_label,
+                     dongle_pins_hint, session=None, transport_note="") -> dict:
+    """Walk PEUGEOT_ECU_TABLE with ``client`` and assemble the scan report.
+
+    Shared by the dongle (ELM327) and pass-thru-cable (J2534) paths -- the walk,
+    ident/DTC ladders, VIN cross-check and clear are all transport-agnostic. The
+    only difference is the two flags: ``dongle_pins_hint`` adds the pins-3/8
+    explainer when body modules are silent on a plain dongle, and ``session`` (an
+    ELM327 session, or None on J2534) enables the engine's generic Mode 03
+    fallback.
+    """
+    client.begin()
+    modules: List[dict] = []
+    try:
+        for req_id, resp_id, code, name, desc in PEUGEOT_ECU_TABLE:
+            trace: List[str] = []
+            mod = {
+                "address": f"0x{req_id:03X}", "response": f"0x{resp_id:03X}",
+                "code": code, "name": name, "description": desc,
+                "present": False, "ident": [], "dtcs": [], "error": None,
+                "trace": trace,
+            }
+            target = req_id
+            via_standard_obd = False
+            present = _probe(client, req_id, trace)
+            if not present and req_id == ENGINE:
+                # Mode 01 PID 00 on the standard OBD slot: the one request
+                # an emissions ECU must answer with the ignition on.
+                try:
+                    reply = client.request(OBD_ENGINE, bytes([0x01, 0x00]), timeout=2.0)
+                    present = bool(reply)
+                except (ObdError, TransportError):
+                    present = False
+                if present:
+                    target = OBD_ENGINE
+                    via_standard_obd = True
+                    trace.append("answered on standard OBD 7E0")
+            if not present:
+                modules.append(mod)
+                continue
+            mod["present"] = True
+            try:
+                mod["ident"] = _read_ident(client, target, trace)
+                mod["dtcs"] = _read_dtcs(client, target, trace)
+            except uds.UdsNegativeResponse as exc:
+                mod["error"] = str(exc)
+            except (ObdError, TransportError) as exc:
+                if via_standard_obd and session is not None:
+                    # Engine on the plain OBD channel may not speak UDS
+                    # fault services -- generic Mode 03 codes still do.
+                    try:
+                        from backend.obd import dtc as obd_dtc
+                        codes = obd_dtc.read_codes(session, 0x03)
+                        mod["dtcs"] = [
+                            {"code": c, "hex": "", "failureType": "",
+                             "status": "", "flags": ["confirmed"]}
+                            for c in codes
+                        ]
+                        trace.append("fell back to OBD Mode 03")
+                    except Exception:
+                        mod["error"] = str(exc)
+                else:
+                    mod["error"] = str(exc)
+            modules.append(mod)
+    finally:
+        client.restore()
+
+    present = [m for m in modules if m["present"]]
+    faults = sum(len(m["dtcs"]) for m in present)
+
+    # Dealer check: every module that knows its VIN should agree. A module
+    # reporting a different VIN was swapped in from another car (crash
+    # repair, or the cluster/BSI dance used to disguise mileage).
+    vins = [(m["code"], item["value"][:17]) for m in modules
+            for item in m["ident"]
+            if item["label"] == "VIN" and len(item["value"]) >= 11]
+    vin_warning = ""
+    if len({v for _, v in vins}) > 1:
+        vin_warning = (
+            " WARNING - VIN MISMATCH: "
+            + ", ".join(f"{code}={v}" for code, v in vins)
+            + " -- a control unit from another car is fitted (crash repair or "
+            "clocking risk)."
+        )
+    vin = (vins[0][1] if vins else None) or obd_vin
+
+    # Body modules silent while only powertrain-bus modules answered = the
+    # dongle is on the engine bus (OBD pins 6/14) and this car keeps its
+    # body diagnostics on pins 3/8. That's wiring, not car trouble. Over a
+    # PSA pass-thru cable we're already on the 3/8 bus, so the hint is off.
+    bus_note = ""
+    absent_hint = None
+    if dongle_pins_hint:
+        engine_reachable = {f"0x{i:03X}" for i in ENGINE_BUS}
+        body_silent = bool(present) and all(
+            m["address"] in engine_reachable for m in present
+        ) and any(m["address"] == "0x752" and not m["present"] for m in modules)
+        if body_silent:
+            bus_note = (
+                " The body modules (BSI, airbag, cluster, radio...) aren't missing -- "
+                "on Peugeot/Citroen they sit on a separate diagnostic CAN wired to "
+                "OBD pins 3 & 8, which a standard dongle can't reach. A cheap 'PSA "
+                "pin 3/8' adapter between dongle and socket brings them all in."
+            )
+            absent_hint = (
+                "On the pins-3/8 diagnostic CAN -- reachable with a PSA pin-swap "
+                "adapter, not over a standard dongle. Not a fault."
+            )
+
+    return {
+        "ok": True, "simulated": False,
+        "vehicle": {"vin": vin, "protocol": protocol_label, "adapter": adapter_name},
+        "modules": modules,
+        "absentHint": absent_hint,
+        "message": (
+            (f"VIN {vin}. " if vin else "")
+            + f"{len(present)} module(s) answered, {faults} fault"
+            f"{'s' if faults != 1 else ''} stored.{vin_warning}{bus_note}{transport_note} "
+            "Read-only scan -- nothing was changed on the car."
+        ),
+        "timestamp": _now(),
+    }
+
+
+def _j2534_read_vin(link) -> Optional[str]:
+    """Best-effort VIN over J2534, before the module walk: engine Mode 09 first
+    (any ~2001+ car), then BSI 22 F190. Returns None if the car stays quiet."""
+    for tx, rx, req in ((OBD_ENGINE, OBD_ENGINE + 8, bytes([0x09, 0x02])),
+                        (0x752, 0x652, bytes([0x22, 0xF1, 0x90]))):
+        try:
+            reply = link.uds_request(tx, rx, req, timeout=3.0)
+        except (ObdError, TransportError):
+            continue
+        if not reply:
+            continue
+        if reply[0] == 0x49 and len(reply) > 3:        # Mode 09 positive: 49 02 <cnt> ...
+            body = reply[3:]
+        elif reply[0] == 0x62 and len(reply) > 3:      # ReadDataByIdentifier: 62 F1 90 ...
+            body = reply[3:]
+        else:
+            continue
+        text = "".join(chr(b) for b in body if 32 < b < 127).strip("\x00 ")
+        if len(text) >= 11:
+            return text[:17]
+    return None
+
+
+def _scan_over_j2534(adapter: Optional[dict], mode: str) -> dict:
+    """Module walk over a J2534 pass-thru cable (e.g. a PSA DiagBox/Lexia cable
+    wired to the pins-3/8 diagnostic CAN, so body modules answer too)."""
+    link = _make_j2534_link((adapter or {}).get("config"))
+    try:
+        try:
+            link.open()
+        except (TransportError, ObdError) as exc:
+            return {
+                "ok": False, "simulated": False, "vehicle": None, "modules": [],
+                "message": str(exc), "timestamp": _now(),
+            }
+        obd_vin = _j2534_read_vin(link)
+        client = PsaJ2534UdsClient(link, PEUGEOT_ID_MAP)
+        return _walk_and_report(
+            client, obd_vin, (adapter or {}).get("name"),
+            "ISO 15765-4 (CAN 11/500) via J2534 cable",
+            dongle_pins_hint=False, session=None,
+            transport_note=" Connected through the PSA pass-thru cable on the "
+                           "pins-3/8 diagnostic bus.",
+        )
+    finally:
+        try:
+            link.close()
+        except Exception:
+            pass
+
+
 def scan(adapter: Optional[dict], mode: str = "real") -> dict:
     """Walk the Peugeot's reachable modules and read each one's fault memory.
 
-    ``adapter`` is a saved ELM327 adapter-instance dict (None for sim). Read-only.
+    ``adapter`` is a saved adapter-instance dict (None for sim). A J2534 adapter
+    drives the pass-thru-cable path; any ELM327 adapter drives the dongle path.
+    Read-only.
     """
     if mode == "sim":
         return _simulated_scan()
+
+    if adapter and adapter.get("typeId") == "j2534":
+        return _scan_over_j2534(adapter, mode)
 
     def run(session, entry):
         session.ensure_protocol()  # ObdError('link') here -> caught below as "ignition?"
@@ -290,118 +479,12 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
         # The car's identity first, while the receive filter is still open:
         # Mode 09 VIN works on any ~2001+ car no matter what PSA does next.
         obd_vin = obd_service._read_vin(session)
-
         client = PsaElm327UdsClient(session, PEUGEOT_ID_MAP)
-        client.begin()
-        modules: List[dict] = []
-        try:
-            for req_id, resp_id, code, name, desc in PEUGEOT_ECU_TABLE:
-                trace: List[str] = []
-                mod = {
-                    "address": f"0x{req_id:03X}", "response": f"0x{resp_id:03X}",
-                    "code": code, "name": name, "description": desc,
-                    "present": False, "ident": [], "dtcs": [], "error": None,
-                    "trace": trace,
-                }
-                target = req_id
-                via_standard_obd = False
-                present = _probe(client, req_id, trace)
-                if not present and req_id == ENGINE:
-                    # Mode 01 PID 00 on the standard OBD slot: the one request
-                    # an emissions ECU must answer with the ignition on.
-                    try:
-                        reply = client.request(OBD_ENGINE, bytes([0x01, 0x00]), timeout=2.0)
-                        present = bool(reply)
-                    except (ObdError, TransportError):
-                        present = False
-                    if present:
-                        target = OBD_ENGINE
-                        via_standard_obd = True
-                        trace.append("answered on standard OBD 7E0")
-                if not present:
-                    modules.append(mod)
-                    continue
-                mod["present"] = True
-                try:
-                    mod["ident"] = _read_ident(client, target, trace)
-                    mod["dtcs"] = _read_dtcs(client, target, trace)
-                except uds.UdsNegativeResponse as exc:
-                    mod["error"] = str(exc)
-                except (ObdError, TransportError) as exc:
-                    if via_standard_obd:
-                        # Engine on the plain OBD channel may not speak UDS
-                        # fault services -- generic Mode 03 codes still do.
-                        try:
-                            from backend.obd import dtc as obd_dtc
-                            codes = obd_dtc.read_codes(session, 0x03)
-                            mod["dtcs"] = [
-                                {"code": c, "hex": "", "failureType": "",
-                                 "status": "", "flags": ["confirmed"]}
-                                for c in codes
-                            ]
-                            trace.append("fell back to OBD Mode 03")
-                        except Exception:
-                            mod["error"] = str(exc)
-                    else:
-                        mod["error"] = str(exc)
-                modules.append(mod)
-        finally:
-            client.restore()
-
-        present = [m for m in modules if m["present"]]
-        faults = sum(len(m["dtcs"]) for m in present)
-
-        # Dealer check: every module that knows its VIN should agree. A module
-        # reporting a different VIN was swapped in from another car (crash
-        # repair, or the cluster/BSI dance used to disguise mileage).
-        vins = [(m["code"], item["value"][:17]) for m in modules
-                for item in m["ident"]
-                if item["label"] == "VIN" and len(item["value"]) >= 11]
-        vin_warning = ""
-        if len({v for _, v in vins}) > 1:
-            vin_warning = (
-                " WARNING - VIN MISMATCH: "
-                + ", ".join(f"{code}={v}" for code, v in vins)
-                + " -- a control unit from another car is fitted (crash repair or "
-                "clocking risk)."
-            )
-        vin = (vins[0][1] if vins else None) or obd_vin
-
-        # Body modules silent while only powertrain-bus modules answered = the
-        # dongle is on the engine bus (OBD pins 6/14) and this car keeps its
-        # body diagnostics on pins 3/8. That's wiring, not car trouble.
-        engine_reachable = {f"0x{i:03X}" for i in ENGINE_BUS}
-        body_silent = bool(present) and all(
-            m["address"] in engine_reachable for m in present
-        ) and any(m["address"] == "0x752" and not m["present"] for m in modules)
-        bus_note = ""
-        absent_hint = None
-        if body_silent:
-            bus_note = (
-                " The body modules (BSI, airbag, cluster, radio...) aren't missing -- "
-                "on Peugeot/Citroen they sit on a separate diagnostic CAN wired to "
-                "OBD pins 3 & 8, which a standard dongle can't reach. A cheap 'PSA "
-                "pin 3/8' adapter between dongle and socket brings them all in."
-            )
-            absent_hint = (
-                "On the pins-3/8 diagnostic CAN -- reachable with a PSA pin-swap "
-                "adapter, not over a standard dongle. Not a fault."
-            )
-
-        return {
-            "ok": True, "simulated": False,
-            "vehicle": {"vin": vin, "protocol": session.protocol or "ISO 15765-4 (CAN 11/500)",
-                        "adapter": (adapter or {}).get("name")},
-            "modules": modules,
-            "absentHint": absent_hint,
-            "message": (
-                (f"VIN {vin}. " if vin else "")
-                + f"{len(present)} module(s) answered, {faults} fault"
-                f"{'s' if faults != 1 else ''} stored.{vin_warning}{bus_note} "
-                "Read-only scan -- nothing was changed on the car."
-            ),
-            "timestamp": _now(),
-        }
+        return _walk_and_report(
+            client, obd_vin, (adapter or {}).get("name"),
+            session.protocol or "ISO 15765-4 (CAN 11/500)",
+            dongle_pins_hint=True, session=session,
+        )
 
     try:
         return obd_service._with_session(adapter, run)
@@ -410,6 +493,65 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
             "ok": False, "simulated": False, "vehicle": None, "modules": [],
             "message": str(exc), "timestamp": _now(),
         }
+
+
+def _clear_with_client(client, wanted: Optional[int]) -> dict:
+    """Clear one module (or every present module) with ``client``. Shared by the
+    dongle and pass-thru-cable paths."""
+    client.begin()
+    cleared, errors = [], []
+    try:
+        if wanted is not None:
+            targets = [wanted]
+        else:
+            targets = [rid for rid, _, _, _, _ in PEUGEOT_ECU_TABLE
+                       if _probe(client, rid, [])]
+        for rid in targets:
+            # Ladder matches the read side: UDS clear, then the KWP clear
+            # PSA's own tooling sends (14 FF 00) after opening the session.
+            try:
+                uds.clear_dtcs(client, rid)
+                cleared.append(f"0x{rid:03X}")
+            except Exception as exc:
+                try:
+                    client.open_session(rid)
+                    reply = client.request(rid, bytes([0x14, 0xFF, 0x00]), timeout=5.0)
+                    if reply and reply[0] == 0x54:
+                        cleared.append(f"0x{rid:03X}")
+                    else:
+                        errors.append(f"0x{rid:03X}: {exc}")
+                except Exception:
+                    errors.append(f"0x{rid:03X}: {exc}")
+    finally:
+        client.restore()
+
+    ok = bool(cleared) and not errors
+    message = f"Cleared fault memory on {', '.join(cleared) or 'no modules'}."
+    if errors:
+        message += " Failed: " + "; ".join(errors)
+    return {
+        "ok": ok, "simulated": False, "cleared": cleared,
+        "message": message, "timestamp": _now(),
+    }
+
+
+def _clear_over_j2534(adapter: Optional[dict], wanted: Optional[int]) -> dict:
+    link = _make_j2534_link((adapter or {}).get("config"))
+    try:
+        try:
+            link.open()
+        except (TransportError, ObdError) as exc:
+            return {
+                "ok": False, "simulated": False, "cleared": [],
+                "message": str(exc), "timestamp": _now(),
+            }
+        client = PsaJ2534UdsClient(link, PEUGEOT_ID_MAP)
+        return _clear_with_client(client, wanted)
+    finally:
+        try:
+            link.close()
+        except Exception:
+            pass
 
 
 def clear(adapter: Optional[dict], mode: str = "real", address: Optional[str] = None) -> dict:
@@ -432,6 +574,9 @@ def clear(adapter: Optional[dict], mode: str = "real", address: Optional[str] = 
                 "timestamp": _now(),
             }
 
+    if adapter and adapter.get("typeId") == "j2534":
+        return _clear_over_j2534(adapter, wanted)
+
     def run(session, entry):
         session.ensure_protocol()
         if session.protocol_num not in (6, None):
@@ -445,41 +590,7 @@ def clear(adapter: Optional[dict], mode: str = "real", address: Optional[str] = 
             }
 
         client = PsaElm327UdsClient(session, PEUGEOT_ID_MAP)
-        client.begin()
-        cleared, errors = [], []
-        try:
-            if wanted is not None:
-                targets = [wanted]
-            else:
-                targets = [rid for rid, _, _, _, _ in PEUGEOT_ECU_TABLE
-                           if _probe(client, rid, [])]
-            for rid in targets:
-                # Ladder matches the read side: UDS clear, then the KWP clear
-                # PSA's own tooling sends (14 FF 00) after opening the session.
-                try:
-                    uds.clear_dtcs(client, rid)
-                    cleared.append(f"0x{rid:03X}")
-                except Exception as exc:
-                    try:
-                        client.open_session(rid)
-                        reply = client.request(rid, bytes([0x14, 0xFF, 0x00]), timeout=5.0)
-                        if reply and reply[0] == 0x54:
-                            cleared.append(f"0x{rid:03X}")
-                        else:
-                            errors.append(f"0x{rid:03X}: {exc}")
-                    except Exception:
-                        errors.append(f"0x{rid:03X}: {exc}")
-        finally:
-            client.restore()
-
-        ok = bool(cleared) and not errors
-        message = f"Cleared fault memory on {', '.join(cleared) or 'no modules'}."
-        if errors:
-            message += " Failed: " + "; ".join(errors)
-        return {
-            "ok": ok, "simulated": False, "cleared": cleared,
-            "message": message, "timestamp": _now(),
-        }
+        return _clear_with_client(client, wanted)
 
     try:
         return obd_service._with_session(adapter, run)

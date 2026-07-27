@@ -65,32 +65,12 @@ class PsaElm327UdsClient(Elm327UdsClient):
         self._target = req_id
 
     def open_session(self, req_id: int, trace=None, timeout: float = 1.5) -> bool:
-        """Open a diagnostic session, PSA style: 10 03 (UDS extended), then
-        10 C0 (the PSA session Diagbox-era ECUs actually want), then the bare
-        KWP StartCommunication (81). Read-safe: session state lapses on its own
-        after a few seconds of silence and writes nothing to the car.
-        """
-        if req_id in self._session_open:
-            return True
-        for data, positive, label in (
-            (bytes([0x10, 0x03]), 0x50, "session 10 03"),
-            (bytes([0x10, 0xC0]), 0x50, "PSA session 10 C0"),
-            (bytes([0x81]), 0xC1, "KWP start 81"),
-        ):
-            try:
-                reply = self.request(req_id, data, timeout=timeout)
-            except ObdError:
-                if trace is not None:
-                    trace.append(f"{label} -> no answer")
-                continue
-            if reply and reply[0] == positive:
-                if trace is not None:
-                    trace.append(f"{label} -> OK")
-                self._session_open.add(req_id)
-                return True
-            if trace is not None and reply and reply[0] == 0x7F and len(reply) >= 3:
-                trace.append(f"{label} -> NRC {reply[2]:02X}")
-        return False
+        """Open a diagnostic session, PSA style, via the shared session ladder
+        (10 03 -> 10 C0 -> 81). Read-safe: session state lapses on its own after
+        a few seconds of silence and writes nothing to the car."""
+        from backend.obd.psa_session import open_psa_session
+
+        return open_psa_session(self, req_id, trace, timeout)
 
     def mark_session_open(self, req_id: int):
         """Record that a probe already opened this module's session."""

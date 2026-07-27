@@ -39,6 +39,7 @@ from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import brands, interfaces, pairing, registry  # noqa: E402
 from backend.core import vin as vin_decode  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
+from backend.obd import freeze, livefeed  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
@@ -360,6 +361,67 @@ def obd_pids(adapter: str | None = None, mode: str = "real") -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Live data -- the one place every car's readable values come from, standard
+# OBD-II and manufacturer extras merged into a single set of channels. See
+# backend/obd/livefeed.py for the contract a new manufacturer has to meet.
+# --------------------------------------------------------------------------- #
+def _live_brand_or_400(brand: str | None) -> str | None:
+    """An optional brand overlay. Unknown brand is a 404 like everywhere else;
+    a brand with no pids.py is simply no overlay, which is not an error."""
+    if not brand:
+        return None
+    if brands.profile_meta(brand) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown manufacturer '{brand}'.")
+    return brand
+
+
+@app.get("/api/live/catalog")
+def live_catalog(
+    adapter: str | None = None, mode: str = "real", brand: str | None = None
+) -> dict:
+    """Ask the car what it can actually give. Slow (it reads support bitmaps
+    and does one manufacturer pass), so the front end calls it once and then
+    streams through /api/live/read."""
+    instance = _obd_adapter_or_400(adapter, mode)
+    try:
+        return livefeed.catalog(instance, mode, _live_brand_or_400(brand))
+    except obd_service.ObdServiceError as exc:
+        return {
+            "ok": False, "simulated": False, "channels": [], "groups": [],
+            "message": str(exc),
+        }
+
+
+@app.get("/api/live/read")
+def live_read(
+    adapter: str | None = None,
+    mode: str = "real",
+    keys: str | None = None,
+    brand: str | None = None,
+) -> dict:
+    """Read the selected channels once. This is the call the dashboard polls."""
+    instance = _obd_adapter_or_400(adapter, mode)
+    wanted = [k.strip() for k in (keys or "").split(",") if k.strip()]
+    try:
+        return livefeed.read(instance, mode, wanted, _live_brand_or_400(brand))
+    except obd_service.ObdServiceError as exc:
+        return {"ok": False, "simulated": False, "readings": [], "message": str(exc)}
+
+
+@app.get("/api/obd/freeze")
+def obd_freeze(adapter: str | None = None, mode: str = "real", frame: int = 0) -> dict:
+    """The live data as it was at the moment a fault stored (mode 02)."""
+    instance = _obd_adapter_or_400(adapter, mode)
+    try:
+        return freeze.read(instance, mode, frame)
+    except obd_service.ObdServiceError as exc:
+        return {
+            "ok": False, "simulated": False, "readings": [], "groups": [],
+            "trigger": None, "message": str(exc),
+        }
+
+
+# --------------------------------------------------------------------------- #
 # Phone pairing.
 # --------------------------------------------------------------------------- #
 @app.post("/api/pair/start")
@@ -562,6 +624,53 @@ async def run_reset(brand: str, request: Request) -> dict:
     return await run_in_threadpool(
         module.perform, adapter, mode, reset_id, bool(body.get("confirm"))
     )
+
+
+@app.get("/api/{brand}/service-history")
+def get_service_history(brand: str) -> dict:
+    """The service-history catalogue: items, statuses, head units, limits.
+
+    No car needed -- this is the data a dealer fills a form in with.
+    """
+    module = _brand_capability_or_404(brand, "service_history")
+    return module.catalogue()
+
+
+@app.post("/api/{brand}/service-history/build")
+async def build_service_history(brand: str, request: Request) -> dict:
+    """Build the diagnostic-job argument for one service record.
+
+    Builds text only. It never touches the car -- the write is a Tool32 job,
+    see backend/profiles/bmw/service_history.py for why.
+    """
+    module = _brand_capability_or_404(brand, "service_history")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"day":.., "month":.., "year":.., "odometer":.., '
+                   '"units":"mi"|"km", "dealer_name":"RADLETT", "items":[...]}.',
+        )
+    body = body or {}
+    try:
+        return module.build_argument(
+            day=body.get("day"),
+            month=body.get("month"),
+            year=body.get("year"),
+            odometer=body.get("odometer", 0),
+            units=body.get("units", "km"),
+            dealer_name=body.get("dealer_name", ""),
+            bmw_dealer=bool(body.get("bmw_dealer")),
+            status=int(body.get("status", 1)),
+            items=body.get("items") or [],
+            correction_counter=int(body.get("correction_counter", 0)),
+            pad=body.get("pad", True),
+        )
+    except module.ServiceHistoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Bad service record: {exc}")
 
 
 # --------------------------------------------------------------------------- #

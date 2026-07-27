@@ -174,6 +174,9 @@ Base URL: `http://127.0.0.1:8765`
 | POST | `/api/obd/clear` | Clear codes -- JSON `{"adapter", "mode", "confirm": true}` |
 | GET | `/api/obd/live?adapter=<id>&pids=rpm,speed` | Live data readings (default dashboard set if `pids` omitted) |
 | GET | `/api/obd/pids?adapter=<id>` | Which live-data keys the car supports |
+| GET | `/api/live/catalog?adapter=<id>&brand=<id>` | **Every value this car will give** -- standard OBD-II (asked of the car itself) plus the manufacturer overlay |
+| GET | `/api/live/read?adapter=<id>&keys=obd.rpm,obd.coolant` | Read the selected channels once; this is what the dashboard polls |
+| GET | `/api/obd/freeze?adapter=<id>` | Freeze frame -- the live data as it was when a fault stored (mode 02) |
 | GET | `/api/{brand}/scan` | Walk the brand's modules, read each one's fault memory (generic: any profile folder) |
 | POST | `/api/{brand}/clear` | Clear one module (or all) -- confirm-gated |
 | GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check, VW/Audi extras) |
@@ -193,6 +196,36 @@ built the same way -- from the profile's own `panel` metadata -- so adding a
 manufacturer is a folder drop-in, with no route or UI code to write. The
 Android app mirrors this with a single brand registry
 (`android/.../obd/Brands.kt`).
+
+### Live data, and what a new manufacturer inherits
+
+`/live.html` is the live-data dashboard: it asks the car what it supports,
+merges the manufacturer overlay on top, and streams the values you pick, with
+sparklines, min/max hold and CSV export. Two layers feed it:
+
+1. **Standard OBD-II (mode 01)** -- `backend/obd/pids.py`, ~120 readings across
+   92 PIDs, the full J1979 set. This works on **every** car the dongle can talk
+   to, so every manufacturer has live data whether or not anyone has researched
+   it. The car's own support bitmap decides what is listed; nothing is assumed
+   from the badge.
+2. **Manufacturer extras** -- `backend/profiles/<brand>/pids.py`.
+
+**A new brand gets live data for free.** Ship a `pids.py` with
+
+```python
+def live(adapter, mode) -> {"ok": bool, "readings": [{"name", "value", "unit"}], "message": str}
+```
+
+and it appears in the dashboard automatically -- no edits to the engine, the
+routes or the front end. All eight current brands meet this. A brand may also
+implement the faster optional interface (`CHANNELS` + `read_channels`), which
+lets the dashboard read only the values on screen instead of the module's whole
+DID table; over Bluetooth that is the difference between a one-second gauge and
+a thirty-second one. See the contract in `backend/obd/livefeed.py`.
+
+A brand with no `pids.py` is not hidden -- the dashboard says so in as many
+words, so it is clear whether a missing value is a limit of the car or a gap in
+our data.
 
 ## Layout
 

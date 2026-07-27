@@ -547,6 +547,18 @@ select:disabled {
   line-height: 1.55;
 }
 
+/* What a clear actually did — kept above the scan message so the re-scan that
+   proves it can't overwrite the record. */
+.clear-note {
+  margin: 0 0 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--panel-hi);
+  color: var(--text);
+}
+
 /* ---------- Ladder ---------- */
 
 .ladder {
@@ -1669,4 +1681,26 @@ select:disabled {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* VIN says one make, the manufacturer dropdown says another. The ENET cable
+   reaches several brands on the same pins, so this is a real and easy mistake
+   to make -- it needs to be loud enough to notice mid-job. */
+.make-mismatch {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--amber, #ff8a2b);
+  background: rgba(255, 138, 43, 0.09);
+  color: var(--text, #e8e6e1);
+  font-size: 13px;
+  line-height: 1.45;
+  border-radius: 4px;
+}
+
+/* An anchor wearing .btn needs the box behaviour a <button> gets for free. */
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
