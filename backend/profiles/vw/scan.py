@@ -30,7 +30,7 @@ import re
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from backend.core import uds
+from backend.core import dtc_scheme, uds
 from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
@@ -206,6 +206,9 @@ def _read_dtcs_uds(client: Elm327UdsClient, req_id: int, trace: List[str]) -> Li
         if b0 == b1 == b2 == 0:
             continue
         entry = uds.decode_dtc(b0, b1, b2)
+        # VAG-family numbering: the generic SAE meanings do not
+        # apply, so no plain-English label is claimed for it.
+        dtc_scheme.mark(entry, "vw")
         entry["status"] = f"{status:02X}"
         entry["flags"] = uds.status_flags(status)
         dtcs.append(entry)

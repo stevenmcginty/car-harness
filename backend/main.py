@@ -31,12 +31,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from fastapi import FastAPI, HTTPException, Request  # noqa: E402
 from fastapi.concurrency import run_in_threadpool  # noqa: E402
-from fastapi.responses import JSONResponse  # noqa: E402
+from fastapi.responses import JSONResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import brands, interfaces, pairing, registry  # noqa: E402
+from backend.core import vin as vin_decode  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
 
@@ -66,6 +67,21 @@ def _shutdown():
 # non-localhost endpoint reachable without a token is the pairing claim itself.
 # --------------------------------------------------------------------------- #
 _LOCAL_CLIENTS = {"127.0.0.1", "::1", "testclient"}
+
+
+# --------------------------------------------------------------------------- #
+# Front-end files carry no cache headers of their own, so a browser is free to
+# invent a heuristic freshness window and serve yesterday's index.html without
+# even asking -- a shipped fix then looks like it never landed (this happened).
+# "no-cache" still lets the browser keep the file; it just has to revalidate,
+# which costs a 304. The service worker's offline cache is unaffected.
+# --------------------------------------------------------------------------- #
+@app.middleware("http")
+async def _no_stale_frontend(request: Request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
 
 
 @app.middleware("http")
@@ -109,11 +125,37 @@ def get_status(
         raise HTTPException(status_code=404, detail=f"Unknown or invalid profile '{profile}'.")
     # No adapter -> the exact v1 call (auto ENET/DoIP). Unchanged behaviour.
     if adapter is None:
-        return probe_module.status(mode)
+        return _tag_make(probe_module.status(mode), adapter_used=False)
     instance = adapter_registry.get_instance(adapter)
     if instance is None:
         raise HTTPException(status_code=404, detail=f"Unknown adapter '{adapter}'.")
-    return probe_module.status(mode, adapter=instance.model_dump())
+    return _tag_make(
+        probe_module.status(mode, adapter=instance.model_dump()), adapter_used=True
+    )
+
+
+def _tag_make(status: ConnectionStatus, adapter_used: bool) -> ConnectionStatus:
+    """Name the make from the VIN and suggest the profile that should drive it.
+
+    Done here, once, rather than in each profile: every profile's status goes
+    through this endpoint, and the mismatch it catches -- a car answering a
+    probe belonging to a different manufacturer -- is possible on any of them.
+    """
+    vin_value = getattr(getattr(status, "vehicle", None), "vin", None)
+    if not vin_value:
+        return status
+    status.detectedMake = vin_decode.make_from_vin(vin_value)
+    # A car found without a configured adapter came over the native cable, so a
+    # cable-only profile is a legitimate suggestion; otherwise it is not.
+    protocol = None if adapter_used else "DoIP"
+    try:
+        available = [p["id"] for p in registry.list_profiles() if p.get("id")]
+    except Exception:
+        available = None
+    suggestion = vin_decode.suggest(vin_value, protocol=protocol, available=available)
+    if suggestion and suggestion != status.profile:
+        status.suggestedProfile = suggestion
+    return status
 
 
 @app.get("/api/interfaces")
@@ -401,18 +443,65 @@ def brand_scan(brand: str, adapter: str | None = None, mode: str = "real") -> di
 
 @app.get("/api/{brand}/live")
 def brand_live(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
-    """Brand-specific live values (Mazda mode-22 extras, Peugeot health check)."""
+    """Brand-specific live values (Mazda mode-22 extras, Peugeot health check,
+    Porsche Taycan battery health). Native-cable brands find the car themselves,
+    the same way scan and clear already do."""
     module = _brand_capability_or_404(brand, "pids")
-    instance = _obd_adapter_or_400(adapter, mode)
-    return module.live(instance, mode)
+    if brands.needs_adapter(brand):
+        instance = _obd_adapter_or_400(adapter, mode)
+        return module.live(instance, mode)
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return module.live(mode)
+
+
+@app.get("/api/{brand}/report.pdf")
+async def brand_report(
+    brand: str,
+    mode: str = "real",
+    dealer: str = "",
+    customer: str = "",
+    mileage: str = "",
+):
+    """A printable, customer-facing PDF for brands that publish one.
+
+    The read is taken fresh inside the profile rather than reusing whatever is
+    on screen, so the document's timestamp belongs to a measurement that
+    actually happened. Read-only, like everything it reports on.
+    """
+    module = _brand_capability_or_404(brand, "pids")
+    if not hasattr(module, "report"):
+        raise HTTPException(
+            status_code=404, detail=f"'{brand}' does not publish a PDF report."
+        )
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    try:
+        filename, data = await run_in_threadpool(
+            module.report, mode, dealer, customer, mileage
+        )
+    except RuntimeError as exc:
+        # The car could not be read -- that is a 409, not a server fault, and the
+        # message is written to be shown to a human.
+        raise HTTPException(status_code=409, detail=str(exc))
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/{brand}/snapshot")
 def brand_snapshot(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
-    """Passive broadcast-CAN capture (ATMA sniff). Read-only."""
+    """Passive broadcast-CAN capture (ATMA sniff) on dongle brands; the profile's
+    second deep-read action on native-cable brands. Read-only either way."""
     module = _brand_capability_or_404(brand, "snapshot")
-    instance = _obd_adapter_or_400(adapter, mode)
-    return module.snapshot(instance, mode)
+    if brands.needs_adapter(brand):
+        instance = _obd_adapter_or_400(adapter, mode)
+        return module.snapshot(instance, mode)
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return module.snapshot(mode)
 
 
 @app.post("/api/{brand}/clear")

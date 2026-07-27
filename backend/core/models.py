@@ -38,6 +38,11 @@ class ConnectionStatus(BaseModel):
     vehicle: Optional[Vehicle] = None
     message: str
     timestamp: str
+    # Decoded from the VIN's WMI when the car identified itself. The ENET cable
+    # reaches several makes on the same pins, so "a car answered" does not mean
+    # "the selected manufacturer is right" -- these let the UI notice and fix it.
+    detectedMake: Optional[str] = None
+    suggestedProfile: Optional[str] = None
 
 
 class ModuleSummary(BaseModel):

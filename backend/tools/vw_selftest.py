@@ -262,7 +262,7 @@ def main() -> int:
     check("mask ladder tried 0xFF then 0x08 (never 0xAF)",
           car.masks.get(CLUSTER) == [0xFF, 0x08], str(car.masks.get(CLUSTER)))
     if cl_dtcs:
-        check("cluster DTC decodes B1404", cl_dtcs[0]["code"] == "B1404", cl_dtcs[0]["code"])
+        check("cluster DTC decodes B1404", cl_dtcs[0]["genericCode"] == "B1404", cl_dtcs[0])
         check("cluster DTC hex 940400", cl_dtcs[0]["hex"] == "940400", cl_dtcs[0]["hex"])
 
     # (d) session escalation: airbag NRCs 0x22 until a 10 03 extended session.
@@ -273,12 +273,20 @@ def main() -> int:
     check("trace records the 10 03 escalation",
           any("10 03" in line for line in air_trace), " | ".join(air_trace))
     if air_dtcs:
-        check("airbag DTC decodes B1004", air_dtcs[0]["code"] == "B1004", air_dtcs[0]["code"])
+        check("airbag DTC decodes B1004", air_dtcs[0]["genericCode"] == "B1004", air_dtcs[0])
 
     # ABS: a clean UDS C-code with no session needed.
     abs_dtcs = vw_scan._read_dtcs(client, ABS, [])
+    check("VAG DTCs do not claim a generic SAE meaning",
+          all(d.get("codeScheme") == "manufacturer" and d.get("code") != d.get("genericCode")
+              for d in cl_dtcs + air_dtcs),
+          [d.get("code") for d in cl_dtcs + air_dtcs])
+    check("the raw hex fault number is still reported",
+          all(d.get("hex") for d in cl_dtcs + air_dtcs),
+          [d.get("hex") for d in cl_dtcs + air_dtcs])
+
     check("ABS DTC decodes C1335",
-          len(abs_dtcs) == 1 and abs_dtcs[0]["code"] == "C1335",
+          len(abs_dtcs) == 1 and abs_dtcs[0]["genericCode"] == "C1335",
           str([d["code"] for d in abs_dtcs]))
 
     # (f) clear 14 FF FF FF.

@@ -10,6 +10,7 @@ light up its routes:
                     the native-cable forms scan(mode) / clear(mode, address)
                     and may expose discover()
     pids.py      live(adapter, mode)      brand-specific live values
+                 -- "enet-doip" profiles use live(mode), like scan/clear
     snapshot.py  snapshot(adapter, mode)  passive broadcast capture
     resets.py    list_resets(), perform(adapter, mode, reset_id, confirm)
 
@@ -71,6 +72,9 @@ def features(brand: str) -> dict:
         "clear": scan_mod is not None and hasattr(scan_mod, "clear"),
         "discover": scan_mod is not None and hasattr(scan_mod, "discover"),
         "live": pids_mod is not None and hasattr(pids_mod, "live"),
+        # A printable customer-facing PDF. Opt-in per brand: a profile only
+        # advertises one once it has something worth putting a name to.
+        "report": pids_mod is not None and hasattr(pids_mod, "report"),
         "snapshot": brand_module(brand, "snapshot") is not None,
         "resets": brand_module(brand, "resets") is not None,
         "needsAdapter": needs_adapter(brand),

@@ -11,6 +11,7 @@ The probe is identification-only; it cannot write to the car.
 from datetime import datetime, timezone
 
 from backend.adapters.enet_doip import EnetDoipAdapter
+from backend.core import vin as vin_decode
 from backend.core.models import ConnectionStatus, StepStatus, Vehicle
 
 
@@ -138,9 +139,26 @@ def _real() -> ConnectionStatus:
         doip_detail = (
             f"{probe.get('protocol') or 'ENET'} identification received from "
             f"{probe.get('raw_from_ip')}"
-            + (" (F-series)." if probe.get("protocol") == "HSFZ" else
-               " (G-series)." if probe.get("protocol") == "DoIP" else ".")
         )
+        # "F-series"/"G-series" are BMW model generations, so they may only be
+        # claimed once the VIN says this really is a BMW. The ENET cable reaches
+        # other makes on the same pins -- a Porsche Taycan answers this very
+        # broadcast -- and stamping a BMW generation on a Porsche VIN is how the
+        # connection card ended up confidently wrong about the car in front of it.
+        make = vin_decode.make_from_vin(probe.get("vin"))
+        if make in ("BMW", "MINI"):
+            doip_detail += (
+                " (F-series)." if probe.get("protocol") == "HSFZ"
+                else " (G-series)." if probe.get("protocol") == "DoIP"
+                else "."
+            )
+        elif make:
+            doip_detail += (
+                f". This is a {make}, not a BMW -- switch the manufacturer to "
+                "read it properly."
+            )
+        else:
+            doip_detail += "."
     else:
         doip_state = "fail"
         if not adapter_ok:

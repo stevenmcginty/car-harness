@@ -1,0 +1,28 @@
+{
+  "id": "porsche_enet",
+  "name": "Porsche (Ethernet cable)",
+  "transport": "enet-doip",
+  "description": "Modern Porsche over the ENET cable using DoIP (ISO 13400) -- the deep path for cars an OBD dongle can only see generic emissions data on. Built and verified against the Taycan (J1, 2019+), where roughly 40 modules answer through the gateway: HV battery, both inverters, on-board charger, DC-DC converter, HV booster, thermal management, brakes/ESP, airbag, steering, chassis, cluster, infotainment, driver assistance, body, doors, seats and lighting. The same transport reaches other MY17+ Porsches (Panamera 971, Cayenne E3, 911 992, Macan facelift) because the scan enumerates what is actually on the car rather than trusting a table -- but only the Taycan's module names are confirmed, so on other models expect modules to be listed by the address and VAG code they report about themselves. IMPORTANT CABLE FACT: the Taycan's OBD port carries ordinary 100BASE-TX Ethernet on the same pins BMW uses (3/11/12/13 plus the pin 8 activation line), so the BMW ENET cable is the correct cable -- no media converter, nothing extra to buy. Reads are not blocked by Porsche's PVD protection, which starts on MY2023 cars and gates coding and programming, not fault memory or measured values.",
+  "adapters": ["enet-doip"],
+  "panel": {
+    "title": "Porsche modules (ENET cable)",
+    "hint": "Deep scan over the ENET cable -- every module's own fault memory, not just the engine's. Plug the cable into the car's OBD port and the laptop's USB-Ethernet adapter, switch the ignition FULLY ON (foot on the brake, press start -- accessory mode is not enough), give the link ~30s to settle, then scan. The scan asks the car which modules it has rather than assuming: one broadcast that every fitted module answers, then a sweep for anything missed, then each module identifies itself. Because DoIP distinguishes 'no such module on this car' from 'fitted but not answering', absent modules are reported honestly instead of being guessed at. Read-only unless you clear. Keep sessions short -- a Taycan stays awake while you are connected and these cars have a known 12V drain problem.",
+    "scanBusy": "Walking every module through the gateway… (10-30s; the car is asked what it has, absent addresses answer immediately)",
+    "actions": [
+      {
+        "id": "live",
+        "label": "Battery health",
+        "busy": "Reading the high-voltage battery…",
+        "title": "HV battery health",
+        "hint": "The pre-purchase read for a used electric Porsche. State of health as a percentage, the cell-voltage spread with the worst cell identified, pack and cell temperatures, true versus displayed charge, pack voltage and current, and use history including the launch-control count. Cell spread is the number worth arguing over: a wide spread on an otherwise healthy pack is the classic single-weak-module signature. An independent capacity estimate is computed from a completely separate reading (energy in the pack over true charge) and shown alongside -- if the two disagree, both are displayed rather than one being picked. Read at rest, not while charging, ideally 30 minutes after driving. State of health is deliberately NOT shown on 2025-on facelift cars: the battery answers, but the published scaling was derived on the 2020-2024 pack and would give a confidently wrong number. Read-only -- no routine, actuation or reset is ever sent to the high-voltage system."
+      },
+      {
+        "id": "snapshot",
+        "label": "Full cell map",
+        "busy": "Reading all 33 module blocks…",
+        "title": "Every cell in the pack",
+        "hint": "Walks all 33 battery module blocks for 198 individual cell voltages and states of charge, plus three temperature sensors per module. Gives min, max, mean, spread and standard deviation across the whole pack and lists the ten weakest cells, grouped by module -- so a failing module shows up as six adjacent bad cells rather than a vague average. Slower than the headline battery read and needs the extended diagnostic session, which is why it is a separate button. A pack with fewer modules (the smaller Performance Battery has 28) reports the missing blocks as not fitted, never as a fault."
+      }
+    ]
+  }
+}
