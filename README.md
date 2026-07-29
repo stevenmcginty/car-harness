@@ -184,6 +184,17 @@ Base URL: `http://127.0.0.1:8765`
 | GET | `/api/{brand}/discover` | Find the car on a native cable (BMW ENET) |
 | GET | `/api/{brand}/resets` | The brand's service-reset catalogue |
 | POST | `/api/{brand}/reset` | Run one service reset -- confirm-gated |
+| GET | `/api/{brand}/cbs` | Service items that can be reset, and which module owns each (BMW/MINI; no car contact) |
+| GET | `/api/{brand}/cbs/read` | Read the car's service-interval counters -- life left, distance, service count |
+| POST | `/api/{brand}/cbs/reset` | Reset one service item natively -- confirm-gated |
+| GET | `/api/{brand}/battery` | Battery condition from the car's own power management: state of health, charge, capacity |
+| POST | `/api/{brand}/battery/register` | Register a replacement battery -- confirm-gated |
+| GET | `/api/{brand}/ediabas/modules` | The manufacturer job library's catalogue (BMW/MINI SGBD jobs) |
+| POST | `/api/{brand}/ediabas/run` | Run one allowlisted manufacturer job -- write jobs confirm-gated |
+| GET | `/api/{brand}/ediabas/installed` | Ask the gateway which control units the car actually has |
+| GET | `/api/{brand}/service-history` | The car's own service-book catalogue (BMW/MINI iDrive) |
+| POST | `/api/{brand}/service-history/build` | Build one history entry (text only, no car contact) |
+| POST | `/api/{brand}/service-history/write` | Write the entry to the car -- confirm-gated |
 | POST | `/api/pair/start` | (localhost only) new 6-digit phone-pairing code |
 | POST | `/api/pair/claim` | Phone exchanges the code for a bearer token |
 | GET | `/api/pair/devices` | Paired phones |

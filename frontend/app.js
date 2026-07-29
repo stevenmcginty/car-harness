@@ -1694,6 +1694,20 @@
       el.brandActions.insertBefore(jobsBtn, el.brandClearAllBtn);
     }
 
+    // Service functions that CHANGE the car -- CBS reset, battery
+    // registration -- and the gateway's own list of what is fitted. Their own
+    // page, because each one needs its own confirmation and read-back.
+    if (f.cbs || f.battery) {
+      var sfBtn = document.createElement("button");
+      sfBtn.type = "button";
+      sfBtn.className = "btn btn-secondary brand-extra-btn";
+      sfBtn.textContent = "Service functions (CBS, battery)";
+      sfBtn.addEventListener("click", function () {
+        window.open("/service-functions.html", "_blank");
+      });
+      el.brandActions.insertBefore(sfBtn, el.brandClearAllBtn);
+    }
+
     // The car's own service book (iDrive). A dedicated page builds the entry
     // and writes it over the native cable.
     if (f.serviceHistory) {

@@ -22,6 +22,10 @@ light up its routes:
     ediabas.py   modules(), run_job(...)  BMW/MINI only: BMW's own SGBD job
                  library driven over ENET via core/ediabas.py (EdiabasTest).
                  Write jobs are confirm-gated inside the profile.
+    cbs.py       catalogue(), read(...), reset(...)  service-interval counters
+                 read and reset natively; reset() is confirm-gated
+    battery.py   status(...), register(...)  battery condition and registering
+                 a replacement; register() is confirm-gated
 
 profile.json may also carry a "panel" object (title/hint/actions) that the
 desktop front-end renders verbatim -- the UI for a new brand is data, not code.
@@ -90,5 +94,9 @@ def features(brand: str) -> dict:
         "serviceHistory": brand_module(brand, "service_history") is not None,
         # BMW's own EDIABAS job library driven from the harness (BMW/MINI).
         "ediabas": brand_module(brand, "ediabas") is not None,
+        # Service-interval counters read and reset natively (BMW/MINI CBS).
+        "cbs": brand_module(brand, "cbs") is not None,
+        # Battery condition + registering a replacement (BMW/MINI).
+        "battery": brand_module(brand, "battery") is not None,
         "needsAdapter": needs_adapter(brand),
     }

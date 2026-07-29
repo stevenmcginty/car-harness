@@ -728,6 +728,102 @@ def get_ediabas_modules(brand: str) -> dict:
     return module.modules()
 
 
+@app.get("/api/{brand}/cbs")
+def get_cbs_catalogue(brand: str) -> dict:
+    """Which service items can be reset, and on which modules. No car contact."""
+    module = _brand_capability_or_404(brand, "cbs")
+    return module.catalogue()
+
+
+@app.get("/api/{brand}/cbs/read")
+async def read_cbs(brand: str, mode: str = "real") -> dict:
+    """Read the car's service-interval counters. Read-only."""
+    module = _brand_capability_or_404(brand, "cbs")
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return await run_in_threadpool(module.read, mode)
+
+
+@app.post("/api/{brand}/cbs/reset")
+async def reset_cbs(brand: str, request: Request) -> dict:
+    """Reset one service item on the car. CHANGES THE CAR -- needs confirm.
+
+    Resets the counter only. The iDrive service history is a separate record
+    written through /api/{brand}/service-history/write.
+    """
+    module = _brand_capability_or_404(brand, "cbs")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"item": "Oel", "confirm": true, "mode": "real"|"sim"}.',
+        )
+    body = body or {}
+    if not body.get("item"):
+        raise HTTPException(status_code=400, detail='JSON body must include "item".')
+    mode = body.get("mode") or "real"
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    try:
+        return await run_in_threadpool(
+            module.reset,
+            str(body["item"]),
+            mode,
+            bool(body.get("confirm")),
+            body.get("percent"),
+            body.get("target_month"),
+            body.get("target_year"),
+            body.get("module"),
+        )
+    except module.CbsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Bad reset request: {exc}")
+
+
+@app.get("/api/{brand}/battery")
+async def get_battery(brand: str, mode: str = "real") -> dict:
+    """Battery condition from the car's own power management. Read-only."""
+    module = _brand_capability_or_404(brand, "battery")
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return await run_in_threadpool(module.status, mode)
+
+
+@app.post("/api/{brand}/battery/register")
+async def register_battery(brand: str, request: Request) -> dict:
+    """Register a battery replacement. CHANGES THE CAR -- needs confirm."""
+    module = _brand_capability_or_404(brand, "battery")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body or {}
+    mode = body.get("mode") or "real"
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return await run_in_threadpool(module.register, mode, bool(body.get("confirm")))
+
+
+@app.get("/api/{brand}/ediabas/installed")
+async def get_ediabas_installed(brand: str, mode: str = "real") -> dict:
+    """Ask the car's gateway which modules are actually fitted.
+
+    Talks to the car (read-only): the module scan's fixed address list can
+    only infer "not fitted" from silence, the gateway knows.
+    """
+    module = _brand_capability_or_404(brand, "ediabas")
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    if not hasattr(module, "installed_modules"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{brand}' has no gateway installed-ECU list.",
+        )
+    return await run_in_threadpool(module.installed_modules, mode)
+
+
 @app.post("/api/{brand}/ediabas/run")
 async def run_ediabas_job(brand: str, request: Request) -> dict:
     """Run one allowlisted SGBD job over ENET.

@@ -23,6 +23,8 @@ from serial.tools import list_ports  # noqa: E402
 from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import brands, interfaces, registry  # noqa: E402
 from backend.profiles.bmw import ediabas as bmw_ediabas  # noqa: E402
+from backend.profiles.bmw import battery as bmw_battery  # noqa: E402
+from backend.profiles.bmw import cbs as bmw_cbs  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.fiat import pids as fiat_pids  # noqa: E402
 from backend.profiles.fiat import scan as fiat_scan  # noqa: E402
@@ -133,6 +135,85 @@ def bmw_ediabas_modules() -> dict:
     verify=true are mapped but not yet confirmed on a real car.
     """
     return bmw_ediabas.modules()
+
+
+@mcp.tool()
+def bmw_cbs_read(mode: str = "real") -> dict:
+    """Read a BMW/MINI's service-interval (CBS) counters over the ENET cable.
+
+    Returns every service item the car holds -- engine oil, brake pads, brake
+    fluid, MOT, emissions -- with remaining life in percent, remaining
+    distance and the service counter, plus which module carried each and which
+    CBS version it speaks. Read-only; ignition ON.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    return bmw_cbs.read(mode)
+
+
+@mcp.tool()
+def bmw_cbs_reset(item: str, confirm: bool = False, mode: str = "real") -> dict:
+    """Reset one BMW/MINI service item. CHANGES THE CAR -- confirm required.
+
+    item: "Oel" (engine oil), "Br_v"/"Br_h" (front/rear brake pads), "Brfl"
+        (brake fluid), "TUV" (MOT), "AU" (emissions) -- or the English label.
+    Aims at the module that owns the item (engine for oil, ABS for pads,
+    cluster otherwise) and asks that module its CBS version first, because the
+    argument list differs between versions on the same car.
+    Resets the counter ONLY -- the iDrive service history is separate, see
+    the service-history tools.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    try:
+        return bmw_cbs.reset(item, mode, confirm)
+    except bmw_cbs.CbsError as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+def bmw_battery_status(mode: str = "real") -> dict:
+    """Read a BMW/MINI's battery condition from the engine's power management.
+
+    State of health, state of charge, rated capacity, live voltage/current/
+    temperature from the IBS sensor, and the mileage at the last two battery
+    changes. Read-only; ignition ON with the ENET cable connected.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    return bmw_battery.status(mode)
+
+
+@mcp.tool()
+def bmw_battery_register(confirm: bool = False, mode: str = "real") -> dict:
+    """Register a replacement battery on a BMW/MINI. CHANGES THE CAR.
+
+    Only after a new battery has actually been fitted: it resets the engine's
+    charge history so charging strategy and start/stop suit a new battery.
+    Does NOT change the coded battery type or capacity -- a different size or
+    AGM-for-lead-acid swap needs coding this harness doesn't do.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    return bmw_battery.register(mode, confirm)
+
+
+@mcp.tool()
+def bmw_ediabas_installed(mode: str = "real") -> dict:
+    """Ask a BMW/MINI's gateway which control units the car actually has.
+
+    Runs STATUS_VCM_GET_ECU_LIST_ALL on the ZGW over the ENET cable and maps
+    each reported diagnostic address back to a harness module key, so the
+    answer comes from the car's own stored list instead of probing addresses
+    and guessing from silence. Ignition ON, cable connected; mode="sim"
+    returns a clearly-labelled fake.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    try:
+        return bmw_ediabas.installed_modules(mode)
+    except bmw_ediabas.EdiabasJobError as exc:
+        return {"error": str(exc)}
 
 
 @mcp.tool()
