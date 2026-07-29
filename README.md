@@ -271,5 +271,12 @@ offline and offers the in-app AI lookup instead. Part of the generic P0 block
 comes from [mytrile/obd-trouble-codes](https://github.com/mytrile/obd-trouble-codes)
 (MIT license).
 
+The Porsche Taycan live values (`backend/profiles/porsche/taycan.py`) are a
+curated subset of the [OBDb Porsche-Taycan](https://github.com/OBDb/Porsche-Taycan)
+signal database (CC-BY-SA-4.0), bundled unmodified as
+`backend/profiles/porsche/taycan_obdb_signalset.json` — see the NOTICE beside it.
+That data file (and any adaptation of it) stays under CC-BY-SA-4.0; the licence
+does not extend to the car-harness code that reads it.
+
 > The `frontend/` folder is owned by a separate front-end app. The backend just
 > serves whatever static files land there; if it is empty the API still works.
