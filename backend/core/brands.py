@@ -10,6 +10,8 @@ light up its routes:
                     the native-cable forms scan(mode) / clear(mode, address)
                     and may expose discover()
     pids.py      live(adapter, mode)      brand-specific live values
+    battery.py   battery_health(mode)     HV-battery read over a native DoIP
+                                          cable (Taycan ENET) -- no ELM327
     snapshot.py  snapshot(adapter, mode)  passive broadcast capture
     resets.py    list_resets(), perform(adapter, mode, reset_id, confirm)
 
@@ -66,11 +68,13 @@ def features(brand: str) -> dict:
     """Which diagnostic surfaces this brand actually ships (drives the UI)."""
     scan_mod = brand_module(brand, "scan")
     pids_mod = brand_module(brand, "pids")
+    battery_mod = brand_module(brand, "battery")
     return {
         "scan": scan_mod is not None and hasattr(scan_mod, "scan"),
         "clear": scan_mod is not None and hasattr(scan_mod, "clear"),
         "discover": scan_mod is not None and hasattr(scan_mod, "discover"),
         "live": pids_mod is not None and hasattr(pids_mod, "live"),
+        "battery": battery_mod is not None and hasattr(battery_mod, "battery_health"),
         "snapshot": brand_module(brand, "snapshot") is not None,
         "resets": brand_module(brand, "resets") is not None,
         "needsAdapter": needs_adapter(brand),

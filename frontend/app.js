@@ -1508,9 +1508,10 @@
       btn.remove();
     });
     (panel.actions || []).forEach(function (a) {
-      if (a.id !== "live" && a.id !== "snapshot") return;
+      if (a.id !== "live" && a.id !== "snapshot" && a.id !== "battery") return;
       if (a.id === "live" && !f.live) return;
       if (a.id === "snapshot" && !f.snapshot) return;
+      if (a.id === "battery" && !f.battery) return;
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn btn-secondary brand-extra-btn";
@@ -1731,7 +1732,11 @@
   function runBrandExtras(action, btn) {
     var p = currentProfile();
     if (!p || brand.extrasInFlight) return;
+    // A "native" action (Taycan battery over the ENET cable) finds the car on
+    // its own DoIP cable -- there is no ELM327 dongle to pick, so skip the
+    // adapter guard that the dongle-based extras (live/snapshot) require.
     if (
+      !action.native &&
       !guardAdapterPicked(p, function (msg) {
         el.brandExtras.hidden = false;
         el.brandExtrasTitle.textContent = action.title || action.label || "Extras";
