@@ -40,6 +40,7 @@ from backend.core import brands, interfaces, pairing, registry  # noqa: E402
 from backend.core import vin as vin_decode  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import freeze, livefeed  # noqa: E402
+from backend.obd import raw as obd_raw  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
@@ -419,6 +420,54 @@ def obd_freeze(adapter: str | None = None, mode: str = "real", frame: int = 0) -
             "ok": False, "simulated": False, "readings": [], "groups": [],
             "trigger": None, "message": str(exc),
         }
+
+
+# --------------------------------------------------------------------------- #
+# Raw diagnostic channel (the Claude Code / MCP escape hatch).
+# --------------------------------------------------------------------------- #
+@app.post("/api/raw/did")
+async def raw_did(request: Request) -> dict:
+    """Read arbitrary mode-22 DIDs from one module (read-only)."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"adapter": "...", "target": "7E0", "dids": ["1310"], ...}.',
+        )
+    body = body or {}
+    mode = body.get("mode") or "real"
+    instance = _obd_adapter_or_400(body.get("adapter"), mode)
+    return await run_in_threadpool(
+        obd_raw.read_dids, instance, mode,
+        body.get("target") or "", body.get("dids") or [],
+        body.get("addressing") or "11bit", body.get("resp_id"),
+        bool(body.get("extended_session")),
+    )
+
+
+@app.post("/api/raw/elm")
+async def raw_elm(request: Request) -> dict:
+    """Run a raw ELM327 command sequence -- arbitrary, so confirm-gated."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"adapter": "...", "commands": ["..."], "confirm": true}.',
+        )
+    body = body or {}
+    if body.get("confirm") is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="Raw ELM commands can write to the car. Send confirm: true.",
+        )
+    mode = body.get("mode") or "real"
+    instance = _obd_adapter_or_400(body.get("adapter"), mode)
+    return await run_in_threadpool(
+        obd_raw.elm_commands, instance, mode,
+        body.get("commands") or [], float(body.get("timeout") or 3.0),
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -22,6 +22,7 @@ from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import brands, interfaces, registry  # noqa: E402
+from backend.obd import raw as obd_raw  # noqa: E402
 from backend.profiles.bmw import ediabas as bmw_ediabas  # noqa: E402
 from backend.profiles.bmw import battery as bmw_battery  # noqa: E402
 from backend.profiles.bmw import cbs as bmw_cbs  # noqa: E402
@@ -688,6 +689,79 @@ def jlr_clear_module(
     if error is not None:
         return error
     return jlr_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Raw diagnostic channel -- the escape hatch beyond the curated brand packs
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def read_dids(
+    target: str,
+    dids: list[str],
+    addressing: str = "11bit",
+    adapter_id: str | None = None,
+    resp_id: str | None = None,
+    extended_session: bool = False,
+    mode: str = "real",
+) -> dict:
+    """Read arbitrary mode-22 (ReadDataByIdentifier) DIDs from any module -- the
+    read-only escape hatch for values no curated brand pack carries (soot mass,
+    odd body DIDs, anything researched on the fly).
+
+    target: the module's hex id. addressing="11bit" (default): a standard CAN
+        request id like "7E0" (engine), "7E1" (gearbox), "720"...; the answer is
+        expected on target+8 unless resp_id overrides it (VAG body modules
+        answer at +0x6A, e.g. target "714" cluster -> resp_id "77E").
+        addressing="29bit" (UDS-era Fiat/Alfa/Jeep): the ONE-BYTE ECU address
+        like "10" (engine), "18" (TCM), "28" (ABS); pairing is fixed
+        (18DAxxF1/18DAF1xx). 0xC7 (FCA TPMS) is refused -- immobilizer trap.
+    dids: hex DID strings, e.g. ["1310", "F190"]; max 24 per call.
+    extended_session: open UDS 10 03 first for modules that refuse reads in the
+        default session (best-effort, never fatal).
+    adapter_id: a configured ELM327 adapter (from list_adapters); required for
+        real mode. mode="sim" returns a clearly-labelled fake.
+    Returns per-DID raw reply hex + payload, printable ASCII and big-endian int
+    where they apply, and named NRCs for negatives. Decode/scale the payload
+    yourself against researched formulas -- the raw bytes are the truth here.
+    Read-only: only services 0x22 (and 10 03 when asked) are ever sent.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return obd_raw.read_dids(
+        instance, mode, target, dids, addressing, resp_id, extended_session
+    )
+
+
+@mcp.tool()
+def elm_commands(
+    commands: list[str],
+    confirm: bool = False,
+    adapter_id: str | None = None,
+    timeout: float = 3.0,
+    mode: str = "real",
+) -> dict:
+    """Run a raw ELM327 command sequence -- AT setup + arbitrary hex requests --
+    for anything read_dids can't express. CAN WRITE TO THE CAR, so confirm-gated.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    commands: executed in order in one session, e.g. ["ATSH7E0", "ATCRA7E8",
+        "ATFCSD300000", "ATFCSM1", "221310"]; max 32. Monitor (ATMA -- use the
+        brand snapshot feature), reset (ATZ/ATWS), defaults (ATD), low-power and
+        baud-rate commands are refused: they'd strand the dongle session.
+    timeout: per-command seconds (0.5-10).
+    adapter_id: a configured ELM327 adapter (required for real mode);
+        mode="sim" returns a clearly-labelled fake.
+    The ELM is ALWAYS restored to generic-OBD defaults afterwards (headers,
+    filters, flow control, timing, and the protocol if the sequence switched
+    it), so a stray state can never leak into the next scan.
+    """
+    if confirm is not True:
+        return {"error": "Refused: raw ELM commands can write to the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return obd_raw.elm_commands(instance, mode, commands, timeout)
 
 
 # --------------------------------------------------------------------------- #

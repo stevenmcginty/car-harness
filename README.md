@@ -177,6 +177,8 @@ Base URL: `http://127.0.0.1:8765`
 | GET | `/api/live/catalog?adapter=<id>&brand=<id>` | **Every value this car will give** -- standard OBD-II (asked of the car itself) plus the manufacturer overlay |
 | GET | `/api/live/read?adapter=<id>&keys=obd.rpm,obd.coolant` | Read the selected channels once; this is what the dashboard polls |
 | GET | `/api/obd/freeze?adapter=<id>` | Freeze frame -- the live data as it was when a fault stored (mode 02) |
+| POST | `/api/raw/did` | Read arbitrary mode-22 DIDs from any module (11-bit or 29-bit addressing) -- the read-only escape hatch beyond the curated packs |
+| POST | `/api/raw/elm` | Run a raw ELM327 command sequence, always restored afterwards -- confirm-gated |
 | GET | `/api/{brand}/scan` | Walk the brand's modules, read each one's fault memory (generic: any profile folder) |
 | POST | `/api/{brand}/clear` | Clear one module (or all) -- confirm-gated |
 | GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check, VW/Audi extras) |

@@ -27,6 +27,7 @@ SUITES = [
     "backend.tools.service_history_selftest",
     "backend.tools.ediabas_selftest",
     "backend.tools.bmw_deep_selftest",
+    "backend.tools.raw_selftest",
 ]
 
 
