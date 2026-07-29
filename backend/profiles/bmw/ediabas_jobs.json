@@ -62,7 +62,7 @@
         "name": "CBS_RESET_DETAIL_LESEN",
         "kind": "read",
         "verify": true,
-        "description": "Read CBS reset details, including why a previous reset was refused (CBS_RUECK_GRUND)."
+        "description": "Read CBS reset details, including why a previous reset was refused (CBS_RUECK_GRUND). ON CAR 2026-07-29 (F56 KOMB25): job EXISTS in the SGBD but the module gave NO RESPONSE with plain ignition-on -- the documented precondition is the car being in a driving-ready state (Fahrbereitschaft), not just awake. Retry with the car in Ready mode."
       }
     ]
   }
