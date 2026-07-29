@@ -322,13 +322,28 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
                     val value = try {
                         def.decode(payload.drop(2).toByteArray())
                     } catch (_: Exception) {
-                        continue
-                    }
+                        null
+                    } ?: continue
+                    // Sanity bounds: a clone dongle answering rubbish drops the
+                    // value rather than displaying it.
+                    if (def.lo != null && value < def.lo) continue
+                    if (def.hi != null && value > def.hi) continue
                     readings.add(LiveReading(key, def.label, value, def.unit))
                     break
                 }
             }
         }
         readings
+    }
+
+    /** Which of the standard catalogue this car reports supporting. An empty
+     * bitmap answer returns the whole catalogue — polling then finds out the
+     * honest way, one value at a time. */
+    suspend fun liveSupportedKeys(): Set<String> = mutex.withLock {
+        session.ensureProtocol()
+        if (supported == null) supported = Pids.readSupported(session)
+        val sup = supported ?: emptySet()
+        if (sup.isEmpty()) Pids.all.map { it.key }.toSet()
+        else Pids.all.filter { it.pid in sup }.map { it.key }.toSet()
     }
 }
