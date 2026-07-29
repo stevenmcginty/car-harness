@@ -407,6 +407,19 @@ def brand_live(brand: str, adapter: str | None = None, mode: str = "real") -> di
     return module.live(instance, mode)
 
 
+@app.get("/api/{brand}/battery")
+def brand_battery(brand: str, mode: str = "real") -> dict:
+    """HV-battery health over the brand's native DoIP cable (Taycan ENET).
+
+    Native-cable read like /discover -- it finds the car over the ENET cable
+    itself, so there is no ELM327 adapter to pick. Read-only.
+    """
+    module = _brand_capability_or_404(brand, "battery")
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return module.battery_health(mode)
+
+
 @app.get("/api/{brand}/snapshot")
 def brand_snapshot(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
     """Passive broadcast-CAN capture (ATMA sniff). Read-only."""

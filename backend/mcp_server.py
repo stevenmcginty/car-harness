@@ -34,6 +34,7 @@ from backend.profiles.mercedes import pids as mercedes_pids  # noqa: E402
 from backend.profiles.mercedes import scan as mercedes_scan  # noqa: E402
 from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
+from backend.profiles.porsche import battery as porsche_battery  # noqa: E402
 from backend.profiles.vw import pids as vw_pids  # noqa: E402
 from backend.profiles.vw import scan as vw_scan  # noqa: E402
 
@@ -677,6 +678,30 @@ def remove_adapter(adapter_id: str) -> dict:
     if adapter_registry.remove_instance(adapter_id):
         return {"removed": True}
     return {"error": f"Adapter '{adapter_id}' not found."}
+
+
+@mcp.tool()
+def porsche_battery_health(mode: str = "real") -> dict:
+    """Read the Porsche Taycan (J1) HV battery over a BMW ENET cable (DoIP).
+
+    The Taycan is the one Porsche NOT diagnosed over an ELM327 dongle -- its
+    battery lives behind an ISO-13400 (DoIP) gateway reached over the same cheap
+    Ethernet-to-OBD cable the BMW profile uses. This runs a read-only pass:
+    routing activation to the gateway, then UDS 0x22 reads for state of charge,
+    pack voltage/current, temperature and the per-cell voltage spread (the
+    balance indicator).
+
+    HONESTY: the DIDs and scalings are community captures from the VW-Group MEB
+    EV family (an ID.3 capture), NOT a Taycan-confirmed table -- the J1 battery
+    differs, so every figure is a candidate to verify against the car and a
+    caveat rides on the result. Dealer State-of-Health has no confirmed public
+    identifier and is deliberately NOT returned as a guessed number. No ELM327
+    adapter is needed: plug the ENET cable in, ignition ON. mode="sim" returns a
+    clearly-labelled fake.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    return porsche_battery.battery_health(mode)
 
 
 # --------------------------------------------------------------------------- #

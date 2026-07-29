@@ -16,6 +16,14 @@
         "busy": "Reading the Porsche-specific values…",
         "title": "Porsche live extras",
         "hint": "Reads the one Porsche-specific value with a published wire format -- engine oil temperature via KWP 21 32 -- captured from a single Rennlist 997.2 CAN thread (candidate scaling A-60), so verify it against the car before trusting the absolute figure. The high-value measuring values a dealer wants (camshaft deviation for the M96/M97 IMS/chain-wear check, over-rev history, electronic oil level) are read by Durametric/PIWIS but nobody published their DIDs, so they are deliberately NOT shown as guessed numbers. On a car that doesn't answer the KWP value (a UDS-era, TP2.0 or DoIP car) it falls back to a curated generic Mode-01 set."
+      },
+      {
+        "id": "battery",
+        "label": "Taycan battery (ENET)",
+        "native": true,
+        "busy": "Reading the Taycan HV battery over DoIP…",
+        "title": "Taycan battery health (DoIP)",
+        "hint": "For the Taycan (J1) ONLY, over a BMW ENET (Ethernet-to-OBD) cable -- not the dongle. Talks to the car's ISO-13400 (DoIP) gateway, activates routing, and reads the HV battery over UDS 0x22: state of charge, pack voltage/current, temperature, and the cell-voltage spread (the balance indicator). The DIDs and scalings are community captures from the VW-Group MEB EV family, so they are candidates to verify against the Taycan's different J1 battery -- a caveat rides on every result. Dealer State-of-Health has no confirmed public identifier and is deliberately NOT shown as a guessed number. Plug the ENET cable in, ignition ON, then read. Read-only."
       }
     ]
   }
