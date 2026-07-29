@@ -12,7 +12,7 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  const SPARK_SAMPLES = 40;
+  const SPARK_SAMPLES = 60;
   const STARTERS = ["obd.rpm", "obd.speed", "obd.coolant", "obd.load",
                     "obd.throttle", "obd.module_voltage"];
 
@@ -21,7 +21,9 @@
     adapter: "",
     brand: "",
     channels: [],           // catalog, as returned
+    groups: [],             // group names, catalog order
     selected: new Set(),
+    wide: new Set(),        // tiles expanded to double width
     history: new Map(),     // key -> [numbers]
     holds: new Map(),       // key -> {min, max}
     latest: new Map(),      // key -> channel-shaped reading
@@ -30,6 +32,7 @@
     samples: [],            // recorded rows
     filterGroup: "",
     query: "",
+    view: "tiles",
     lastRate: null,
     tick: 0,
   };
@@ -96,10 +99,10 @@
         : `<option value="">No adapters configured</option>`;
       state.adapter = adapterSel.value;
 
-      const brands = (profiles.profiles || []).filter((p) => p.id !== "bmw" || true);
       brandSel.innerHTML =
         `<option value="">Standard OBD-II only</option>` +
-        brands.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+        (profiles.profiles || []).map((p) =>
+          `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
     } catch (err) {
       note(`Could not reach the backend: ${err.message}`, "bad");
     }
@@ -128,6 +131,7 @@
         return;
       }
       state.channels = res.channels || [];
+      state.groups = res.groups || [];
       state.history.clear();
       state.holds.clear();
       state.latest.clear();
@@ -146,12 +150,15 @@
 
       note(res.message || "", res.simulated ? "" : "ok");
       status(res.simulated ? "Simulated" : "Ready", res.simulated ? "sim" : "live");
-      $("hero").hidden = true;
+      $("welcome").hidden = true;
       $("watch").hidden = false;
       $("catalog").hidden = false;
-      renderGroupPills(res.groups || []);
+      $("freeze").hidden = false;
+      $("nav").hidden = false;
+      ["stream", "record", "reset-holds"].forEach((id) => { $(id).hidden = false; });
+      renderNav();
       renderCatalog();
-      renderGauges();
+      renderWatch();
     } catch (err) {
       note(err.message, "bad");
       status("Error", "bad");
@@ -160,12 +167,33 @@
     }
   }
 
-  function renderGroupPills(groups) {
-    const all = ["", ...groups];
-    $("group-pills").innerHTML = all.map((g) =>
-      `<button type="button" class="pill${g === state.filterGroup ? " is-on" : ""}" data-group="${esc(g)}">${g ? esc(g) : "All"}</button>`
-    ).join("");
+  // -------------------------------------------------------------------- nav --
+
+  function renderNav() {
+    const counts = new Map();
+    state.channels.forEach((c) => counts.set(c.group, (counts.get(c.group) || 0) + 1));
+    const item = (group, label, count) => `
+      <button type="button" class="nav-item${state.filterGroup === group ? " is-on" : ""}"
+              data-nav="${esc(group)}">
+        ${esc(label)}<span class="nav-item__count">${count}</span>
+      </button>`;
+    $("nav-items").innerHTML =
+      item("", "All values", state.channels.length) +
+      state.groups.map((g) => item(g, g, counts.get(g) || 0)).join("") +
+      `<button type="button" class="nav-item nav-item--freeze" data-nav-freeze>
+         Freeze frame
+       </button>`;
   }
+
+  function setGroup(group) {
+    state.filterGroup = group;
+    $("nav-items").querySelectorAll(".nav-item").forEach((b) =>
+      b.classList.toggle("is-on", b.dataset.nav === group && !b.hasAttribute("data-nav-freeze")));
+    renderCatalog();
+    $("catalog").scrollIntoView({ block: "start" });
+  }
+
+  // ---------------------------------------------------------------- catalog --
 
   function visibleChannels() {
     const q = state.query.trim().toLowerCase();
@@ -180,8 +208,9 @@
     const shown = visibleChannels();
     const total = state.channels.length;
     const std = state.channels.filter((c) => c.source === "OBD-II").length;
+    $("catalog-title").textContent = state.filterGroup || "All values";
     $("catalog-meta").textContent =
-      `${total} value${total === 1 ? "" : "s"} — ${std} standard OBD-II` +
+      `${total} value${total === 1 ? "" : "s"} on this car — ${std} standard OBD-II` +
       (total - std ? `, ${total - std} manufacturer` : "") +
       (shown.length !== total ? ` · showing ${shown.length}` : "");
 
@@ -196,14 +225,20 @@
       return;
     }
 
-    $("channel-groups").innerHTML = [...byGroup.entries()].map(([group, items]) => `
-      <div class="group">
+    $("channel-groups").innerHTML = [...byGroup.entries()].map(([group, items]) => {
+      const allOn = items.every((c) => state.selected.has(c.key));
+      return `
+      <div class="group" data-group="${esc(group)}">
         <div class="group__head">
           <h3 class="group__title">${esc(group)}</h3>
           <span class="group__count">${items.length}</span>
+          <button type="button" class="group__all" data-all="${esc(group)}">
+            ${allOn ? "Clear all" : "Watch all"}
+          </button>
         </div>
         <div class="rows">${items.map(rowHtml).join("")}</div>
-      </div>`).join("");
+      </div>`;
+    }).join("");
   }
 
   function rowHtml(c) {
@@ -224,15 +259,31 @@
       </button>`;
   }
 
-  // ----------------------------------------------------------------- gauges --
+  // ------------------------------------------------------------- watch area --
 
-  function renderGauges() {
-    const keys = [...state.selected];
+  function orderedSelection() {
+    // Catalog order, so tiles sit in the same order as the list they came from.
+    return state.channels.filter((c) => state.selected.has(c.key)).map((c) => c.key);
+  }
+
+  function renderWatch() {
+    const keys = orderedSelection();
+    $("watch-count").textContent = keys.length ? `${keys.length} selected` : "";
     $("watch-empty").hidden = keys.length > 0;
+    $("stream").disabled = !keys.length;
+    const tiles = state.view === "tiles";
+    $("gauges").hidden = !tiles;
+    $("wtable").hidden = tiles;
+    if (tiles) renderTiles(keys); else renderTable(keys);
+    updateCost();
+  }
+
+  function renderTiles(keys) {
     $("gauges").innerHTML = keys.map((key) => {
       const c = state.latest.get(key) || { key, label: key, unit: "", source: "" };
       return `
-        <article class="gauge" data-key="${esc(key)}">
+        <article class="gauge${state.wide.has(key) ? " is-wide" : ""}" data-key="${esc(key)}"
+                 title="Click to enlarge">
           <button type="button" class="gauge__drop" data-drop="${esc(key)}"
                   aria-label="Stop watching ${esc(c.label)}">&times;</button>
           <p class="gauge__label">${esc(c.label)}</p>
@@ -241,18 +292,41 @@
           <p class="gauge__holds" data-holds></p>
         </article>`;
     }).join("");
-    keys.forEach(paintGauge);
-    updateCost();
+    keys.forEach(paint);
   }
 
-  function paintGauge(key) {
-    const card = $("gauges").querySelector(`.gauge[data-key="${CSS.escape(key)}"]`);
+  function renderTable(keys) {
+    $("wtable").innerHTML = `
+      <div class="wrow wrow--head" aria-hidden="true">
+        <span>Value</span><span></span><span style="text-align:right">Current</span>
+        <span style="text-align:right">Min</span><span style="text-align:right">Max</span><span></span>
+      </div>` +
+      keys.map((key) => {
+        const c = state.latest.get(key) || { key, label: key, unit: "", source: "" };
+        return `
+        <div class="wrow" data-key="${esc(key)}">
+          <span class="wrow__name">${esc(c.label)}<small>${esc(c.source)}</small></span>
+          <svg class="wrow__spark" data-spark viewBox="0 0 100 26" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <span class="wrow__value" data-value>—</span>
+          <span class="wrow__hold" data-min>—</span>
+          <span class="wrow__hold" data-max>—</span>
+          <button type="button" class="wrow__drop" data-drop="${esc(key)}"
+                  aria-label="Stop watching ${esc(c.label)}">&times;</button>
+        </div>`;
+      }).join("");
+    keys.forEach(paint);
+  }
+
+  function activeContainer() {
+    return state.view === "tiles" ? $("gauges") : $("wtable");
+  }
+
+  function paint(key) {
+    const card = activeContainer().querySelector(`[data-key="${CSS.escape(key)}"]`);
     if (!card) return;
     const reading = state.latest.get(key);
     const valueEl = card.querySelector("[data-value]");
-    const holdsEl = card.querySelector("[data-holds]");
     const sparkEl = card.querySelector("[data-spark]");
-
     if (!reading || reading.text === "" || reading.text == null) {
       valueEl.textContent = "—";
       return;
@@ -261,32 +335,46 @@
     if (reading.value === null || reading.value === undefined) {
       valueEl.textContent = reading.text;
       valueEl.classList.add("gauge__value--text");
-      sparkEl.hidden = true;
-      holdsEl.textContent = "";
+      if (sparkEl) sparkEl.hidden = true;
       return;
     }
 
     valueEl.classList.remove("gauge__value--text");
-    valueEl.innerHTML = `${esc(reading.text)}${reading.unit ? `<span class="gauge__unit">${esc(reading.unit)}</span>` : ""}`;
+    valueEl.innerHTML = state.view === "tiles"
+      ? `${esc(reading.text)}${reading.unit ? `<span class="gauge__unit">${esc(reading.unit)}</span>` : ""}`
+      : `${esc(reading.text)}${reading.unit ? `<span>${esc(reading.unit)}</span>` : ""}`;
 
     const hold = state.holds.get(key);
-    holdsEl.textContent = hold ? `min ${trim(hold.min)}   max ${trim(hold.max)}` : "";
+    if (state.view === "tiles") {
+      const holdsEl = card.querySelector("[data-holds]");
+      holdsEl.innerHTML = hold
+        ? `<span>min <b>${trim(hold.min)}</b></span><span>max <b>${trim(hold.max)}</b></span>` : "";
+    } else {
+      card.querySelector("[data-min]").textContent = hold ? trim(hold.min) : "—";
+      card.querySelector("[data-max]").textContent = hold ? trim(hold.max) : "—";
+    }
 
     const series = state.history.get(key) || [];
-    sparkEl.hidden = series.length < 2;
-    if (series.length >= 2) sparkEl.innerHTML = sparkPath(series);
+    if (sparkEl) {
+      sparkEl.hidden = series.length < 2;
+      if (series.length >= 2) {
+        const h = state.view === "tiles" ? 34 : 26;
+        sparkEl.setAttribute("viewBox", `0 0 100 ${h}`);
+        sparkEl.innerHTML = sparkPath(series, h);
+      }
+    }
   }
 
   const trim = (n) => (Math.round(n * 100) / 100).toString();
 
-  function sparkPath(series) {
+  function sparkPath(series, h) {
     let lo = Math.min(...series), hi = Math.max(...series);
     if (hi - lo < 1e-9) { lo -= 1; hi += 1; }   // a flat line still deserves a line
     const step = 100 / (series.length - 1);
+    const pad = 2;
     const points = series.map((v, i) =>
-      `${(i * step).toFixed(2)},${(32 - ((v - lo) / (hi - lo)) * 30).toFixed(2)}`).join(" ");
-    return `<polyline points="${points}" fill="none" stroke="#0071e3" stroke-width="1.6"
-              stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+      `${(i * step).toFixed(2)},${(h - pad - ((v - lo) / (hi - lo)) * (h - pad * 2)).toFixed(2)}`).join(" ");
+    return `<polyline class="spark-line" points="${points}" vector-effect="non-scaling-stroke"/>`;
   }
 
   function updateCost() {
@@ -310,7 +398,7 @@
 
   async function streamLoop() {
     while (state.streaming) {
-      const keys = [...state.selected];
+      const keys = orderedSelection();
       if (!keys.length) { stopStream(); return; }
       const started = performance.now();
       try {
@@ -333,7 +421,7 @@
           ? `${Math.max(1, Math.round(state.lastRate * 1000))}ms`
           : `${state.lastRate.toFixed(1)}s`;
         $("rate").textContent =
-          `updated every ${rate} · ${res.readings.length}/${keys.length} answering` +
+          `every ${rate} · ${res.readings.length}/${keys.length} answering` +
           (state.recording ? ` · ${state.samples.length} recorded` : "");
         status(res.simulated ? "Simulated" : "Reading", res.simulated ? "sim" : "live");
       } catch (err) {
@@ -365,7 +453,7 @@
       row[r.key] = r.text;
     });
     if (state.recording) state.samples.push(row);
-    state.selected.forEach(paintGauge);
+    state.selected.forEach(paint);
     // The catalog's right-hand values are nice to have, not worth a full
     // re-render every pass — refresh them every fourth tick.
     if (state.tick % 4 === 0) renderCatalog();
@@ -392,12 +480,12 @@
     if (!state.recording) {
       state.recording = true;
       state.samples = [];
-      $("record").textContent = "Stop & save";
+      $("record").lastChild.textContent = "Stop & save";
       $("record").classList.add("is-on");
       return;
     }
     state.recording = false;
-    $("record").textContent = "Record";
+    $("record").lastChild.textContent = "Record";
     $("record").classList.remove("is-on");
     if (!state.samples.length) {
       note("Nothing was recorded — start the gauges first.", "bad");
@@ -467,6 +555,12 @@
 
   // ------------------------------------------------------------------ wire --
 
+  function toggleKey(key) {
+    if (state.selected.has(key)) { state.selected.delete(key); state.wide.delete(key); }
+    else state.selected.add(key);
+    saveSelection();
+  }
+
   function wire() {
     $("adapter").addEventListener("change", (e) => { state.adapter = e.target.value; });
     $("brand").addEventListener("change", (e) => {
@@ -476,17 +570,30 @@
       if (saved) state.selected = saved;
     });
 
-    document.querySelectorAll(".segmented__opt").forEach((btn) => {
+    document.querySelectorAll(".segmented__opt[data-mode]").forEach((btn) => {
       btn.addEventListener("click", () => {
         stopStream();
         state.mode = btn.dataset.mode;
-        document.querySelectorAll(".segmented__opt").forEach((b) => {
+        document.querySelectorAll(".segmented__opt[data-mode]").forEach((b) => {
           const on = b === btn;
           b.classList.toggle("is-on", on);
           b.setAttribute("aria-checked", String(on));
         });
         $("adapter").disabled = state.mode === "sim";
         updateCost();
+      });
+    });
+
+    document.querySelectorAll(".segmented__opt[data-view]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.view = btn.dataset.view;
+        try { localStorage.setItem("carharness.live.view", state.view); } catch { /* ok */ }
+        document.querySelectorAll(".segmented__opt[data-view]").forEach((b) => {
+          const on = b === btn;
+          b.classList.toggle("is-on", on);
+          b.setAttribute("aria-checked", String(on));
+        });
+        renderWatch();
       });
     });
 
@@ -498,37 +605,62 @@
     $("reset-holds").addEventListener("click", () => {
       state.holds.clear();
       state.history.clear();
-      state.selected.forEach(paintGauge);
+      state.selected.forEach(paint);
+    });
+
+    $("nav-items").addEventListener("click", (e) => {
+      const item = e.target.closest(".nav-item");
+      if (!item) return;
+      if (item.hasAttribute("data-nav-freeze")) {
+        $("freeze").scrollIntoView({ block: "start" });
+        return;
+      }
+      setGroup(item.dataset.nav);
     });
 
     $("channel-groups").addEventListener("click", (e) => {
+      const all = e.target.closest(".group__all");
+      if (all) {
+        const items = visibleChannels().filter((c) => c.group === all.dataset.all);
+        const allOn = items.every((c) => state.selected.has(c.key));
+        items.forEach((c) => {
+          if (allOn) { state.selected.delete(c.key); state.wide.delete(c.key); }
+          else state.selected.add(c.key);
+        });
+        saveSelection();
+        renderCatalog();
+        renderWatch();
+        return;
+      }
       const row = e.target.closest(".row");
       if (!row) return;
-      const key = row.dataset.key;
-      if (state.selected.has(key)) state.selected.delete(key);
-      else state.selected.add(key);
-      saveSelection();
-      row.classList.toggle("is-on", state.selected.has(key));
-      row.setAttribute("aria-pressed", String(state.selected.has(key)));
-      renderGauges();
+      toggleKey(row.dataset.key);
+      row.classList.toggle("is-on", state.selected.has(row.dataset.key));
+      row.setAttribute("aria-pressed", String(state.selected.has(row.dataset.key)));
+      renderWatch();
     });
 
-    $("gauges").addEventListener("click", (e) => {
+    const watchClick = (e) => {
       const btn = e.target.closest("[data-drop]");
-      if (!btn) return;
-      state.selected.delete(btn.dataset.drop);
-      saveSelection();
-      renderGauges();
-      renderCatalog();
-    });
-
-    $("group-pills").addEventListener("click", (e) => {
-      const pill = e.target.closest(".pill");
-      if (!pill) return;
-      state.filterGroup = pill.dataset.group;
-      $("group-pills").querySelectorAll(".pill").forEach((p) => p.classList.toggle("is-on", p === pill));
-      renderCatalog();
-    });
+      if (btn) {
+        state.selected.delete(btn.dataset.drop);
+        state.wide.delete(btn.dataset.drop);
+        saveSelection();
+        renderWatch();
+        renderCatalog();
+        return;
+      }
+      const card = e.target.closest(".gauge[data-key]");
+      if (card) {
+        // A tap on the tile itself toggles the big double-width view.
+        const key = card.dataset.key;
+        if (state.wide.has(key)) state.wide.delete(key); else state.wide.add(key);
+        card.classList.toggle("is-wide", state.wide.has(key));
+        paint(key);
+      }
+    };
+    $("gauges").addEventListener("click", watchClick);
+    $("wtable").addEventListener("click", watchClick);
 
     let searchTimer = null;
     $("search").addEventListener("input", (e) => {
@@ -593,6 +725,18 @@
       if (state.channels.length) startStream();
     }
   }
+
+  try {
+    const view = localStorage.getItem("carharness.live.view");
+    if (view === "list" || view === "tiles") {
+      state.view = view;
+      document.querySelectorAll(".segmented__opt[data-view]").forEach((b) => {
+        const on = b.dataset.view === view;
+        b.classList.toggle("is-on", on);
+        b.setAttribute("aria-checked", String(on));
+      });
+    }
+  } catch { /* ok */ }
 
   wire();
   reveals();
