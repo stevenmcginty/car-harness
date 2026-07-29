@@ -25,6 +25,7 @@ SUITES = [
     "backend.tools.j2534_selftest",
     "backend.tools.resets_selftest",
     "backend.tools.service_history_selftest",
+    "backend.tools.ediabas_selftest",
 ]
 
 

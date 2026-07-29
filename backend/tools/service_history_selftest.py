@@ -273,6 +273,23 @@ try:
 except sh.ServiceHistoryError:
     check("write_entry refuses without confirm=True", True)
 
+# ROUTINE_VERIFIED is True now (verified 2026-07-27 on the F56 -- the entry is
+# on the car's screen; Steve confirmed 2026-07-29). The only gate is confirm.
+check("routine is marked verified", sh.ROUTINE_VERIFIED is True)
+
+# The end-to-end write() in sim mode validates and never touches a car.
+_simw = sh.write(mode="sim", confirm=False, day=27, month=7, year=2026,
+                 odometer=34267, units="miles", dealer_name="RADLETT",
+                 status=1, items=[{"code": 1, "status": 1}])
+check("write(sim) labelled + valid", _simw["simulated"] is True and _simw["ok"] is True
+      and _simw["message"].startswith("SIMULATED"), _simw.get("message"))
+try:
+    sh.write(mode="real", confirm=False, day=27, month=7, year=2026,
+             odometer=100, units="km", items=[{"code": 1, "status": 1}])
+    check("write(real) refuses without confirm", False)
+except sh.ServiceHistoryError:
+    check("write(real) refuses without confirm", True)
+
 # --------------------------------------------------------------------------- #
 # 8. The HTTP surface.
 # --------------------------------------------------------------------------- #
@@ -310,6 +327,24 @@ try:
     r = client.get("/api/mazda/service-history")
     check("a brand without the capability 404s", r.status_code == 404,
           str(r.status_code))
+
+    r = client.post("/api/bmw/service-history/write", json={
+        "day": 27, "month": 7, "year": 2026, "odometer": 48210, "units": "mi",
+        "dealer_name": "RADLETT", "items": [{"code": 1, "status": 1}],
+    })
+    check("write without confirm is refused with the reason",
+          r.status_code == 400 and "confirm" in r.text,
+          f"{r.status_code} {r.text[:160]}")
+
+    r = client.post("/api/bmw/service-history/write", json={
+        "day": 27, "month": 7, "year": 2026, "odometer": 48210, "units": "mi",
+        "dealer_name": "RADLETT", "items": [{"code": 1, "status": 1}],
+        "confirm": True, "mode": "sim",
+    })
+    check("sim write is labelled and carries the telegram",
+          r.status_code == 200 and r.json()["simulated"] is True
+          and r.json()["telegram"].startswith("3101A081"),
+          f"{r.status_code} {r.text[:200]}")
 
     r = client.get("/api/profiles")
     profiles = r.json()

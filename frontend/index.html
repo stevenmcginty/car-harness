@@ -188,6 +188,24 @@
         <p id="brand-extras-message" class="status-message"></p>
         <div id="brand-extras-chips" class="obd-chips"></div>
       </div>
+
+      <div id="brand-jobs" hidden>
+        <div class="obd-live-header"><h3>Module jobs — manufacturer's own library</h3></div>
+        <p id="brand-jobs-hint" class="obd-hint"></p>
+        <div class="jobs-form">
+          <select id="brand-jobs-module" class="jobs-select" aria-label="Module"></select>
+          <select id="brand-jobs-job" class="jobs-select" aria-label="Job"></select>
+          <button id="brand-jobs-run" class="btn btn-primary" type="button">Run job</button>
+        </div>
+        <div id="brand-jobs-params" class="jobs-params"></div>
+        <p id="brand-jobs-desc" class="obd-hint"></p>
+        <p id="brand-jobs-message" class="status-message"></p>
+        <div id="brand-jobs-results" class="obd-chips"></div>
+        <details id="brand-jobs-raw-wrap" class="jobs-raw-wrap" hidden>
+          <summary>Raw exchange</summary>
+          <pre id="brand-jobs-raw"></pre>
+        </details>
+      </div>
     </section>
 
     <section class="panel service-panel" aria-label="Service resets">

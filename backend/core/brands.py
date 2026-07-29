@@ -19,6 +19,9 @@ light up its routes:
     service_history.py
                  catalogue(), build_argument(...)  the car's own service book
                  -- text only, no car contact; see the BMW one for why
+    ediabas.py   modules(), run_job(...)  BMW/MINI only: BMW's own SGBD job
+                 library driven over ENET via core/ediabas.py (EdiabasTest).
+                 Write jobs are confirm-gated inside the profile.
 
 profile.json may also carry a "panel" object (title/hint/actions) that the
 desktop front-end renders verbatim -- the UI for a new brand is data, not code.
@@ -85,5 +88,7 @@ def features(brand: str) -> dict:
         "resets": brand_module(brand, "resets") is not None,
         # Building the car's own service-history entry (BMW/MINI iDrive).
         "serviceHistory": brand_module(brand, "service_history") is not None,
+        # BMW's own EDIABAS job library driven from the harness (BMW/MINI).
+        "ediabas": brand_module(brand, "ediabas") is not None,
         "needsAdapter": needs_adapter(brand),
     }

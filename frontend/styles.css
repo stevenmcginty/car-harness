@@ -1704,3 +1704,61 @@ a.btn {
   justify-content: center;
   text-decoration: none;
 }
+
+/* ---------- Module jobs (EDIABAS library browser) ---------- */
+.jobs-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 6px;
+  align-items: center;
+}
+
+.jobs-select {
+  background: var(--panel-hi);
+  color: var(--text);
+  border: 1px solid var(--panel-top);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  max-width: 320px;
+}
+
+.jobs-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.jobs-param {
+  background: var(--panel-hi);
+  color: var(--text);
+  border: 1px solid var(--panel-top);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.jobs-raw-wrap {
+  margin-top: 10px;
+}
+
+.jobs-raw-wrap summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.jobs-raw-wrap pre {
+  background: var(--panel);
+  border: 1px solid var(--panel-top);
+  border-radius: 8px;
+  padding: 10px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  color: var(--text-muted);
+}

@@ -673,6 +673,100 @@ async def build_service_history(brand: str, request: Request) -> dict:
         raise HTTPException(status_code=400, detail=f"Bad service record: {exc}")
 
 
+@app.post("/api/{brand}/service-history/write")
+async def write_service_history(brand: str, request: Request) -> dict:
+    """Write one service-history entry to the car over ENET. CHANGES THE CAR.
+
+    The body is the build form's fields plus "confirm": true (required --
+    entries cannot be edited or deleted afterwards) and optional
+    "reboot": false to skip the head-unit restart that makes the entry show.
+    mode="sim" validates and returns the telegram without touching a car.
+    """
+    module = _brand_capability_or_404(brand, "service_history")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"day":.., "month":.., "year":.., "odometer":.., '
+                   '"units":"mi"|"km", "dealer_name":"RADLETT", "items":[...], '
+                   '"confirm": true}.',
+        )
+    body = body or {}
+    mode = body.get("mode") or "real"
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    fields = {
+        "day": body.get("day"),
+        "month": body.get("month"),
+        "year": body.get("year"),
+        "odometer": body.get("odometer", 0),
+        "units": body.get("units", "km"),
+        "dealer_name": body.get("dealer_name", ""),
+        "bmw_dealer": bool(body.get("bmw_dealer")),
+        "status": int(body.get("status", 1)),
+        "items": body.get("items") or [],
+        "correction_counter": int(body.get("correction_counter", 0)),
+    }
+    try:
+        return await run_in_threadpool(
+            module.write, mode, bool(body.get("confirm")), bool(body.get("reboot", True)), **fields
+        )
+    except module.ServiceHistoryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Bad service record: {exc}")
+
+
+@app.get("/api/{brand}/ediabas/modules")
+def get_ediabas_modules(brand: str) -> dict:
+    """The EDIABAS bridge catalogue: availability + per-module job menus.
+
+    No car contact -- this is the data a UI renders the Jobs browser from.
+    """
+    module = _brand_capability_or_404(brand, "ediabas")
+    return module.modules()
+
+
+@app.post("/api/{brand}/ediabas/run")
+async def run_ediabas_job(brand: str, request: Request) -> dict:
+    """Run one allowlisted SGBD job over ENET.
+
+    kind=write jobs are refused unless the JSON body has "confirm": true --
+    the profile layer enforces that, not just this route.
+    """
+    module = _brand_capability_or_404(brand, "ediabas")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"module": "hu", "job": "IDENTIFIKATION", '
+                   '"params": [...], "mode": "real"|"sim", "confirm": true}.',
+        )
+    body = body or {}
+    if not body.get("module") or not body.get("job"):
+        raise HTTPException(status_code=400, detail='JSON body must include "module" and "job".')
+    mode = body.get("mode") or "real"
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    params = body.get("params")
+    if params is not None and not isinstance(params, list):
+        raise HTTPException(status_code=400, detail='"params" must be a list of strings.')
+    try:
+        return await run_in_threadpool(
+            module.run_job,
+            str(body["module"]),
+            str(body["job"]),
+            params,
+            mode,
+            bool(body.get("confirm")),
+            body.get("remote_host"),
+        )
+    except module.EdiabasJobError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 # --------------------------------------------------------------------------- #
 # Static front-end mount at "/" (LAST, and only if the dir exists).
 # A missing or empty frontend/ must not crash startup -- the API still works.

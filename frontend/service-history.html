@@ -96,6 +96,11 @@
             border: 1px solid var(--line); border-left: 3px solid var(--bad);
             font-size: 13px; line-height: 1.6; }
   .sh-err.show { display: block; }
+  .sh-ok { display: none; margin-top: 14px; padding: 12px 14px;
+           border-radius: 8px; background: var(--ok-wash, rgba(134,195,74,.12));
+           border: 1px solid var(--line); border-left: 3px solid var(--ok, #86c34a);
+           font-size: 13px; line-height: 1.6; }
+  .sh-ok.show { display: block; }
 
   .sh-steps { counter-reset: step; margin: 0; padding: 0; list-style: none; }
   .sh-steps li { counter-increment: step; position: relative;
@@ -190,12 +195,18 @@
   <div class="sh-actions">
     <button class="sh-btn" id="sh-build" type="button">Build the entry</button>
     <button class="sh-btn ghost" id="sh-copy" type="button" disabled>Copy argument</button>
+    <button class="sh-btn" id="sh-write" type="button" disabled>Write to the car</button>
   </div>
   <div class="sh-err" id="sh-err"></div>
+  <div class="sh-ok" id="sh-ok"></div>
 
   <section class="sh-card sh-out" id="sh-out" style="margin-top:18px">
     <h2>Argument for <code>steuern_servicehistory_add</code></h2>
-    <p class="sh-note">Paste this into the Tool32 argument box, then run the job.</p>
+    <p class="sh-note">
+      <b>Write to the car</b> sends it straight over the ENET cable (the routine is
+      verified on NBT — it wrote this very page's test entry to the F56 on
+      27/07/2026). Or paste the argument into Tool32 if you prefer.
+    </p>
     <div class="sh-arg" id="sh-arg"></div>
     <div class="sh-summary" id="sh-chips"></div>
     <div class="sh-warn"><ul id="sh-notes"></ul></div>

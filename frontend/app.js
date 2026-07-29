@@ -113,6 +113,17 @@
     brandExtrasHint: document.getElementById("brand-extras-hint"),
     brandExtrasMessage: document.getElementById("brand-extras-message"),
     brandExtrasChips: document.getElementById("brand-extras-chips"),
+    brandJobs: document.getElementById("brand-jobs"),
+    brandJobsHint: document.getElementById("brand-jobs-hint"),
+    brandJobsModule: document.getElementById("brand-jobs-module"),
+    brandJobsJob: document.getElementById("brand-jobs-job"),
+    brandJobsRun: document.getElementById("brand-jobs-run"),
+    brandJobsParams: document.getElementById("brand-jobs-params"),
+    brandJobsDesc: document.getElementById("brand-jobs-desc"),
+    brandJobsMessage: document.getElementById("brand-jobs-message"),
+    brandJobsResults: document.getElementById("brand-jobs-results"),
+    brandJobsRawWrap: document.getElementById("brand-jobs-raw-wrap"),
+    brandJobsRaw: document.getElementById("brand-jobs-raw"),
     serviceBrandLabel: document.getElementById("service-brand-label"),
     jobsBrandLabel: document.getElementById("jobs-brand-label"),
     serviceMessage: document.getElementById("service-message"),
@@ -1558,6 +1569,12 @@
     el.brandExtrasChips.innerHTML = "";
     el.brandExtrasMessage.textContent = "";
     el.brandExtrasHint.hidden = true;
+    el.brandJobs.hidden = true;
+    el.brandJobsResults.innerHTML = "";
+    el.brandJobsMessage.textContent = "";
+    el.brandJobsRawWrap.hidden = true;
+    jobsState.catalogue = null;
+    jobsState.inFlight = false;
     el.brandScanBtn.disabled = false;
     el.brandScanBtn.textContent = "Scan all modules";
     el.brandClearAllBtn.disabled = false;
@@ -1662,6 +1679,32 @@
         runBrandReport(pdfBtn);
       });
       el.brandActions.insertBefore(pdfBtn, el.brandClearAllBtn);
+    }
+
+    // EDIABAS module jobs (BMW/MINI): the manufacturer's own SGBD job library,
+    // driven over the native cable. One button opens the jobs browser.
+    if (f.ediabas) {
+      var jobsBtn = document.createElement("button");
+      jobsBtn.type = "button";
+      jobsBtn.className = "btn btn-secondary brand-extra-btn";
+      jobsBtn.textContent = "Module jobs (BMW library)";
+      jobsBtn.addEventListener("click", function () {
+        openBrandJobs();
+      });
+      el.brandActions.insertBefore(jobsBtn, el.brandClearAllBtn);
+    }
+
+    // The car's own service book (iDrive). A dedicated page builds the entry
+    // and writes it over the native cable.
+    if (f.serviceHistory) {
+      var shBtn = document.createElement("button");
+      shBtn.type = "button";
+      shBtn.className = "btn btn-secondary brand-extra-btn";
+      shBtn.textContent = "Service history (iDrive)";
+      shBtn.addEventListener("click", function () {
+        window.open("/service-history.html", "_blank");
+      });
+      el.brandActions.insertBefore(shBtn, el.brandClearAllBtn);
     }
 
     // "Clear ALL modules" needs no per-brand UI code: /api/{brand}/clear with
@@ -2027,6 +2070,159 @@
         brand.extrasInFlight = false;
         btn.disabled = false;
         btn.textContent = original;
+      });
+  }
+
+  // ---------- Module jobs (manufacturer's own EDIABAS library; BMW/MINI) ----------
+
+  var jobsState = { catalogue: null, inFlight: false };
+
+  function openBrandJobs() {
+    var p = currentProfile();
+    if (!p) return;
+    el.brandJobs.hidden = false;
+    el.brandJobsHint.textContent = "";
+    el.brandJobsMessage.textContent = "Loading job library…";
+    el.brandJobsModule.innerHTML = "";
+    el.brandJobsJob.innerHTML = "";
+    el.brandJobsParams.innerHTML = "";
+    el.brandJobsDesc.textContent = "";
+    el.brandJobsResults.innerHTML = "";
+    el.brandJobsRawWrap.hidden = true;
+    el.brandJobsModule.onchange = renderJobSelect;
+    el.brandJobsJob.onchange = renderJobDetail;
+    el.brandJobsRun.onclick = runBrandJob;
+
+    apiFetch(obdUrl("/api/" + encodeURIComponent(p.id) + "/ediabas/modules"))
+      .then(function (data) {
+        jobsState.catalogue = data;
+        if (!data.available) {
+          el.brandJobsMessage.textContent = "Job library unavailable: " + (data.detail || "");
+          return;
+        }
+        el.brandJobsMessage.textContent = "";
+        el.brandJobsHint.textContent =
+          "The manufacturer's own module job library over the native cable. " +
+          "Entries marked verify are mapped but not yet confirmed on a real car. " +
+          "Jobs marked ✎ write to the car and always ask first.";
+        (data.modules || []).forEach(function (m) {
+          var opt = document.createElement("option");
+          opt.value = m.key;
+          opt.textContent = m.code + " — " + m.name + (m.verify ? " (verify)" : "");
+          el.brandJobsModule.appendChild(opt);
+        });
+        renderJobSelect();
+      })
+      .catch(function () {
+        el.brandJobsMessage.textContent = "Couldn't reach the backend.";
+      });
+  }
+
+  function currentJobsModule() {
+    if (!jobsState.catalogue) return null;
+    var key = el.brandJobsModule.value;
+    var found = null;
+    (jobsState.catalogue.modules || []).forEach(function (m) {
+      if (m.key === key) found = m;
+    });
+    return found;
+  }
+
+  function currentJobsEntry() {
+    var m = currentJobsModule();
+    if (!m) return null;
+    var found = null;
+    (m.jobs || []).forEach(function (j) {
+      if (j.name === el.brandJobsJob.value) found = j;
+    });
+    return found;
+  }
+
+  function renderJobSelect() {
+    var m = currentJobsModule();
+    el.brandJobsJob.innerHTML = "";
+    if (!m) return;
+    (m.jobs || []).forEach(function (j) {
+      var opt = document.createElement("option");
+      opt.value = j.name;
+      opt.textContent = j.name + (j.kind === "write" ? " ✎" : "") + (j.verify ? " (verify)" : "");
+      el.brandJobsJob.appendChild(opt);
+    });
+    renderJobDetail();
+  }
+
+  function renderJobDetail() {
+    var j = currentJobsEntry();
+    el.brandJobsParams.innerHTML = "";
+    el.brandJobsDesc.textContent = "";
+    if (!j) return;
+    el.brandJobsDesc.textContent =
+      j.description + (j.kind === "write" ? " Writes to the car — you will be asked to confirm." : "");
+    (j.params || []).forEach(function (prm) {
+      var input = document.createElement("input");
+      input.type = "text";
+      input.className = "jobs-param";
+      input.setAttribute("data-param", prm.name);
+      input.placeholder =
+        prm.name + (prm.required ? " (required)" : " (optional)") + (prm.hint ? " — " + prm.hint : "");
+      el.brandJobsParams.appendChild(input);
+    });
+  }
+
+  function runBrandJob() {
+    var p = currentProfile();
+    var m = currentJobsModule();
+    var j = currentJobsEntry();
+    if (!p || !m || !j || jobsState.inFlight) return;
+
+    var params = [];
+    el.brandJobsParams.querySelectorAll(".jobs-param").forEach(function (input) {
+      params.push(input.value.trim());
+    });
+    var anyParam = params.some(function (v) { return v !== ""; });
+
+    var body = {
+      module: m.key,
+      job: j.name,
+      params: anyParam ? params : null,
+      mode: state.simulate ? "sim" : "real",
+    };
+    if (j.kind === "write") {
+      var question =
+        (j.confirm || "This writes to the car.") + "\n\nRun " + j.name + " on " + m.code + "?";
+      if (!window.confirm(question)) return;
+      body.confirm = true;
+    }
+
+    jobsState.inFlight = true;
+    el.brandJobsRun.disabled = true;
+    el.brandJobsMessage.textContent = "Running " + j.name + " on " + m.code + "…";
+    el.brandJobsResults.innerHTML = "";
+    el.brandJobsRawWrap.hidden = true;
+
+    apiFetch(obdUrl("/api/" + encodeURIComponent(p.id) + "/ediabas/run"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(function (data) {
+        el.brandJobsMessage.textContent = (data && data.message) || "";
+        el.brandJobsResults.innerHTML = "";
+        Object.keys((data && data.results) || {}).forEach(function (name) {
+          el.brandJobsResults.appendChild(chip(name, String(data.results[name])));
+        });
+        if (data && data.raw) {
+          el.brandJobsRawWrap.hidden = false;
+          el.brandJobsRaw.textContent = data.raw;
+        }
+      })
+      .catch(function (err) {
+        el.brandJobsMessage.textContent =
+          "Job failed: " + ((err && err.message) || "couldn't reach the backend.");
+      })
+      .then(function () {
+        jobsState.inFlight = false;
+        el.brandJobsRun.disabled = false;
       });
   }
 

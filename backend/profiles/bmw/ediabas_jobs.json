@@ -1,0 +1,69 @@
+{
+  "_comment": "Curated EDIABAS job allowlist for BMW/MINI. ONLY jobs listed here can be run through /api/{brand}/ediabas/run. kind=read jobs run freely; kind=write jobs require confirm:true and show 'confirm' as the prompt. Adding a function = adding an entry here (plus verifying it on a real car -- mark it 'verify': true until then).",
+  "common": [
+    {
+      "name": "IDENTIFIKATION",
+      "kind": "read",
+      "aliases": ["IDENT"],
+      "description": "Module identity: part number, hardware/software versions, diagnostic index. (Some variants call the job IDENT -- tried automatically.)"
+    },
+    {
+      "name": "FS_LESEN",
+      "kind": "read",
+      "description": "Read the module's fault memory (manufacturer-level, with environment data)."
+    },
+    {
+      "name": "FS_LOESCHEN",
+      "kind": "write",
+      "description": "Clear the module's fault memory.",
+      "confirm": "Clears ALL stored faults on this module."
+    },
+    {
+      "name": "STEUERGERAETE_RESET",
+      "kind": "write",
+      "description": "Reboot the module (same as a battery disconnect for that ECU).",
+      "confirm": "The module restarts; its functions drop out for a few seconds."
+    }
+  ],
+  "modules": {
+    "hu": [
+      {
+        "name": "STEUERN_SERVICEHISTORY_ADD",
+        "kind": "write",
+        "description": "Add one entry to the car's own iDrive service history. Oldest entries first; a module reset is needed before it shows on screen.",
+        "params": [
+          {"name": "argument", "hint": "The 61-field argument string -- build it on the Service History page, paste it here", "required": true}
+        ],
+        "confirm": "Writes a permanent entry to the head unit's service history."
+      },
+      {
+        "name": "STEUERN_SERVICEHISTORY_ERASE",
+        "kind": "write",
+        "description": "Erase the ENTIRE in-car service history. No per-entry delete exists.",
+        "confirm": "Wipes ALL service-history entries from the head unit. There is no undo."
+      }
+    ],
+    "kombi": [
+      {
+        "name": "CBS_RESET",
+        "kind": "write",
+        "verify": true,
+        "description": "Reset a CBS service item after the work is done. Argument set verified for G-series clusters (KOMB_G11/J29 docs); F-series may differ -- confirm on car before relying on it.",
+        "params": [
+          {"name": "CBS_KENNUNG", "hint": "Item: Oel, Brfl, Br_v, Br_h, TUV, AU, Sic, ...", "required": true},
+          {"name": "CBS_VERFUEGBARKEIT", "hint": "0-100 percent, or 255 for no change (150 allowed for brake fluid)", "required": false},
+          {"name": "CBS_ANZAHL_SERVICE", "hint": "31 = increment service counter by one", "required": false},
+          {"name": "ZIEL_MONAT", "hint": "Target month, or 63 for no change", "required": false},
+          {"name": "ZIEL_JAHR", "hint": "Target year 0-62 (=2000-2062), or 63 for no change", "required": false}
+        ],
+        "confirm": "Resets the chosen service item's interval counter on the cluster."
+      },
+      {
+        "name": "CBS_RESET_DETAIL_LESEN",
+        "kind": "read",
+        "verify": true,
+        "description": "Read CBS reset details, including why a previous reset was refused (CBS_RUECK_GRUND)."
+      }
+    ]
+  }
+}

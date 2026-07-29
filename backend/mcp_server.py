@@ -22,6 +22,7 @@ from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import brands, interfaces, registry  # noqa: E402
+from backend.profiles.bmw import ediabas as bmw_ediabas  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.fiat import pids as fiat_pids  # noqa: E402
 from backend.profiles.fiat import scan as fiat_scan  # noqa: E402
@@ -116,6 +117,49 @@ def bmw_clear_module(confirm: bool = False, address: str | None = None, mode: st
     if mode not in ("real", "sim"):
         return {"error": "mode must be 'real' or 'sim'."}
     return bmw_scan.clear(mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# BMW/MINI EDIABAS bridge -- BMW's own SGBD job library over ENET
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def bmw_ediabas_modules() -> dict:
+    """List the EDIABAS bridge catalogue for BMW/MINI (no car contact).
+
+    Returns whether the bridge is usable on this machine (EdiabasTest runner +
+    C:\\EDIABAS\\ECU SGBD library present) and, per module (engine, gearbox,
+    cluster, head unit...), the curated allowlist of jobs that can be run:
+    idents, fault memory, service-history write, CBS resets. Jobs marked
+    verify=true are mapped but not yet confirmed on a real car.
+    """
+    return bmw_ediabas.modules()
+
+
+@mcp.tool()
+def bmw_ediabas_run(
+    module: str,
+    job: str,
+    params: list[str] | None = None,
+    mode: str = "real",
+    confirm: bool = False,
+) -> dict:
+    """Run one allowlisted EDIABAS job on a BMW/MINI module over the ENET cable.
+
+    module: key from bmw_ediabas_modules (e.g. "dme", "kombi", "hu").
+    job: job name from that module's allowlist (e.g. "IDENTIFIKATION",
+        "FS_LESEN"). Anything not allowlisted is refused.
+    params: job arguments as strings, semicolon-order per the SGBD docs.
+    confirm: REQUIRED True for kind=write jobs (fault-clear, module reset,
+        service-history add/erase, CBS reset) -- only after the user agrees.
+    Ignition must be ON with the ENET cable connected. mode="sim" returns a
+    clearly-labelled fake without touching a car.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    try:
+        return bmw_ediabas.run_job(module, job, params, mode, confirm)
+    except bmw_ediabas.EdiabasJobError as exc:
+        return {"error": str(exc)}
 
 
 # --------------------------------------------------------------------------- #

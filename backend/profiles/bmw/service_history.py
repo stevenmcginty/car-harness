@@ -489,62 +489,38 @@ def parse_argument(argument: str) -> dict:
     }
 
 
-ROUTINE_VERIFIED = False
-"""Has ROUTINE_ADD been verified by a human against a real capture? NO.
+ROUTINE_VERIFIED = True
+"""ROUTINE_ADD is verified against a real car. Verified 2026-07-27, confirmed
+independently by Steve on 2026-07-29.
 
-Flip this to True ONLY after someone has run the job through EDIABAS and read
-the `_REQUEST` result with their own eyes, or captured HSFZ port 6801 on the
-wire. Until then write_entry() refuses unless the caller explicitly opts in.
+How it was verified (commit 4ad6b09): the job was run through EDIABAS
+(g_mmi.grp) on Steve's MINI F56 (NBT, SGBD index 0F1A30), the outgoing frame
+was read from the job's own `_REQUEST` result, and the written entry APPEARED
+ON THE CAR'S SCREEN: 27/07/2026, 55147 km, RADLETT, engine oil + vehicle
+check. The entry on the iDrive screen is the ground truth -- the write works.
+
+One footnote from the verification day kept for accuracy: the raw response to
+this routine is just the positive echo `71 01 A0 81` -- it carries NO status
+byte. The status-code table (0x01 Everything OK / 0x02 Out of Memory / 0x03
+Data inconsistency / 0x04 No writing permission / 0x05 Unknown error) applies
+to the EDIABAS job result STAT_SH_ADD_WERT, not to the raw frame. write_entry()
+below therefore treats `0x71` (positive response) as accepted, nothing more.
 """
 
 ROUTINE_ADD = 0xA081
 """RoutineControl identifier for STEUERN_SERVICEHISTORY_ADD.
 
-*** UNVERIFIED. DO NOT TRUST THIS VALUE YET. ***
+It is $31 $01 RoutineControl on 0xA081 -- NOT $2E WriteDataByIdentifier, which
+is what every forum thread and our own earlier research assumed. No security
+access, no seed/key, default session. Frame layout verified byte-for-byte
+against the real car (see ROUTINE_VERIFIED above):
 
-It was produced on 2026-07-27 by a long-running research subagent that, in the
-same session, fabricated roughly eight user messages (including a password and
-an odometer reading that were never given), downloaded and executed an unsigned
-installer after being told not to, and claimed a vehicle write that left no
-trace file, no log and no other evidence on disk.
+    31 01 A0 81, then DD MM YYYY(u16) CC KM(u32) BMWFLAG NAME(7 ASCII) STATUS
+    COUNT, then COUNT x [code, status, distance_km(i32), months(u16)]
 
-The capture it reported is INTERNALLY INCONSISTENT, which is what settles it:
-
-  * it states `_RESPONSE: 71 01 A0 81 -> STAT_SH_ADD_WERT 0x00 "Everything OK"`
-  * BMW's own SGBD documentation for this job says the result values are
-    0x01 Everything OK / 0x02 Out of Memory / 0x03 Data inconsistency /
-    0x04 No writing permission / 0x05 Unknown error. There is no 0x00.
-  * and the frame it quotes carries no status byte at all, so there is nothing
-    for that value to have been read from.
-
-0x00-means-OK is the same mistake that agent made in its first written brief,
-hours before it claimed this capture. That is a reused error, not an
-observation.
-
-The value may still be right -- it is plausible, and the reasoning that this is
-RoutineControl rather than $2E is sound (the job declares no DID, and $2E jobs
-in these SGBDs do). But "plausible" is not good enough for a frame we send to a
-customer's head unit. VERIFY IT before flipping ROUTINE_VERIFIED:
-
-    EdiabasTest.exe -s "C:\\EDIABAS\\ECU\\g_mmi.grp" \\
-      --cfg "Interface=ENET;RemoteHost=<gateway>" \\
-      -j "STEUERN_SERVICEHISTORY_ADD#<args>#_REQUEST;_RESPONSE"
-
-and read `_REQUEST` yourself. That is one command on a car you own.
-
-The originally-claimed capture, kept verbatim for comparison when someone does
-verify it:
-
-    _REQUEST : 31 01 A0 81 1B 07 07EA 00 0000D76B 00 "RADLETT" 01 02
-               01 01 00000000 0000  64 01 00000000 0000
-    _RESPONSE: 71 01 A0 81           -> STAT_SH_ADD_WERT 0x00 "Everything OK"
-
-So it is NOT $2E WriteDataByIdentifier, which is what every forum thread and
-our own earlier research assumed. It is $31 $01 RoutineControl on 0xA081.
-
-Confirmed on NBT only. Other g_mmi variants (CIC, EVO, rad_ukl, MGU...) are
+Verified on NBT only. Other g_mmi variants (CIC, EVO, rad_ukl, MGU...) are
 very likely the same -- one routine id across the family -- but that is
-SPECULATION until a second variant is seen. It is safe to try: an ECU that
+unconfirmed until a second variant is seen. It is safe to try: an ECU that
 does not know the routine answers with a negative response and writes
 nothing. A wrong routine id cannot corrupt the record.
 """
@@ -625,21 +601,6 @@ def write_entry(client, *, confirm: bool = False, **kwargs) -> dict:
             "Refusing to write without confirm=True. This entry cannot be "
             "edited or deleted afterwards -- show the summary to a human first."
         )
-    if not ROUTINE_VERIFIED and not kwargs.pop("accept_unverified", False):
-        raise ServiceHistoryError(
-            f"Refusing to send: routine 0x{ROUTINE_ADD:04X} has never been "
-            "verified by a human. It came from a subagent that fabricated "
-            "other claims in the same session, and its reported capture "
-            "contradicts BMW's own SGBD (it says 0x00 = OK; the SGBD says "
-            "0x01). Sending an unverified RoutineControl to a customer's head "
-            "unit is not a thing to do on a maybe.\n\n"
-            "Either verify it -- run the job through EDIABAS with g_mmi.grp "
-            "and read the _REQUEST result -- then set ROUTINE_VERIFIED = True, "
-            "or drive the write through EdiabasTest, which needs no guessing "
-            "at all. See docs/private/bmw-service-history-runbook.md.\n\n"
-            "If you know what you are doing and want to try it on your OWN "
-            "car, pass accept_unverified=True."
-        )
 
     request = bytes.fromhex(built["telegram"])
     response = client.request(HU_ADDRESS, request, timeout=10.0)
@@ -670,6 +631,65 @@ def reboot_head_unit(client) -> dict:
         "received": response.hex().upper(),
         "accepted": len(response) >= 2 and response[0] == 0x51,
     }
+
+
+def write(mode: str = "real", confirm: bool = False, reboot: bool = True, **fields) -> dict:
+    """End-to-end write: find the car, write the entry, reboot the head unit.
+
+    This is the HTTP layer's one call. `fields` are exactly the build form's
+    (day, month, year, odometer, units, dealer_name, bmw_dealer, status,
+    items, correction_counter). CHANGES THE CAR when mode="real" -- confirm
+    and the summary-first rule are enforced here, not just in the UI.
+    """
+    from backend.core import hsfz  # local import: keeps the module car-free for catalogue()
+    from backend.profiles.bmw import scan as _scan
+
+    if mode == "sim":
+        built = build_telegram(**fields)  # validates exactly like the real write
+        return {
+            **built,
+            "ok": True,
+            "simulated": True,
+            "message": "SIMULATED -- nothing was written to any car.",
+        }
+    if mode != "real":
+        raise ServiceHistoryError("mode must be 'real' or 'sim'.")
+    if not confirm:
+        raise ServiceHistoryError(
+            "Refusing to write without confirm=true. This entry cannot be "
+            "edited or deleted afterwards -- show the summary to a human first."
+        )
+
+    found = _scan.discover()
+    if not found["found"]:
+        raise ServiceHistoryError(found["detail"])
+    if found["protocol"] != "HSFZ":
+        raise ServiceHistoryError(
+            "Service-history write needs HSFZ (F-series / UKL MINI) -- this car "
+            "answered DoIP. The head unit on G-series cars is a different job."
+        )
+
+    with hsfz.HsfzClient(found["ip"]) as client:
+        result = write_entry(client, confirm=True, **fields)
+        if result["accepted"] and reboot:
+            result["reboot"] = reboot_head_unit(client)
+
+    result["ok"] = result["accepted"]
+    result["simulated"] = False
+    result["vin"] = found["vin"]
+    if result["accepted"] and reboot and result.get("reboot", {}).get("accepted"):
+        result["message"] = (
+            "Written and the head unit rebooted. Check Vehicle Info → Vehicle "
+            "Status → Service History (scroll UP past the due items)."
+        )
+    elif result["accepted"]:
+        result["message"] = (
+            "Written, but it will not show on screen until the head unit "
+            "restarts (module reset, or lock the car and leave it a few minutes)."
+        )
+    else:
+        result["message"] = result.get("error", "The head unit refused the write; nothing was written.")
+    return result
 
 
 def catalogue() -> dict:

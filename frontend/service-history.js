@@ -10,6 +10,7 @@
   var catalogue = null;
   var showingAll = false;
   var lastArgument = "";
+  var lastBody = null;
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -184,8 +185,53 @@
           return j;
         });
       })
-      .then(showResult)
+      .then(function (result) {
+        lastBody = body;
+        showResult(result);
+      })
       .catch(function (err) { fail(err.message); });
+  });
+
+  /* --------------------------------------------------------------- write */
+
+  $("sh-write").addEventListener("click", function () {
+    clearFail();
+    $("sh-ok").classList.remove("show");
+    if (!catalogue || !lastBody) return;
+
+    var s = lastBody;
+    var what =
+      "Write this entry to the car's service history?\n\n" +
+      s.day + "/" + s.month + "/" + s.year + " · " + s.odometer + " " + s.units +
+      " · " + (s.dealer_name || "(no dealer name)") + " · " + s.items.length + " item(s)\n\n" +
+      "This cannot be edited or deleted afterwards. The head unit reboots so the entry shows.";
+    if (!window.confirm(what)) return;
+
+    var btn = $("sh-write");
+    btn.disabled = true;
+    btn.textContent = "Writing…";
+
+    fetch("/api/" + BRAND + "/service-history/write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({}, lastBody, { confirm: true, reboot: true }))
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
+          return j;
+        });
+      })
+      .then(function (result) {
+        var el = $("sh-ok");
+        el.textContent = result.message || "Written.";
+        el.classList.add("show");
+      })
+      .catch(function (err) { fail(err.message); })
+      .then(function () {
+        btn.disabled = false;
+        btn.textContent = "Write to the car";
+      });
   });
 
   function showResult(result) {
@@ -226,6 +272,7 @@
 
     $("sh-out").classList.add("show");
     $("sh-copy").disabled = false;
+    $("sh-write").disabled = false;
     $("sh-out").scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
