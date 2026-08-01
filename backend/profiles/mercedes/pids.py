@@ -1,6 +1,15 @@
 """Mercedes-Benz live "extras" over a plain ELM327 (docs/private/mercedes-research.md §4).
 
-Two mechanisms, both read-only:
+Three tiers, all read-only, ordered by how much car they need:
+
+(0) The E-Class mild-hybrid (W/S 213) answers a small published UDS 0x22 DID
+    library at the OBD port: chassis telemetry (wheel speeds, steering angle,
+    accelerations, brake pressures) on 0x7E2 and hybrid telemetry (HV battery
+    SoC, converter voltage, aux battery voltage) on 0x7E5. Every decode in
+    ``eclass.py`` was derived and verified against the OBDb Mercedes-Benz-E-Class
+    on-car vectors (tests/test_cases 2018 + 2021, 520 checks pass) -- the bundled
+    ``obdb_eclass_signalset.json`` is the curated subset. One cheap probe DID
+    gates the tier; a non-hybrid pays one short timeout and falls through.
 
 (a) The one VERIFIED Mercedes-specific value a dealer wants that the generic
     dashboard doesn't carry: the 722.9 / 9G automatic-transmission (ATF) oil
@@ -32,6 +41,8 @@ from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.uds_elm327 import Elm327UdsClient
+
+from . import eclass
 
 # Standard block, response = request + 8, so no id_map is needed.
 ENGINE = 0x7E0
@@ -129,6 +140,7 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
         return {
             "ok": True, "simulated": True,
             "readings": [
+                *[dict(r) for r in eclass.SIM_READINGS],
                 {"name": "Transmission (722.9/9G) ATF oil temp", "value": "62", "unit": "°C",
                  "description": _ATF_CAVEAT},
                 {"name": "Coolant temperature", "value": "88", "unit": "°C"},
@@ -154,6 +166,23 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
         client.begin()
         readings = []
         try:
+            # (0) TIER 0: the E-Class mild-hybrid DID set (research §4b). One cheap
+            # probe DID gates it; a non-hybrid returns [] and falls straight
+            # through to the extras below, paying one short timeout, not six.
+            eclass_readings = eclass.read_live(client)
+            if eclass_readings:
+                return {
+                    "ok": True, "simulated": False, "readings": eclass_readings,
+                    "message": (
+                        f"{len(eclass_readings) - 1} E-Class hybrid value(s) answered over the "
+                        "dongle (OBDb Mercedes-Benz-E-Class, CC-BY-SA-4.0; decodes verified "
+                        "against the on-car vectors): wheel speeds, steering, accelerations, "
+                        "brake pressures, HV battery SoC and voltages. Read-only pass; nothing "
+                        "was changed on the car."
+                    ),
+                    "timestamp": _now(),
+                }
+
             # (a) The one verified Mercedes-specific extra: 722.9/9G ATF temp.
             atf = _read_atf_temp(client)
             if atf is not None:
@@ -178,7 +207,8 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
         return {
             "ok": True, "simulated": False, "readings": readings,
             "message": (
-                f"{len(readings)} Mercedes value(s) answered. The ATF temp is the one "
+                f"{len(readings)} Mercedes value(s) answered. The E-Class hybrid DID set "
+                "didn't answer (non-hybrid, or a 2018+ DoIP car). The ATF temp is the one "
                 "Mercedes-specific extra; the rest are generic OBD PIDs. Values this car "
                 "doesn't support are skipped. Read-only pass; nothing was changed on the car."
             ),

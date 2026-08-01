@@ -15,7 +15,7 @@
         "label": "Live extras",
         "busy": "Reading the Mercedes-specific values...",
         "title": "Mercedes live extras",
-        "hint": "Reads the one verified Mercedes-specific value the generic list doesn't carry -- 722.9/9G automatic-transmission (ATF) oil temperature on the gearbox ECU -- plus a curated generic Mode-01 set (coolant, oil temp, module voltage, ambient, fuel level). DPF soot / AdBlue level have no public DID for Mercedes, so DPF/SCR health shows through the fault codes instead."
+        "hint": "On the E-Class mild-hybrid (W/S 213), reads the published UDS DID set over the dongle: wheel speeds, steering angle, accelerations, brake pressures (0x7E2) plus HV battery SoC, converter and aux-battery voltage (0x7E5) -- decodes verified against the OBDb on-car vectors (CC-BY-SA-4.0). On every other Mercedes, reads the 722.9/9G automatic-transmission (ATF) oil temperature on the gearbox ECU plus a curated generic Mode-01 set (coolant, oil temp, module voltage, ambient, fuel level). DPF soot / AdBlue level have no public DID for Mercedes, so DPF/SCR health shows through the fault codes instead."
       }
     ]
   }

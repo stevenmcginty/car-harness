@@ -1,0 +1,25 @@
+E-Class signalset — attribution
+================================
+
+The file `obdb_eclass_signalset.json` in this folder is a CURATED, decoded subset
+derived from the OBDb Mercedes-Benz-E-Class project's on-car test captures:
+
+    https://github.com/OBDb/Mercedes-Benz-E-Class
+
+The raw data is licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/).
+This JSON documents the ~15 single-shot dealer-relevant values curated into
+`eclass.py`, each citing the source file in the upstream `tests/test_cases/`
+tree (2018 + 2021) that its decode was derived from and verified against
+(520 vector checks, all pass: docs/private/mercedes-data/verify_decodes.py).
+226053 (HV current) is listed but NOT wired -- its only vector is all-zero, so
+its scale is unproven and nothing is invented.
+
+Because the underlying data is ShareAlike, this JSON file and any adaptation of
+it remain under CC-BY-SA-4.0. That licence applies to this data file only -- not
+to the car-harness source code, which merely reads a curated subset of the
+values.
+
+The upstream signalsets/v3/default.json is empty (`{ "commands": [] }`); the real
+payloads live in tests/test_cases/<year>/commands/, which is what this file cites.
+
+Retrieved 2026-08-01 from the OBDb-Mercedes-Benz-E-Class repository.

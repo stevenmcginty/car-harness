@@ -291,5 +291,15 @@ signal database (CC-BY-SA-4.0), bundled unmodified as
 That data file (and any adaptation of it) stays under CC-BY-SA-4.0; the licence
 does not extend to the car-harness code that reads it.
 
+The Mercedes E-Class mild-hybrid live values
+(`backend/profiles/mercedes/eclass.py`) are a curated, **decode-verified** subset
+of the [OBDb Mercedes-Benz-E-Class](https://github.com/OBDb/Mercedes-Benz-E-Class)
+on-car captures (CC-BY-SA-4.0) — wheel speeds, steering, accelerations, brake
+pressures (0x7E2) and HV battery SoC / converter / aux voltage (0x7E5). The
+bundled `obdb_eclass_signalset.json` cites the upstream `tests/test_cases/`
+vectors each decode was checked against; see the NOTICE beside it. As with the
+Taycan set, that data file stays CC-BY-SA-4.0 while the harness code that reads
+it does not.
+
 > The `frontend/` folder is owned by a separate front-end app. The backend just
 > serves whatever static files land there; if it is empty the API still works.
