@@ -532,11 +532,21 @@ def _brand_capability_or_404(brand: str, name: str):
 
 
 @app.get("/api/{brand}/discover")
-def brand_discover(brand: str) -> dict:
-    """Find the car on a brand's native cable (BMW ENET). Read-only."""
+def brand_discover(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """Find what the car actually has. Read-only.
+
+    Two shapes, following the same needs_adapter split as scan/live: a
+    native-cable brand (BMW ENET) finds the car itself and takes no arguments;
+    a dongle brand sweeps diagnostic addresses over the picked adapter
+    (Vauxhall, whose published module map is generic to GM rather than
+    confirmed per model).
+    """
     module = _brand_capability_or_404(brand, "scan")
     if not hasattr(module, "discover"):
         raise HTTPException(status_code=404, detail=f"'{brand}' has no discover step.")
+    if brands.needs_adapter(brand):
+        instance = _obd_adapter_or_400(adapter, mode)
+        return module.discover(instance, mode)
     return module.discover()
 
 

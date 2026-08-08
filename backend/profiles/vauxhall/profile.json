@@ -1,0 +1,29 @@
+{
+  "id": "vauxhall",
+  "name": "Vauxhall / Opel",
+  "transport": "elm327",
+  "description": "Vauxhall / Opel over a generic OBD-II dongle, on 11-bit/500k High Speed GMLAN. Built for the GM Global A era (Astra K, Insignia B, Mokka X, Zafira C -- roughly 2010-2019). Global A does NOT speak plain UDS: fault codes are GMW3110 ReadDiagnosticInformation (0xA9), clear is 0x04 and identification is 0x1A, so the scan ladders both dialects and reports which one answered. Powertrain sits at 0x7E0/0x7E1 (response +8); body/chassis modules use GM's own 0x24x block (response +0x400). Low-Speed GMLAN (single-wire, pin 1) carries most comfort modules and is NOT reachable through any standard dongle. 2019+ Vauxhalls are PSA/Stellantis platforms, not GM -- use the Peugeot profile for those. Read-only apart from a confirm-gated fault clear.",
+  "probe": "profile.py",
+  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"],
+  "panel": {
+    "title": "GMLAN module scan (OBD dongle)",
+    "hint": "Reads the engine and gearbox fault memory + identification deeper than generic OBD-II, plus the body/chassis modules that answer on GM's 0x24x block. Faults are shown GM-style as code + failure type (P0716-71). The module address list published for Global A is generic to GM, not confirmed per model, so use 'Find modules' first on a car you don't know -- it sweeps both address blocks and reports what actually answers. Pick the adapter top-right, ignition ON, then scan.",
+    "scanBusy": "Reading the Vauxhall over GMLAN (UDS dialect first, then GMW3110)...",
+    "actions": [
+      {
+        "id": "discover",
+        "label": "Find modules",
+        "busy": "Sweeping the GMLAN diagnostic address blocks...",
+        "title": "Find this car's modules",
+        "hint": "Probes every address in the powertrain block (0x7E0-0x7E7, reply +8) and GM's body/chassis block (0x240-0x25F, reply +0x400) and reports which ones answer, which dialect they answered in, and what they call themselves. This is how you build a verified module map for a model nobody has published one for. Read-only."
+      },
+      {
+        "id": "live",
+        "label": "Gearbox live",
+        "busy": "Reading the gearbox and engine live values...",
+        "title": "Vauxhall gearbox + engine live",
+        "hint": "Reads the GM-native transmission DIDs on the TCM (0x7E1): fluid temperature, current gear and target/commanded gear -- decodes from the OBDb VauxhallOpel signalset (CC-BY-SA-4.0). Current vs target gear read together is the pair that shows a shift flare: the TCM commands 4th while the box is still in 3rd. Also flags whether transmission fluid temperature is inside the Fast Learn window, and adds a curated generic Mode-01 set (rpm, speed, coolant, oil temp, module voltage, ambient). No public DID exposes the TCM's clutch adaptive cells, line pressure or clutch slip -- those are GDS2-only and nothing is invented for them."
+      }
+    ]
+  }
+}

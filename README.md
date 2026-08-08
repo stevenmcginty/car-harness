@@ -23,8 +23,8 @@ A modular car-diagnostics desktop app + Android companion app.
   `docs/private/service-resets-research.md` for the provenance.
 
 It is built to grow: manufacturer **profiles** (BMW, Mazda, Peugeot/PSA,
-VW/Audi, Mercedes, Fiat/Alfa and Jaguar/Land Rover today; the next brand is a
-folder drop-in) and installable/removable **job
+VW/Audi, Mercedes, Fiat/Alfa, Jaguar/Land Rover and Vauxhall/Opel today; the
+next brand is a folder drop-in) and installable/removable **job
 modules** are both discovered from the filesystem. A profile folder's
 capability files become its API routes and its desktop panel automatically --
 the manufacturer dropdown at the top of the desktop app drives everything.
@@ -181,9 +181,9 @@ Base URL: `http://127.0.0.1:8765`
 | POST | `/api/raw/elm` | Run a raw ELM327 command sequence, always restored afterwards -- confirm-gated |
 | GET | `/api/{brand}/scan` | Walk the brand's modules, read each one's fault memory (generic: any profile folder) |
 | POST | `/api/{brand}/clear` | Clear one module (or all) -- confirm-gated |
-| GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check, VW/Audi extras) |
+| GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check, VW/Audi extras, Vauxhall gearbox) |
 | GET | `/api/{brand}/snapshot` | Passive broadcast-CAN capture (Mazda) |
-| GET | `/api/{brand}/discover` | Find the car on a native cable (BMW ENET) |
+| GET | `/api/{brand}/discover` | Find the car on a native cable (BMW ENET), or sweep its diagnostic addresses over a dongle (Vauxhall) |
 | GET | `/api/{brand}/resets` | The brand's service-reset catalogue |
 | POST | `/api/{brand}/reset` | Run one service reset -- confirm-gated |
 | GET | `/api/{brand}/cbs` | Service items that can be reset, and which module owns each (BMW/MINI; no car contact) |
@@ -300,6 +300,16 @@ bundled `obdb_eclass_signalset.json` cites the upstream `tests/test_cases/`
 vectors each decode was checked against; see the NOTICE beside it. As with the
 Taycan set, that data file stays CC-BY-SA-4.0 while the harness code that reads
 it does not.
+
+The Vauxhall/Opel transmission live values
+(`backend/profiles/vauxhall/pids.py`) take three GM-native TCM decodes —
+fluid temperature `22 04FE`, current gear `22 5503`, commanded gear
+`22 5504` — from the brand-level [OBDb VauxhallOpel](https://github.com/OBDb/VauxhallOpel)
+signalset (CC-BY-SA-4.0); see the NOTICE beside them. Unlike the Taycan and
+E-Class sets these have **no upstream on-car verification vectors**, so they
+are labelled community-sourced and unverified until a real Astra K confirms
+them. Same licence split: the derived data stays CC-BY-SA-4.0, the code that
+reads it does not.
 
 > The `frontend/` folder is owned by a separate front-end app. The backend just
 > serves whatever static files land there; if it is empty the API still works.

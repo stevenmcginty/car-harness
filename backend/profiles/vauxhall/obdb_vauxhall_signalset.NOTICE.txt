@@ -1,0 +1,44 @@
+Vauxhall / Opel signalset — attribution
+=======================================
+
+The three GM-native transmission decodes wired into `pids.py`:
+
+    22 04FE   transmission fluid temperature
+    22 5503   current gear
+    22 5504   target (commanded) gear
+
+on the TCM at header 7E1 / reply 7E9, together with the gear value map
+(0 neutral, 1-10 gears, 11 reverse, 13 park), are derived from the OBDb
+VauxhallOpel project's brand-level signalset:
+
+    https://github.com/OBDb/VauxhallOpel
+    signalsets/v3/default.json
+
+The upstream data is licensed CC-BY-SA-4.0
+(https://creativecommons.org/licenses/by-sa/4.0/). Only these three commands
+are used; the rest of that file targets the PSA-era Vauxhalls (Corsa-e,
+Crossland, Grandland X — headers 740/742/763/7AB and the 29-bit 18DAxxF1
+forms) and is not applicable to a GM Global A car.
+
+Note for anyone extending this: the model-specific OBDb repositories,
+INCLUDING `OBDb/VauxhallOpel-Astra`, are all empty (`{ "commands": [] }`).
+The brand-level repository above is the only populated one.
+
+One decode note. OBDb expresses 04FE as one byte with `mul 1.8, add -40,
+unit fahrenheit`, i.e. °F = A × 1.8 − 40. That is algebraically identical to
+°C = A − 40, the standard single-byte temperature form, which is a useful
+independent check that the scaling is right. `pids.py` implements the Celsius
+form directly.
+
+No on-car verification vectors exist upstream for these three commands
+(unlike the Mercedes E-Class set, which shipped with test captures). They are
+therefore community-sourced and unverified against a real Astra K. The first
+real-car read should sanity-check the fluid temperature against a known-warm
+gearbox and the gear values against the selector position.
+
+Because the underlying data is ShareAlike, this attribution and any adaptation
+of the upstream data remain under CC-BY-SA-4.0. That licence applies to the
+derived signal data only — not to the car-harness source code, which merely
+reads a curated subset of the values.
+
+Retrieved 2026-08-08 from the OBDb/VauxhallOpel repository.

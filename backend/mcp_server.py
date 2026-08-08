@@ -38,6 +38,8 @@ from backend.profiles.mercedes import pids as mercedes_pids  # noqa: E402
 from backend.profiles.mercedes import scan as mercedes_scan  # noqa: E402
 from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
+from backend.profiles.vauxhall import pids as vauxhall_pids  # noqa: E402
+from backend.profiles.vauxhall import scan as vauxhall_scan  # noqa: E402
 from backend.profiles.vw import pids as vw_pids  # noqa: E402
 from backend.profiles.vw import scan as vw_scan  # noqa: E402
 
@@ -540,6 +542,115 @@ def mercedes_clear_module(
     if error is not None:
         return error
     return mercedes_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Vauxhall / Opel (GM Global A) over a generic OBD dongle
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def vauxhall_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a Vauxhall / Opel car's modules over a generic OBD-II dongle (read-only).
+
+    Built for the GM Global A era (Astra K, Insignia B, Mokka X, Zafira C --
+    roughly 2010-2019). Global A does NOT speak plain UDS: fault codes are
+    GMW3110 ReadDiagnosticInformation (0xA9), clear is 0x04 and identification
+    is 0x1A. Every module is tried UDS-first then GMLAN, and the result records
+    which dialect answered. Two address blocks are walked: powertrain
+    0x7E0-0x7E3 (reply +8) and GM's body/chassis block 0x241-0x258 (reply
+    +0x400). Faults come back GM-style as code + failure type ("P0716-71").
+    Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+
+    Two honest limits. Low Speed GMLAN (single-wire, 33.3k) carries much of the
+    comfort/body traffic and NO standard dongle reaches it. And 2019+ Corsa,
+    Mokka and Astra L are PSA/Stellantis cars, not GM -- use peugeot_scan_modules
+    for those. The shipped address table is generic to GM Global A rather than
+    confirmed per model, so run vauxhall_discover_modules on an unfamiliar car.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_discover_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Sweep a Vauxhall's GMLAN diagnostic addresses and report what answers (read-only).
+
+    No public source maps any specific Vauxhall model's module list -- the
+    shipped table is generic to GM Global A. This probes every address in the
+    powertrain block (0x7E0-0x7E7, reply +8) and GM's body/chassis block
+    (0x240-0x25F, reply +0x400) in both dialects and reports which answered,
+    what proved it, and any identification they give. Use it to build a
+    verified module map before trusting the scan's "not present" answers.
+    Presence probes and identification reads only -- no fault services, no
+    writes. Ignition must be ON. Takes noticeably longer than a scan (~40
+    addresses).
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_scan.discover(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read Vauxhall gearbox + engine live values over a generic OBD dongle (read-only).
+
+    On the TCM (0x7E1), the GM-native transmission DIDs: fluid temperature
+    (22 04FE), current gear (22 5503) and target/commanded gear (22 5504),
+    decoded from the OBDb VauxhallOpel signalset (CC-BY-SA-4.0). Current gear
+    against commanded gear is the pair that shows a shift flare -- the TCM has
+    asked for the next gear while the box has not delivered it, and engine rpm
+    climbs into the gap. Poll this repeatedly through the shift that flares and
+    read it alongside rpm. Fluid temperature also tells you when the box is near
+    the Service Fast Learn window, which the reading reports on. Plus a curated
+    generic Mode-01 set (rpm, speed, load, throttle, coolant, oil temp, module
+    voltage, ambient) on the engine. Values this car doesn't support are skipped.
+    Ignition must be ON; for gear data the engine must be running and the car
+    moving.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+
+    GENUINE GAP: no public DID exposes the TCM's clutch adaptive cells, line
+    pressure or clutch slip. Those are GDS2-only, and nothing is invented for
+    them.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_pids.live(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on Vauxhall modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    address: hex request id like "0x7E1" (the gearbox) or "0x241" (the BCM);
+        omit to clear every module that answers. Tries UDS 14 FF FF FF then
+        GMLAN 04. Note the GMLAN clear takes NO group argument -- on a GMW3110
+        module it wipes that module's entire fault memory, with no
+        emissions-only option. Faults return if the underlying problem is still
+        present, and clearing destroys the freeze-frame evidence a diagnosis may
+        still need.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_scan.clear(instance, mode, address)
 
 
 # --------------------------------------------------------------------------- #

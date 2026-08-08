@@ -19,6 +19,7 @@ SUITES = [
     "backend.tools.mercedes_selftest",
     "backend.tools.fiat_selftest",
     "backend.tools.jlr_selftest",
+    "backend.tools.vauxhall_selftest",
     "backend.tools.taycan_selftest",
     "backend.tools.readiness_selftest",
     "backend.tools.livedata_selftest",

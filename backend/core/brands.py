@@ -8,7 +8,9 @@ light up its routes:
     scan.py      scan(adapter, mode), clear(adapter, mode, address)
                  -- profiles whose profile.json transport is "enet-doip" use
                     the native-cable forms scan(mode) / clear(mode, address)
-                    and may expose discover()
+                 -- may also expose discover(): discover() on a native-cable
+                    profile (it finds the car itself), discover(adapter, mode)
+                    on a dongle profile (it sweeps diagnostic addresses)
     pids.py      live(adapter, mode)      brand-specific live values
                  -- "enet-doip" profiles use live(mode), like scan/clear
                  -- ALSO feeds the Live Data dashboard automatically; see the
