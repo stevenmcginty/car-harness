@@ -17,6 +17,10 @@ light up its routes:
                     contract in backend/obd/livefeed.py. A brand with no
                     pids.py still gets the full standard OBD-II set.
     snapshot.py  snapshot(adapter, mode)  passive broadcast capture
+    software.py  versions(adapter, mode)  the flashed software / calibration
+                 part numbers each module reports for itself -- the read that
+                 says whether a manufacturer update is even relevant. Read-only
+                 by construction; the harness never writes a calibration.
     resets.py    list_resets(), perform(adapter, mode, reset_id, confirm)
     service_history.py
                  catalogue(), build_argument(...)  the car's own service book
@@ -91,6 +95,8 @@ def features(brand: str) -> dict:
         # advertises one once it has something worth putting a name to.
         "report": pids_mod is not None and hasattr(pids_mod, "report"),
         "snapshot": brand_module(brand, "snapshot") is not None,
+        # Flashed software / calibration part numbers, read from each module.
+        "software": brand_module(brand, "software") is not None,
         "resets": brand_module(brand, "resets") is not None,
         # Building the car's own service-history entry (BMW/MINI iDrive).
         "serviceHistory": brand_module(brand, "service_history") is not None,

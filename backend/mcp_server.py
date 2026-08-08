@@ -40,6 +40,7 @@ from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
 from backend.profiles.vauxhall import pids as vauxhall_pids  # noqa: E402
 from backend.profiles.vauxhall import scan as vauxhall_scan  # noqa: E402
+from backend.profiles.vauxhall import software as vauxhall_software  # noqa: E402
 from backend.profiles.vw import pids as vw_pids  # noqa: E402
 from backend.profiles.vw import scan as vw_scan  # noqa: E402
 
@@ -596,6 +597,40 @@ def vauxhall_discover_modules(adapter_id: str | None = None, mode: str = "real")
     if error is not None:
         return error
     return vauxhall_scan.discover(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_software_versions(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read the software / calibration part numbers flashed into each Vauxhall module (read-only).
+
+    This is how you find out whether a manufacturer software update is relevant
+    to a given car -- including a gearbox recalibration, which is the common
+    reason to ask. Every module that answers is asked for its GMW3110
+    identification block: End Model Part Number ($CB), Base Model Part Number
+    ($CC), Boot Software Part Number ($C0), Software Module Identifiers 01-10
+    ($C1-$CA) with their two-character alpha codes, the date it was last
+    programmed ($99) and the tester/shop code that programmed it ($98). Modules
+    that answer plain UDS instead are read over the ISO 14229-1 F18x block.
+    Part numbers are decoded from GMW3110's 4-byte big-endian form into the
+    decimal number a parts catalogue quotes.
+
+    The result includes a plain-text ``worksheet`` listing every module's
+    numbers, meant to be compared line by line against what the manufacturer's
+    own programming system offers for the VIN.
+
+    Reading is all this does. The harness does not and will not write a
+    calibration: an ELM327 cannot hold a programming session, the calibration
+    binaries are not publicly available, and programming is gated behind a
+    proprietary SecurityAccess algorithm. See backend/profiles/vauxhall/
+    software.py for the full reasoning.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_software.versions(instance, mode)
 
 
 @mcp.tool()

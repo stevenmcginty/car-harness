@@ -562,6 +562,25 @@ def brand_scan(brand: str, adapter: str | None = None, mode: str = "real") -> di
     return module.scan(mode)
 
 
+@app.get("/api/{brand}/software")
+def brand_software(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """What software is flashed into each of the car's modules. Read-only.
+
+    The answer to "is there an update for my gearbox?" starts here: the module
+    reports its own calibration part numbers, and those are what a manufacturer
+    programming system matches against the VIN. The harness reads them and
+    stops there -- it does not write calibrations, and the profile module
+    records why not.
+    """
+    module = _brand_capability_or_404(brand, "software")
+    if brands.needs_adapter(brand):
+        instance = _obd_adapter_or_400(adapter, mode)
+        return module.versions(instance, mode)
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return module.versions(mode)
+
+
 @app.get("/api/{brand}/live")
 def brand_live(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
     """Brand-specific live values (Mazda mode-22 extras, Peugeot health check,

@@ -64,9 +64,14 @@ RESETS: List[dict] = [
             "and becomes a required follow-on step.",
         ],
         "procedure": [
-            "Read what is fitted now: the harness scan reads the TCM (0x7E1) "
-            "identification, and on a module that answers the UDS dialect that "
-            "includes DID F188 (software calibration). Note it with the VIN.",
+            "Read what is fitted now: run 'Software versions' in the harness "
+            "(API /api/vauxhall/software, MCP vauxhall_software_versions). It "
+            "asks the TCM at 0x7E1 for its GMW3110 identification block -- End "
+            "Model Part Number ($CB), Software Module Identifiers 01-10 "
+            "($C1-$CA) with their alpha codes, and the date it was last "
+            "programmed ($99) -- and prints a worksheet to compare. On a module "
+            "that answers the UDS dialect the same read comes back as DID F188. "
+            "Note the numbers with the VIN.",
             "Have the dealer or an equipped independent compare that calibration "
             "id against the latest available for the VIN in TIS2Web / SPS. Only "
             "the VIN lookup is authoritative -- a calibration that is current for "

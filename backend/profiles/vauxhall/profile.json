@@ -18,6 +18,14 @@
         "hint": "Probes every address in the powertrain block (0x7E0-0x7E7, reply +8) and GM's body/chassis block (0x240-0x25F, reply +0x400) and reports which ones answer, which dialect they answered in, and what they call themselves. This is how you build a verified module map for a model nobody has published one for. Read-only."
       },
       {
+        "id": "software",
+        "label": "Software versions",
+        "busy": "Reading each module's flashed software identification...",
+        "title": "What software is in this car",
+        "hint": "Asks every module that answers for the calibration it is actually running: End Model Part Number, Base Model Part Number, Boot Software Part Number and Software Module Identifiers 01-10, each with its two-character alpha code, plus the date it was last programmed and the tester code that programmed it. Part numbers come out of GMW3110 as 4-byte binary and are shown as the decimal a parts catalogue quotes. This is the step before asking whether an update exists -- including a gearbox recalibration: take these numbers to the manufacturer's programming system and compare against what it offers for the VIN. Read-only. The harness reads calibrations, it does not write them.",
+        "readOnly": true
+      },
+      {
         "id": "live",
         "label": "Gearbox live",
         "busy": "Reading the gearbox and engine live values...",

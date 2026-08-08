@@ -31,6 +31,7 @@ from backend.profiles.vauxhall import gmlan  # noqa: E402
 from backend.profiles.vauxhall import pids as vx_pids  # noqa: E402
 from backend.profiles.vauxhall import resets as vx_resets  # noqa: E402
 from backend.profiles.vauxhall import scan as vx_scan  # noqa: E402
+from backend.profiles.vauxhall import software as vx_software  # noqa: E402
 
 PASS = []
 FAIL = []
@@ -213,6 +214,61 @@ class LiveSession(GmlanSession):
                 return "410D30"            # 48 km/h
             if cmd == "0105":
                 return "410585"            # 133-40 = 93 C
+        return super()._reply(req_id, cmd)
+
+
+class SoftwareSession(GmlanSession):
+    """A car whose modules answer the GMW3110 identification block.
+
+    The point of the fake is the encoding: GM stores part numbers as a 4-byte
+    binary value, not as text, so $CB coming back 01724E8F must be reported as
+    24268431 and not as the hex. It also proves the two things that are easy to
+    get wrong -- an alpha code is glued to its own part number and not to the
+    next one, and an identifier answered with all zeros is a slot that was
+    never written rather than "part number 0".
+    """
+
+    PRESENT = {0x7E0: 0x7E8, 0x7E1: 0x7E9}
+
+    # request id -> {identifier hex: payload hex}
+    SOFTWARE = {
+        0x7E1: {
+            "CB": "01724E8F",           # end model part number 24268431
+            "DB": ascii_hex("AC"),      # ... alpha code AC
+            "CC": "01724E00",           # base model part number 24268320
+            "C0": "00C0ED34",           # boot software 12643636
+            "C1": "01724E98",           # software module 01, 24268440
+            "D1": ascii_hex("AB"),
+            "C2": "01724EA7",           # software module 02, 24268455
+            "C3": "00000000",           # a slot that exists but was never written
+            "99": "161102",             # programmed 2016-11-02
+            "98": ascii_hex("GM01234"),
+        },
+        0x7E0: {
+            "CB": "00C11B40",           # 12655424
+            "C1": "00C11B46",           # 12655430
+            "99": "170314",
+        },
+    }
+
+    def _reply(self, req_id, cmd):
+        if cmd.startswith("1A") and len(cmd) == 4:
+            payload = self.SOFTWARE.get(req_id, {}).get(cmd[2:])
+            if payload is not None:
+                return iso_tp("5A" + cmd[2:] + payload)
+            return "7F1A31"                     # request out of range
+        return super()._reply(req_id, cmd)
+
+
+class UdsSoftwareSession(UdsSession):
+    """A late Global A node answering the ISO 14229-1 F18x block instead."""
+
+    def _reply(self, req_id, cmd):
+        if req_id == 0x7E0:
+            if cmd == "22F188":
+                return iso_tp("62F188" + ascii_hex("12655424AB"))
+            if cmd == "22F189":
+                return iso_tp("62F189" + ascii_hex("0004"))
         return super()._reply(req_id, cmd)
 
 
@@ -451,6 +507,63 @@ def main():
     check("an unknown reset id is rejected",
           vx_resets.perform(None, "real", "nope", confirm=True)["ok"] is False)
 
+    # -------------------------------------------------- software versions
+    sw_session = SoftwareSession()
+    obd_service._with_session = with_fake_session(sw_session)
+    sw = vx_software.versions(ADAPTER, "real")
+    tcm = next((m for m in sw["modules"] if m["code"] == "7E1"), {})
+    entries = {e["id"]: e for e in tcm.get("entries", [])}
+
+    check("software read finds the gearbox module", bool(entries), str(sw.get("message")))
+    check("a GM part number is decoded from 4 binary bytes, not shown as hex",
+          entries.get("$CB", {}).get("value", "").startswith("24268431"),
+          str(entries.get("$CB")))
+    check("an alpha code is joined to its own part number",
+          entries.get("$CB", {}).get("value") == "24268431 AC" and
+          entries.get("$C1", {}).get("value") == "24268440 AB",
+          f"{entries.get('$CB')} / {entries.get('$C1')}")
+    check("the raw bytes are kept alongside the decode",
+          entries.get("$CB", {}).get("raw") == "01724E8F", str(entries.get("$CB")))
+    check("the programming date is decoded from BCD",
+          entries.get("$99", {}).get("value") == "2016-11-02", str(entries.get("$99")))
+    check("the tester that last programmed the module is reported",
+          entries.get("$98", {}).get("value") == "GM01234", str(entries.get("$98")))
+    check("an all-zero identifier is treated as never written, not part number 0",
+          "$C3" not in entries, str(entries.get("$C3")))
+    # $C3 is blank and $C4/$C5 are refused -- three consecutive empty slots, so
+    # $C6-$CA are never asked for. A dongle pays a timeout for every one of them.
+    check("software module scanning stops after three empty slots",
+          not any(f"$C{n:X}" in entries for n in range(0x4, 0xB)) and
+          any("stopped after" in line for line in tcm.get("trace", [])),
+          sorted(entries))
+    check("the gearbox is called out in the message",
+          "TCM" in sw["message"] and "24268431" in sw["message"], sw["message"])
+    check("a worksheet is produced for comparing against the maker's system",
+          "24268431 AC" in sw["worksheet"] and "$99" in sw["worksheet"])
+    check("the software read restored the ELM",
+          sw_session.header == "7DF" and sw_session.cra is None,
+          f"{sw_session.header} / {sw_session.cra}")
+
+    # The write is not on offer, and the module says so where a reader will see it.
+    import inspect
+    src = inspect.getsource(vx_software)
+    check("the software module records why it does not flash",
+          "WHY THERE IS NO FLASH FUNCTION HERE" in src)
+    check("no programming services are implemented",
+          not any(s in src for s in ("RequestDownload(", "0x34,", "0x36,", "0x37,")))
+
+    obd_service._with_session = with_fake_session(UdsSoftwareSession())
+    sw_uds = vx_software.versions(ADAPTER, "real")
+    ecm = next((m for m in sw_uds["modules"] if m["code"] == "7E0"), {})
+    uds_entries = {e["id"]: e["value"] for e in ecm.get("entries", [])}
+    check("a UDS-dialect module is read over the F18x block instead",
+          ecm.get("dialect") == "uds" and uds_entries.get("$F188") == "12655424AB",
+          f"{ecm.get('dialect')} {uds_entries}")
+
+    sw_sim = vx_software.versions(None, "sim")
+    check("sim software labelled",
+          sw_sim["ok"] and sw_sim["simulated"] and "SIMULATED" in sw_sim["message"])
+
     # ------------------------------------------------------------ sim paths
     s = vx_scan.scan(None, "sim")
     check("sim scan labelled", s["ok"] and s["simulated"] and "SIMULATED" in s["message"])
@@ -466,7 +579,7 @@ def main():
 
     from backend.main import app
     client = TestClient(app)
-    for path in ("scan", "live", "discover"):
+    for path in ("scan", "live", "discover", "software"):
         r = client.get(f"/api/vauxhall/{path}?mode=sim").json()
         check(f"API sim {path} over the generic brand route",
               r.get("ok") and r.get("simulated"), str(r.get("message")))
@@ -486,7 +599,8 @@ def main():
     check("MCP tools registered",
           all(hasattr(mcp_server, n) for n in
               ("vauxhall_scan_modules", "vauxhall_discover_modules",
-               "vauxhall_live_values", "vauxhall_clear_module")))
+               "vauxhall_live_values", "vauxhall_clear_module",
+               "vauxhall_software_versions")))
 
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     return 1 if FAIL else 0

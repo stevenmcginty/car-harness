@@ -99,6 +99,8 @@
     brandPanel: document.getElementById("brand-panel"),
     brandTitle: document.getElementById("brand-title"),
     brandActions: document.getElementById("brand-actions"),
+    brandExtrasWorksheetWrap: document.getElementById("brand-extras-worksheet-wrap"),
+    brandExtrasWorksheet: document.getElementById("brand-extras-worksheet"),
     brandScanBtn: document.getElementById("brand-scan-btn"),
     brandClearAllBtn: document.getElementById("brand-clear-all-btn"),
     brandSimBanner: document.getElementById("brand-sim-banner"),
@@ -2066,6 +2068,8 @@
     el.brandExtrasHint.hidden = !action.hint;
     el.brandExtrasHint.textContent = action.hint || "";
     el.brandExtrasChips.innerHTML = "";
+    el.brandExtrasWorksheetWrap.hidden = true;
+    el.brandExtrasWorksheet.textContent = "";
     el.brandExtrasMessage.textContent = action.busy || "Reading…";
 
     apiFetch(obdUrl("/api/" + encodeURIComponent(p.id) + "/" + action.id))
@@ -2076,6 +2080,12 @@
           var value = r.unit ? r.value + " " + r.unit : r.value;
           el.brandExtrasChips.appendChild(chip(r.name, value));
         });
+        // A read that produces a copy-out text block (the Vauxhall software
+        // worksheet) shows it under the chips; every other action just doesn't
+        // send one and the block stays hidden.
+        var sheet = (data && data.worksheet) || "";
+        el.brandExtrasWorksheet.textContent = sheet;
+        el.brandExtrasWorksheetWrap.hidden = !sheet;
       })
       .catch(function () {
         el.brandExtrasMessage.textContent = "Couldn't reach the backend.";

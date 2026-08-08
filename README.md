@@ -182,6 +182,7 @@ Base URL: `http://127.0.0.1:8765`
 | GET | `/api/{brand}/scan` | Walk the brand's modules, read each one's fault memory (generic: any profile folder) |
 | POST | `/api/{brand}/clear` | Clear one module (or all) -- confirm-gated |
 | GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check, VW/Audi extras, Vauxhall gearbox) |
+| GET | `/api/{brand}/software` | The software / calibration part numbers each module reports for itself, with a copy-out worksheet (Vauxhall/Opel) -- read-only; the harness never writes a calibration |
 | GET | `/api/{brand}/snapshot` | Passive broadcast-CAN capture (Mazda) |
 | GET | `/api/{brand}/discover` | Find the car on a native cable (BMW ENET), or sweep its diagnostic addresses over a dongle (Vauxhall) |
 | GET | `/api/{brand}/resets` | The brand's service-reset catalogue |

@@ -187,6 +187,14 @@
         <p id="brand-extras-hint" class="obd-hint" hidden></p>
         <p id="brand-extras-message" class="status-message"></p>
         <div id="brand-extras-chips" class="obd-chips"></div>
+        <!-- Some reads produce a plain-text block meant to be copied out and
+             compared against something else (the Vauxhall software-version
+             worksheet against a manufacturer calibration lookup). Any brand
+             action whose response carries "worksheet" gets this for free. -->
+        <details id="brand-extras-worksheet-wrap" hidden>
+          <summary id="brand-extras-worksheet-summary">Full detail (copy out)</summary>
+          <pre id="brand-extras-worksheet" class="raw-block"></pre>
+        </details>
       </div>
 
       <div id="brand-jobs" hidden>
