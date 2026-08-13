@@ -21,6 +21,8 @@ light up its routes:
                  part numbers each module reports for itself -- the read that
                  says whether a manufacturer update is even relevant. Read-only
                  by construction; the harness never writes a calibration.
+    gearbox.py   analyze(adapter, mode)   TCM-focused diagnosis (ident +
+                 faults + live + clutch map). Read-only.
     resets.py    list_resets(), perform(adapter, mode, reset_id, confirm)
     service_history.py
                  catalogue(), build_argument(...)  the car's own service book
@@ -97,6 +99,9 @@ def features(brand: str) -> dict:
         "snapshot": brand_module(brand, "snapshot") is not None,
         # Flashed software / calibration part numbers, read from each module.
         "software": brand_module(brand, "software") is not None,
+        # Gearbox-focused read (ident + faults + live + diagnosis).
+        "gearbox": brand_module(brand, "gearbox") is not None
+        and hasattr(brand_module(brand, "gearbox"), "analyze"),
         "resets": brand_module(brand, "resets") is not None,
         # Building the car's own service-history entry (BMW/MINI iDrive).
         "serviceHistory": brand_module(brand, "service_history") is not None,

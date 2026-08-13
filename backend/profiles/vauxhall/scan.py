@@ -59,8 +59,13 @@ from . import gmlan
 # --------------------------------------------------------------------------- #
 VAUXHALL_ECU_TABLE = [
     (0x7E0, 0x7E8, "7E0", "Engine control (ECM)", "Engine management"),
-    (0x7E1, 0x7E9, "7E1", "Transmission (TCM)", "Automatic gearbox control (if fitted)"),
-    (0x7E2, 0x7EA, "7E2", "Powertrain 2", "Second powertrain node (if fitted)"),
+    (0x7E1, 0x7E9, "7E1", "Transmission (TCM, classic address)",
+     "Automatic gearbox control -- the documented Global A address. Silent on "
+     "the Astra K verified for this profile; see 0x7E2."),
+    (0x7E2, 0x7EA, "7E2", "Transmission (TCM) / powertrain 2",
+     "Verified as the transmission controller on Astra K (GM part 24275318, "
+     "live parameter block at 0x19xx -- see tcm.py). On other Global A models "
+     "this address may carry a different second powertrain node."),
     (0x7E3, 0x7EB, "7E3", "Powertrain 3", "Third powertrain node (if fitted)"),
     (0x241, 0x641, "241", "Body control (BCM)", "Central body electrics"),
     (0x242, 0x642, "242", "Theft deterrent (TDM)", "Immobiliser / theft deterrent"),
@@ -467,6 +472,14 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
         present = [m for m in modules if m["present"]]
         faults = sum(len(m["dtcs"]) for m in present)
 
+        # A module whose fault read failed in BOTH dialects has an unread fault
+        # memory, not an empty one. Counting it as "0 faults" is the single most
+        # dangerous thing this scan could do: it hands back a clean bill of
+        # health for a car nobody actually asked. So the two cases are separated
+        # here and the message refuses to summarise a total when any module went
+        # unread.
+        unread = [m for m in present if m["error"] and not m["dtcs"]]
+
         # Dealer check: every module that knows its VIN should agree. A module
         # reporting a different VIN was swapped in from another car.
         vins = [(m["code"], item["value"][:17]) for m in modules
@@ -501,8 +514,17 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
             "modules": modules,
             "message": (
                 (f"VIN {vin}. " if vin else "")
-                + f"{len(present)} module(s) answered, {faults} fault"
-                f"{'s' if faults != 1 else ''} stored. {spoken}{vin_warning} "
+                + f"{len(present)} module(s) answered. "
+                + (
+                    f"FAULT MEMORY NOT READ on {len(unread)} of {len(present)} module(s) "
+                    f"({', '.join(m['code'] for m in unread)}) -- both the GMLAN (A9) and "
+                    f"UDS (19) fault services failed there, so those modules are UNREAD, "
+                    f"not clean. {faults} fault(s) were read from the rest. Do not treat "
+                    f"this as a clean car. "
+                    if unread else
+                    f"{faults} fault{'s' if faults != 1 else ''} stored. "
+                )
+                + f"{spoken}{vin_warning} "
                 "Faults are shown GM-style as code + failure type. Addresses that "
                 "stayed silent are not fitted at that address on this model -- run "
                 "'Find modules' to map the car for certain. "
@@ -604,9 +626,11 @@ def _simulated_scan() -> dict:
         mod("0x7E0", "0x7E8", "7E0", "Engine control (ECM)", "Engine management", True,
             dialect="gmlan",
             ident=[{"label": "VIN", "value": "SIMULATEDVAUXHALL", "dialect": "gmlan"}]),
-        mod("0x7E1", "0x7E9", "7E1", "Transmission (TCM)",
-            "Automatic gearbox control (if fitted)", True, dialect="gmlan",
-            dtcs=[fault("P0776", "077600", "00", "08", ["confirmed"])]),
+        mod("0x7E1", "0x7E9", "7E1", "Transmission (TCM, classic address)",
+            "Automatic gearbox control -- silent on the verified Astra K", False),
+        mod("0x7E2", "0x7EA", "7E2", "Transmission (TCM)",
+            "Automatic gearbox control (Astra K address)", True, dialect="gmlan",
+            dtcs=[fault("P2723", "272374", "74", "08", ["confirmed"])]),
         mod("0x241", "0x641", "241", "Body control (BCM)", "Central body electrics",
             True, dialect="gmlan"),
         mod("0x243", "0x643", "243", "ABS / ESC (EBCM)",
@@ -624,6 +648,6 @@ def _simulated_scan() -> dict:
                     "adapter": "Simulated"},
         "modules": modules,
         "message": "SIMULATED -- VIN SIMULATEDVAUXHALL. 6 modules answered, 1 fault stored "
-                   "(P0776-00 on the TCM). No real car connected.",
+                   "(P2723-74 on the TCM at 0x7E2). No real car connected.",
         "timestamp": _now(),
     }

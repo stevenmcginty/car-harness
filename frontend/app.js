@@ -1653,10 +1653,16 @@
     el.brandActions.querySelectorAll(".brand-extra-btn").forEach(function (btn) {
       btn.remove();
     });
+    var actionFeature = {
+      live: "live",
+      snapshot: "snapshot",
+      discover: "discover",
+      software: "software",
+      gearbox: "gearbox",
+    };
     (panel.actions || []).forEach(function (a) {
-      if (a.id !== "live" && a.id !== "snapshot") return;
-      if (a.id === "live" && !f.live) return;
-      if (a.id === "snapshot" && !f.snapshot) return;
+      var feat = actionFeature[a.id];
+      if (!feat || !f[feat]) return;
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn btn-secondary brand-extra-btn";
@@ -1819,20 +1825,31 @@
 
       var code = document.createElement("span");
       code.className = "dtc-code";
-      code.textContent = d.hex;
+      code.textContent = d.display || d.code || d.hex;
       cardHead.appendChild(code);
 
       var status = document.createElement("span");
       status.className = "tag dtc-tag is-stored";
-      status.textContent = d.code;
+      status.textContent = (d.flags || []).join(", ") || ("status 0x" + (d.status || ""));
       cardHead.appendChild(status);
 
       card.appendChild(cardHead);
 
       var desc = document.createElement("p");
       desc.className = "dtc-desc";
-      desc.textContent = (d.flags || []).join(", ") || "status 0x" + d.status;
+      var bits = [];
+      if (d.description) bits.push(d.description);
+      if (d.failureTypeName) bits.push(d.failureTypeName);
+      if (d.part) bits.push(d.part);
+      if (!bits.length) bits.push((d.flags || []).join(", ") || "status 0x" + (d.status || ""));
+      desc.textContent = bits.join(" — ");
       card.appendChild(desc);
+      if (d.meaning || d.next) {
+        var extra = document.createElement("p");
+        extra.className = "dtc-desc";
+        extra.textContent = [d.meaning, d.next].filter(Boolean).join(" ");
+        card.appendChild(extra);
+      }
 
       row.appendChild(card);
     });

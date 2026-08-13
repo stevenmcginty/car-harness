@@ -41,6 +41,8 @@ from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
 from backend.profiles.vauxhall import pids as vauxhall_pids  # noqa: E402
 from backend.profiles.vauxhall import scan as vauxhall_scan  # noqa: E402
 from backend.profiles.vauxhall import software as vauxhall_software  # noqa: E402
+from backend.profiles.vauxhall import tcm as vauxhall_tcm  # noqa: E402
+from backend.profiles.vauxhall import gearbox as vauxhall_gearbox  # noqa: E402
 from backend.profiles.vw import pids as vw_pids  # noqa: E402
 from backend.profiles.vw import scan as vw_scan  # noqa: E402
 
@@ -634,21 +636,37 @@ def vauxhall_software_versions(adapter_id: str | None = None, mode: str = "real"
 
 
 @mcp.tool()
+def vauxhall_gearbox_analyze(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Analyse the Astra K / GM 6T35 gearbox over a Veepeak / ELM327 (read-only).
+
+    Finds the TCM (0x7E2 on the verified 2017 Astra K, 0x7E1 fallback), reads
+    its calibration part numbers, reads its fault memory with GM 6T35/6T40
+    names (P2723 is the 1-2-3-4 clutch, not SAE 'Shift Solenoid E'), reads the
+    19xx live block (fluid temp, selector, range switch, shaft speeds) and
+    writes a worksheet that maps codes onto clutches. Same job ScanMyOpelCAN
+    calls 'AT' and GDS2 calls Transmission Controls -- the half a V-Peak can
+    do. Does not Fast Learn and does not flash.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a labelled 6T35 flare case.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_gearbox.analyze(instance, mode)
+
+
+@mcp.tool()
 def vauxhall_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
     """Read Vauxhall gearbox + engine live values over a generic OBD dongle (read-only).
 
-    On the TCM (0x7E1), the GM-native transmission DIDs: fluid temperature
-    (22 04FE), current gear (22 5503) and target/commanded gear (22 5504),
-    decoded from the OBDb VauxhallOpel signalset (CC-BY-SA-4.0). Current gear
-    against commanded gear is the pair that shows a shift flare -- the TCM has
-    asked for the next gear while the box has not delivered it, and engine rpm
-    climbs into the gap. Poll this repeatedly through the shift that flares and
-    read it alongside rpm. Fluid temperature also tells you when the box is near
-    the Service Fast Learn window, which the reading reports on. Plus a curated
-    generic Mode-01 set (rpm, speed, load, throttle, coolant, oil temp, module
-    voltage, ambient) on the engine. Values this car doesn't support are skipped.
-    Ignition must be ON; for gear data the engine must be running and the car
-    moving.
+    On the Astra K the TCM is at 0x7E2 and the live block is 0x19xx -- fluid
+    temperature (22 1940, same PID Torque ships as Pontiac/GM/Opel/Vauxhall
+    header 7E2), selector (194F), range switch (1951), shaft speeds (1941/1942).
+    Cars that actually implement the OBDb 0x7E1 set (04FE / 5503 / 5504) still
+    get current vs commanded gear from there. Fluid temperature also tells you
+    when the box is near the Service Fast Learn window. Plus a curated Mode-01
+    set on the engine. Ignition ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
         required for real mode. mode="sim" returns a clearly-labelled fake.
@@ -661,6 +679,79 @@ def vauxhall_live_values(adapter_id: str | None = None, mode: str = "real") -> d
     if error is not None:
         return error
     return vauxhall_pids.live(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_tcm_capture(
+    adapter_id: str | None = None, seconds: float = 120.0, mode: str = "real",
+    fast: bool = False,
+) -> dict:
+    """Log the Astra K transmission controller through a drive (read-only).
+
+    A shift flare is a shape over time, not a value: the gearbox failing to
+    deliver a ratio while engine rpm climbs into the gap. A single reading
+    cannot show one. This polls the TCM's answering parameter block at 0x7E2
+    together with engine rpm, road speed and throttle, timestamps every sample,
+    and returns the series.
+
+    It also finishes a discovery job the standstill tests could not. No gear
+    register has been identified on this calibration -- every candidate reads
+    zero at a standstill, which is exactly what a gear register does when the
+    car is not moving. Drive with this running and the gear register identifies
+    itself: it is the parameter that steps 1-2-3-4-5-6 in time with road speed.
+    Every parameter is therefore logged RAW, not decoded.
+
+    Expect roughly one sample per second over a Bluetooth dongle. That resolves
+    a flare lasting a second or more -- which is what a complained-about flare
+    does -- and does NOT resolve the internals of a clean 200 ms shift. The
+    result reports its own achieved sample rate so the rate is never mistaken
+    for precision.
+
+    fast=True trims each tick to the three reads a flare needs (input shaft
+    speed, output shaft speed, engine rpm), roughly tripling the sample rate
+    over Bluetooth, and adds derived per-sample values: gear ratio, turbine
+    rpm (ISS/8, scaling proven on this car 2026-08-13) and converter slip.
+    Fluid temp and throttle still land every fifth tick. Use fast=True when
+    hunting the flare itself; use the default full set when the goal is
+    discovering what an unknown parameter does.
+
+    seconds: how long to log for. Drive the shift that flares during it.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_tcm.capture(instance, seconds, mode, fast)
+
+
+@mcp.tool()
+def vauxhall_tcm_sweep(
+    adapter_id: str | None = None, first: str = "1900", last: str = "19FF",
+    mode: str = "real",
+) -> dict:
+    """Sweep a parameter-id range on the Astra K TCM at 0x7E2 (read-only).
+
+    This is the tool that found the transmission block in the first place. The
+    OBDb DIDs (04FE/5503/5504) return NRC 31 on this car at every address --
+    the module speaks service 0x22 fine, those parameter ids just do not exist
+    in this calibration. Sweeping found a live block at 0x1940-0x1951 instead.
+
+    An id that answers NRC 31 is reported as absent-by-refusal, which is a more
+    useful fact than silence: it proves the module is listening and the
+    parameter is simply not implemented. Use it to widen the map beyond the
+    range already verified.
+
+    first / last: hex parameter ids as strings, e.g. "1900" and "19FF".
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    try:
+        lo, hi = int(first, 16), int(last, 16)
+    except ValueError:
+        return {"ok": False, "message": f"first/last must be hex, got {first!r}/{last!r}."}
+    return vauxhall_tcm.sweep(instance, lo, hi, mode)
 
 
 @mcp.tool()

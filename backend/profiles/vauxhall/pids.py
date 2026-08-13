@@ -48,6 +48,8 @@ from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.uds_elm327 import Elm327UdsClient
 
+from . import tcm
+
 ENGINE = 0x7E0
 TRANS = 0x7E1
 
@@ -179,6 +181,22 @@ def _fluid_temp_c(body: bytes) -> Optional[int]:
 
 
 def _read_transmission(client: Elm327UdsClient) -> List[dict]:
+    """The gearbox tier, over whichever TCM this car actually has.
+
+    The OBDb map (0x7E1, DIDs 04FE/5503/5504) is tried first because it is the
+    documented one and costs three requests. When it produces nothing the read
+    falls through to tcm.py, which carries the map verified by hand on an Astra
+    K whose transmission controller sits at 0x7E2 with an entirely different
+    parameter block. Neither map is assumed: whichever answers is what gets
+    reported, and tcm.py's readings carry their own confidence grades.
+    """
+    readings = _read_obdb_transmission(client)
+    if readings:
+        return readings
+    return tcm.read_transmission(client)
+
+
+def _read_obdb_transmission(client: Elm327UdsClient) -> List[dict]:
     """The three GM-native TCM values plus the two derived readings that make
     them useful: the Fast Learn window verdict and the shift-flare indicator."""
     readings: List[dict] = []
@@ -254,6 +272,12 @@ def _read_transmission(client: Elm327UdsClient) -> List[dict]:
 CHANNELS = [
     {"key": "trans_fluid_temp", "label": "Transmission fluid temperature",
      "unit": "°C", "group": "Temperatures"},
+    {"key": "selector_position", "label": "Selector position", "unit": "",
+     "group": "Transmission"},
+    {"key": "range_switch", "label": "Range switch pattern", "unit": "",
+     "group": "Transmission"},
+    {"key": "shaft_speed", "label": "Driveline shaft speed", "unit": "",
+     "group": "Transmission"},
     {"key": "gear_current", "label": "Current gear", "unit": "", "group": "Transmission"},
     {"key": "gear_target", "label": "Target (commanded) gear", "unit": "",
      "group": "Transmission"},
@@ -271,27 +295,52 @@ def read_channels(adapter: Optional[dict] = None, mode: str = "real",
         return []
 
     if mode == "sim":
-        sim = {"trans_fluid_temp": "71", "gear_current": "3rd",
+        sim = {"trans_fluid_temp": "71", "selector_position": "D",
+               "range_switch": "0x30 (D)",
+               "shaft_speed": "5736 raw (~717 rpm if /8)",
+               "gear_current": "3rd",
                "gear_target": "4th", "shift_state": "Shifting 3rd → 4th"}
         units = {c["key"]: c["unit"] for c in CHANNELS}
-        return [{"key": k, "value": sim[k], "unit": units[k]} for k in wanted]
+        return [{"key": k, "value": sim[k], "unit": units[k]}
+                for k in wanted if k in sim]
 
     # shift_state is derived, so asking for it pulls in both gear reads.
     need_current = "gear_current" in wanted or "shift_state" in wanted
     need_target = "gear_target" in wanted or "shift_state" in wanted
     need_temp = "trans_fluid_temp" in wanted
+    need_selector = "selector_position" in wanted
+    need_range = "range_switch" in wanted
+    need_shaft = "shaft_speed" in wanted
 
     def run(session, entry):
         session.ensure_protocol()
         if session.protocol_num not in (6, None):
             return []
-        client = Elm327UdsClient(session, {TRANS: TRANS + 8})
+        client = Elm327UdsClient(session, {
+            TRANS: TRANS + 8, tcm.TCM: tcm.TCM + 8,
+        })
         client.begin()
         try:
             temp = current = target = None
+            selector = rang = shaft = None
+            # Astra K verified block first (0x7E2 19xx). Torque's GM/Opel
+            # set is the same 1940 @ 7E2 mapping. Fall through to OBDb
+            # 0x7E1 for cars that actually implement 04FE/5503/5504.
             if need_temp:
-                body = _read_did(client, TRANS, 0x04FE)
-                temp = _fluid_temp_c(body) if body else None
+                body = _read_did(client, tcm.TCM, 0x1940)
+                temp = tcm._fluid_temp_c(body) if body else None
+                if temp is None:
+                    body = _read_did(client, TRANS, 0x04FE)
+                    temp = _fluid_temp_c(body) if body else None
+            if need_selector:
+                body = _read_did(client, tcm.TCM, 0x194F)
+                selector = tcm._selector(body) if body else None
+            if need_range:
+                body = _read_did(client, tcm.TCM, 0x1951)
+                rang = tcm._range_switch(body) if body else None
+            if need_shaft:
+                body = _read_did(client, tcm.TCM, 0x1941)
+                shaft = tcm._shaft_speed(body) if body else None
             if need_current:
                 body = _read_did(client, TRANS, 0x5503)
                 current = _gear_name(body) if body else None
@@ -303,6 +352,9 @@ def read_channels(adapter: Optional[dict] = None, mode: str = "real",
 
         values = {
             "trans_fluid_temp": str(temp) if temp is not None else None,
+            "selector_position": selector,
+            "range_switch": rang,
+            "shaft_speed": shaft,
             "gear_current": current,
             "gear_target": target,
             "shift_state": (
@@ -359,7 +411,7 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
                 "timestamp": _now(),
             }
 
-        client = Elm327UdsClient(session, {TRANS: TRANS + 8})
+        client = Elm327UdsClient(session, {TRANS: TRANS + 8, tcm.TCM: tcm.TCM + 8})
         client.begin()
         readings: List[dict] = []
         try:
@@ -379,12 +431,13 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
             client.restore()
 
         if gearbox_count:
-            headline = (f"{gearbox_count} gearbox value(s) answered on the TCM (0x7E1). ")
+            headline = f"{gearbox_count} gearbox value(s) answered. "
         else:
             headline = (
-                "The TCM (0x7E1) did not answer the GM transmission DIDs -- either this "
-                "car is a manual, or the DIDs differ on this model/calibration. The "
-                "generic engine values below still apply. "
+                "No transmission controller answered -- TCM did not answer at "
+                "0x7E2 or 0x7E1. Either this car is a manual or its TCM is at "
+                "an address neither map covers; run 'Find modules' to settle "
+                "which. The generic engine values below still apply. "
             )
         return {
             "ok": True, "simulated": False, "readings": readings,

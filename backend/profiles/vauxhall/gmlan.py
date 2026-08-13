@@ -59,13 +59,32 @@ GMLAN_NRC_NAMES = {
     0xE3: "device control limits exceeded",
 }
 
-# 0x1A identifiers we are confident enough of to put a name on. GMW3110 defines
-# roughly 95; the rest are read as raw hex rather than mislabelled.
+# 0x1A identifiers asked on a scan (cheap). The full GMW3110 table lives in
+# data/gmlan_catalog.json (distilled from scapy). software.py reads the rest.
 IDENT_IDS: List[tuple] = [
     (0x90, "VIN"),
-    (0x92, "System supplier ECU hardware"),
+    (0x92, "System supplier id"),
+    (0x97, "System name / engine type"),
+    (0xB5, "GM broadcast code"),
     (0xC0, "Boot software part number"),
+    (0xCB, "End model part number"),
 ]
+
+# GMW3110 DTC status bits -- NOT ISO 14229. Copied from roffe/gocan
+# pkg/gmlan (ReadDiagnosticInformation, mask 0x12 comment).
+GMLAN_STATUS_BITS = [
+    (0x01, "supported by calibration"),
+    (0x02, "current"),
+    (0x04, "not passed since cleared"),
+    (0x08, "failed since cleared"),
+    (0x10, "history"),
+    (0x20, "not passed this power-up"),
+    (0x40, "current since power-up"),
+    (0x80, "warning indicator"),
+]
+
+# gocan listens here after A9 81. UUDT, not ISO-TP.
+UUDT_DTC_CAN_ID = 0x5E8
 
 # 0xA9 0x81 status masks, laddered widest-first. There is no single published
 # "GM mask"; 0xFF asks for everything, 0x08 for confirmed only. A module that
@@ -77,6 +96,63 @@ MASK_RETRY_NRCS = (0x12, 0x31)
 
 def nrc_name(nrc: int) -> str:
     return GMLAN_NRC_NAMES.get(nrc) or uds.NRC_NAMES.get(nrc, "unknown code")
+
+
+def status_flags(status: int) -> List[str]:
+    """GMW3110 status bits. Do not use uds.status_flags here -- the bit
+    meanings are different. 0x02 is currentDTC, not 'failed this cycle'."""
+    return [name for bit, name in GMLAN_STATUS_BITS if status & bit]
+
+
+def fault_state(status: int) -> dict:
+    """Collapse GMW3110 bits the way GDS2's 'current / history' column does."""
+    if status & 0x80:
+        return {"label": "lamp on", "detail": "Warning indicator requested.",
+                "severity": "active"}
+    if status & 0x02 or status & 0x40:
+        return {"label": "current", "detail": "Set as a current DTC.",
+                "severity": "active"}
+    if status & 0x20:
+        return {"label": "not passed this power-up",
+                "detail": "Test has not passed since ignition on.",
+                "severity": "recent"}
+    if status & 0x10:
+        return {"label": "history", "detail": "Stored, not current.",
+                "severity": "historic"}
+    if status & 0x08:
+        return {"label": "failed since cleared",
+                "detail": "Has failed since the memory was wiped.",
+                "severity": "historic"}
+    return {"label": "stored", "detail": "Recorded by the module.",
+            "severity": "historic"}
+
+
+def parse_uudt_dtc_frames(text: str) -> List[tuple]:
+    """Turn an ELM hex dump of 0x5E8 UUDT frames into (hi, lo, ftype, status).
+
+    gocan (pkg/gmlan ReadDiagnosticInformation): each 8-byte payload is
+    [src][dtc_hi][dtc_lo][failure_type][status]...; the list ends when
+    dtc_hi = dtc_lo = failure_type = 0.
+    """
+    records = []
+    for raw in text.upper().replace("\r", "\n").split("\n"):
+        hexpart = "".join(c for c in raw if c in "0123456789ABCDEF")
+        if len(hexpart) < 10:
+            continue
+        try:
+            body = bytes.fromhex(hexpart)
+        except ValueError:
+            continue
+        # ATH0: payload only. ATH1: 5E8 + payload. Strip a leading 5E8 if present.
+        if len(body) >= 5 and body[0] == 0x05 and body[1] == 0xE8:
+            body = body[2:]
+        if len(body) < 5:
+            continue
+        _src, hi, lo, ftype, status = body[0], body[1], body[2], body[3], body[4]
+        if hi == lo == ftype == 0:
+            break
+        records.append((hi, lo, ftype, status))
+    return records
 
 
 # --------------------------------------------------------------------------- #
@@ -94,7 +170,9 @@ def format_dtc(b0: int, b1: int, failure_type: int) -> dict:
     """
     entry = uds.decode_dtc(b0, b1, failure_type)
     entry["display"] = f"{entry['code']}-{failure_type:02X}"
-    return entry
+    # Lazy import: gearbox.py imports this module for the fault read.
+    from .gearbox import enrich_dtc
+    return enrich_dtc(entry)
 
 
 def _records_from(payload: bytes, offset: int) -> List[tuple]:
@@ -158,10 +236,49 @@ def read_dtcs(client, req_id: int, trace: List[str]) -> List[dict]:
     for b0, b1, ftype, status in records:
         entry = format_dtc(b0, b1, ftype)
         entry["status"] = f"{status:02X}"
-        entry["flags"] = uds.status_flags(status)
-        entry["state"] = uds.fault_state(status)
+        entry["flags"] = status_flags(status)
+        entry["state"] = fault_state(status)
         entry["dialect"] = "gmlan"
         entry["recordLayout"] = "inferred"
+        dtcs.append(entry)
+    if dtcs:
+        return dtcs
+    # ISO-TP payload empty -- GDS2 / gocan / ScanMyOpel listen on 0x5E8
+    # UUDT instead. Try that before calling the memory clean.
+    uudt = _read_dtcs_uudt(client, req_id, trace)
+    return uudt
+
+
+def _read_dtcs_uudt(client, req_id: int, trace: List[str]) -> List[dict]:
+    """A9 81 with the ELM receive filter on 0x5E8 -- the gocan / GDS2 path.
+
+    Only runs when the client is a real Elm327UdsClient (has .session.at).
+    Unit-test fakes that only implement request() skip this.
+    """
+    session = getattr(client, "session", None)
+    if session is None or not hasattr(session, "at"):
+        return []
+    try:
+        session.at(f"ATSH{req_id:03X}")
+        session.at(f"ATCRA{UUDT_DTC_CAN_ID:03X}")
+        if hasattr(client, "_target"):
+            client._target = None
+        text = session._raw(b"A981FF\r", 3.0)
+    except Exception:
+        return []
+    records = parse_uudt_dtc_frames(text)
+    if not records:
+        trace.append("A9 81 on 5E8 -> no UUDT frames")
+        return []
+    trace.append(f"A9 81 on 5E8 -> {len(records)} UUDT frame(s)")
+    dtcs = []
+    for b0, b1, ftype, status in records:
+        entry = format_dtc(b0, b1, ftype)
+        entry["status"] = f"{status:02X}"
+        entry["flags"] = status_flags(status)
+        entry["state"] = fault_state(status)
+        entry["dialect"] = "gmlan"
+        entry["recordLayout"] = "uudt-5E8"
         dtcs.append(entry)
     return dtcs
 

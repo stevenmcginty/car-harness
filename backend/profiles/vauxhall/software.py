@@ -96,7 +96,10 @@ CONTEXT_IDS = [
     (0x97, "System name / engine type", "text", None),
     (0x9B, "XML configuration compatibility id", "text", None),
     (0x9C, "XML data file part number", "part", 0x9D),
+    (0xA0, "Manufacturer enable counter", "raw", None),
+    (0xB0, "ECU diagnostic address", "raw", None),
     (0xB5, "GM broadcast code", "text", None),
+    (0xDF, "ECU odometer", "raw", None),
     (0x90, "VIN", "text", None),
 ]
 
@@ -444,11 +447,13 @@ def versions(adapter: Optional[dict], mode: str = "real") -> dict:
             for m in present
         ]
 
-        tcm = next((m for m in present if m["code"] == "7E1"), None)
+        tcm = next((m for m in present if m["code"] == "7E2" and m.get("entries")), None) \
+            or next((m for m in present if m["code"] == "7E1" and m.get("entries")), None) \
+            or next((m for m in present if m["code"] in ("7E2", "7E1")), None)
         gearbox_note = ""
         if tcm and tcm["entries"]:
             gearbox_note = (
-                " Gearbox (TCM, 0x7E1): " + _headline(tcm) + "."
+                f" Gearbox (TCM, {tcm['address']}): " + _headline(tcm) + "."
             )
         elif tcm:
             gearbox_note = (

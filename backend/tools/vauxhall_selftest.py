@@ -31,6 +31,7 @@ from backend.profiles.vauxhall import gmlan  # noqa: E402
 from backend.profiles.vauxhall import pids as vx_pids  # noqa: E402
 from backend.profiles.vauxhall import resets as vx_resets  # noqa: E402
 from backend.profiles.vauxhall import scan as vx_scan  # noqa: E402
+from backend.profiles.vauxhall import gearbox as vx_gearbox
 from backend.profiles.vauxhall import software as vx_software  # noqa: E402
 
 PASS = []
@@ -287,6 +288,9 @@ def main():
     check("GM fault renders as code + failure type",
           d["code"] == "P0716" and d["display"] == "P0716-71" and d["failureType"] == "71",
           str(d))
+    check("GM fault carries the 6T name, not the SAE-generic one",
+          "turbine speed" in (d.get("description") or "").lower() and
+          d.get("failureTypeName") == "actuator stuck", str(d))
 
     class Fake:
         def __init__(self, table):
@@ -307,6 +311,28 @@ def main():
 
     got = gmlan.read_dtcs(Fake({(0x7E1, "A981FF"): bytes.fromhex("E981FF")}), 0x7E1, [])
     check("A9 81 with no faults returns an empty list", got == [], str(got))
+
+    uudt = gmlan.parse_uudt_dtc_frames("0007760008\r0007167102\r0000000000\r")
+    check("0x5E8 UUDT dump (gocan layout) decodes two DTCs and stops on 00 00 00",
+          uudt == [(0x07, 0x76, 0x00, 0x08), (0x07, 0x16, 0x71, 0x02)], str(uudt))
+    check("GMLAN status 0x02 is current, not UDS 'failed this cycle'",
+          gmlan.status_flags(0x02) == ["current"] and
+          gmlan.fault_state(0x02)["severity"] == "active",
+          str(gmlan.status_flags(0x02)))
+    check("GMLAN status 0x10 is history",
+          "history" in gmlan.status_flags(0x10) and
+          gmlan.fault_state(0x10)["severity"] == "historic")
+    import json
+    from pathlib import Path
+    catalog = json.loads(
+        (Path(__file__).resolve().parents[1] / "profiles" / "vauxhall" /
+         "data" / "gmlan_catalog.json").read_text(encoding="utf-8")
+    )
+    check("distilled catalog has the GMW3110 1A table and the 5E8 note",
+          catalog["ident_1a"]["CB"] == "End model part number" and
+          catalog["uudt_dtc"]["can_id"] == "5E8" and
+          catalog["dtc_status_bits"]["bits"][1]["name"] == "current",
+          str(catalog["ident_1a"].get("CB")))
 
     check("transmission fluid temp decodes as A-40",
           vx_pids._fluid_temp_c(bytes([111])) == 71 and
@@ -579,7 +605,54 @@ def main():
 
     from backend.main import app
     client = TestClient(app)
-    for path in ("scan", "live", "discover", "software"):
+    # -------------------------------------------------- gearbox analyse
+    p2723 = vx_gearbox.enrich_dtc({
+        "code": "P2723", "hex": "272374", "failureType": "74",
+        "display": "P2723-74",
+    })
+    check("P2723 is the 1-2-3-4 clutch, not SAE shift-solenoid E",
+          "1-2-3-4" in p2723["description"] and "PCS 5" in p2723["part"],
+          str(p2723))
+    check("failure type 74 is actuator slipping",
+          p2723.get("failureTypeName") == "actuator slipping", str(p2723))
+    check("SAE name is kept so a reader can see why we discarded it",
+          "Solenoid E" in (p2723.get("saeDescription") or ""), str(p2723))
+    p0776 = vx_gearbox.enrich_dtc({
+        "code": "P0776", "hex": "077600", "failureType": "00",
+        "display": "P0776-00",
+    })
+    check("P0776 is the 3-5-R clutch / PCS 2",
+          "3-5-R" in p0776["description"] and "PCS 2" in p0776["part"],
+          str(p0776))
+    unknown = vx_gearbox.enrich_dtc({
+        "code": "P1234", "hex": "123400", "failureType": "00",
+        "display": "P1234-00",
+    })
+    check("an unknown code is not given a clutch",
+          "description" not in unknown and "part" not in unknown, str(unknown))
+
+    gb_sim = vx_gearbox.analyze(None, "sim")
+    check("sim gearbox analyse is labelled and has a worksheet",
+          gb_sim["ok"] and gb_sim["simulated"] and "P2723" in gb_sim["worksheet"]
+          and gb_sim["findings"], str(gb_sim.get("message")))
+    check("sim gearbox worksheet names the 1-2-3-4 clutch",
+          "1-2-3-4 clutch" in gb_sim["worksheet"], gb_sim["worksheet"][:200])
+
+    # Real path against the existing GMLAN fake: TCM at textbook 0x7E1.
+    obd_service._with_session = with_fake_session(GmlanSession())
+    gb = vx_gearbox.analyze(ADAPTER, "real")
+    gb_codes = [d["code"] for d in gb.get("dtcs", [])]
+    check("gearbox analyse finds the TCM on the textbook address when 0x7E2 is silent",
+          gb["ok"] and gb.get("tcm", {}).get("address") == "0x7E1",
+          str(gb.get("tcm")))
+    check("gearbox analyse names the stored 6T codes",
+          "P0776" in gb_codes and "P0716" in gb_codes, str(gb_codes))
+    check("gearbox analyse writes a copy-out worksheet",
+          "P0776" in gb.get("worksheet", "") and "3-5-R" in gb.get("worksheet", ""),
+          gb.get("worksheet", "")[:300])
+    obd_service._with_session = original
+
+    for path in ("scan", "live", "discover", "software", "gearbox"):
         r = client.get(f"/api/vauxhall/{path}?mode=sim").json()
         check(f"API sim {path} over the generic brand route",
               r.get("ok") and r.get("simulated"), str(r.get("message")))
@@ -593,14 +666,15 @@ def main():
     vx = next((p for p in profs if p.get("id") == "vauxhall"), {})
     check("API profile carries features + panel",
           bool(vx.get("features", {}).get("scan")) and
-          bool(vx.get("features", {}).get("discover")) and bool(vx.get("panel")))
+          bool(vx.get("features", {}).get("discover")) and
+          bool(vx.get("features", {}).get("gearbox")) and bool(vx.get("panel")))
 
     from backend import mcp_server
     check("MCP tools registered",
           all(hasattr(mcp_server, n) for n in
               ("vauxhall_scan_modules", "vauxhall_discover_modules",
                "vauxhall_live_values", "vauxhall_clear_module",
-               "vauxhall_software_versions")))
+               "vauxhall_software_versions", "vauxhall_gearbox_analyze")))
 
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     return 1 if FAIL else 0

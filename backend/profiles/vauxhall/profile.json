@@ -7,7 +7,7 @@
   "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"],
   "panel": {
     "title": "GMLAN module scan (OBD dongle)",
-    "hint": "Reads the engine and gearbox fault memory + identification deeper than generic OBD-II, plus the body/chassis modules that answer on GM's 0x24x block. Faults are shown GM-style as code + failure type (P0716-71). The module address list published for Global A is generic to GM, not confirmed per model, so use 'Find modules' first on a car you don't know -- it sweeps both address blocks and reports what actually answers. Pick the adapter top-right, ignition ON, then scan.",
+    "hint": "Astra K 1.4T auto: TCM is at 0x7E2, not the textbook 0x7E1. Scan reads every module's fault memory. 'Gearbox analyse' is the 6T35 job -- calibration, GM-named faults (not SAE-generic), live block, clutch map. Find modules / Software versions still sit here. V-Peak cannot Fast Learn or flash; that is GDS2+MDI. Ignition ON.",
     "scanBusy": "Reading the Vauxhall over GMLAN (UDS dialect first, then GMW3110)...",
     "actions": [
       {
@@ -26,11 +26,19 @@
         "readOnly": true
       },
       {
+        "id": "gearbox",
+        "label": "Gearbox analyse",
+        "busy": "Reading the TCM -- calibration, faults, live...",
+        "title": "Astra K 6T35 gearbox",
+        "hint": "Finds the TCM (0x7E2 on this Astra K, 0x7E1 fallback), reads the calibration part numbers, reads faults with GM 6T35/6T40 names (P2723 is the 1-2-3-4 clutch, not 'Shift Solenoid E'), reads the 19xx live block (fluid temp, selector, range switch, shaft speeds), and writes a worksheet that maps codes onto clutches. Read-only. Fast Learn and mapping need GDS2+MDI, not this dongle.",
+        "readOnly": true
+      },
+      {
         "id": "live",
         "label": "Gearbox live",
         "busy": "Reading the gearbox and engine live values...",
         "title": "Vauxhall gearbox + engine live",
-        "hint": "Reads the GM-native transmission DIDs on the TCM (0x7E1): fluid temperature, current gear and target/commanded gear -- decodes from the OBDb VauxhallOpel signalset (CC-BY-SA-4.0). Current vs target gear read together is the pair that shows a shift flare: the TCM commands 4th while the box is still in 3rd. Also flags whether transmission fluid temperature is inside the Fast Learn window, and adds a curated generic Mode-01 set (rpm, speed, coolant, oil temp, module voltage, ambient). No public DID exposes the TCM's clutch adaptive cells, line pressure or clutch slip -- those are GDS2-only and nothing is invented for them."
+        "hint": "Astra K verified block on the TCM at 0x7E2 (DID 1940 fluid temp, 194F selector, 1951 range switch, 1941/1942 shaft speeds) -- the same 1940@7E2 mapping Torque ships as 'Pontiac / GM / Opel / Vauxhall'. Falls back to the OBDb 0x7E1 04FE/5503/5504 set on cars that actually have it. Fluid temp is also the Fast Learn precondition. Clutch adapt cells, line pressure and slip stay GDS2-only -- nothing is invented for them."
       }
     ]
   }
