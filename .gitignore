@@ -32,3 +32,4 @@ server.log.err
 # Generated BMW live-data pack -- derived from the SGBD files on the local
 # machine (see backend/tools/bmw_live_extract.py). Regenerate, never commit.
 backend/profiles/bmw/live_pack.json
+captures/
