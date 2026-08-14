@@ -134,6 +134,60 @@ def _svg_scatter(points, healthy, width=760, height=300):
                      ylabel="oil pressure (bar)")
 
 
+# Fault codes worth naming in plain English. Anything else is listed raw.
+DTC_MEANINGS = {
+    "P15A0": "Oil pressure regulation -- the ECU is not satisfied with what the "
+             "oil pressure control is doing.",
+    "P15A9": "Oil pressure regulation, second code in the same family.",
+    "P0945": "Oil pressure regulation solenoid valve circuit.",
+    "P0521": "Oil pressure sensor / switch range or performance.",
+    "P1336": "Flywheel (crankshaft target) adaptation not learned.",
+    "P1339": "Misfire detected.",
+    "P0318": "Rough road / crankshaft signal disturbance, usually recorded "
+             "alongside misfire.",
+    "U1113": "CAN communication fault recorded by the engine ECU.",
+}
+
+
+def _regulation(runs):
+    """Compare pressure and pump command across rpm with the healthy cars.
+
+    This is the test the cold-start verdict cannot make. A regulated pump holds
+    pressure roughly in a band as engine speed rises, and its command MOVES as
+    conditions change. An unregulated one lets pressure follow pump speed, and
+    its command sits still. The healthy RCZs did the former.
+    """
+    points, commands = [], []
+    for run in runs:
+        for reading in (run.get("result") or {}).get("readings") or []:
+            rpm = reading.get("engine_rpm")
+            bar = reading.get("oil_pressure_bar")
+            cmd = reading.get("pump_command")
+            if rpm and bar:
+                points.append((rpm, bar))
+            if rpm and cmd is not None:
+                commands.append((rpm, cmd))
+    if not points:
+        return None
+
+    idle = [b for r, b in points if r < 1000]
+    revs = [b for r, b in points if r >= 2000]
+    out = {
+        "idle_bar": round(sum(idle) / len(idle), 2) if idle else None,
+        "rev_bar": round(sum(revs) / len(revs), 2) if revs else None,
+        "points": sorted(points),
+        "commands": sorted(commands),
+        "commandValues": sorted({c for _, c in commands}),
+        "healthy_idle_bar": 1.43,
+        "healthy_rev_bar": 3.38,
+    }
+    out["commandFixed"] = len(out["commandValues"]) <= 1 and len(commands) >= 4
+    if out["idle_bar"] and out["rev_bar"]:
+        out["spread"] = round(out["rev_bar"] / out["idle_bar"], 2)
+        out["healthy_spread"] = round(3.38 / 1.43, 2)
+    return out
+
+
 def _findings(car, runs):
     """The written conclusion: what the numbers say, in order of consequence."""
     cold = [r for r in runs if r.get("command") == "coldstart"]
@@ -187,13 +241,88 @@ def _findings(car, runs):
                 "first with a mechanical gauge on the galley before going back in.")
         elif verdict == "in_spec" and pump in (None, "ok"):
             lines.append(
-                "This is the important negative result: on these numbers the oil "
-                "circuit is doing what both healthy cars did. If the warning lamp "
-                "still lights, the fault is then far more likely to be the lamp's "
-                "trigger -- the sensor's own circuit, or the cluster/BSI side -- than "
-                "the pump, and that is where the next hour should go rather than into "
-                "more mechanical parts.")
+                "The cold start on its own looks like the healthy cars: pressure "
+                "high while cold, stepping down as the oil warms.")
+
+    # The running behaviour, which is where this car separates from the good ones.
+    reg = _regulation(runs)
+    if reg and reg.get("idle_bar") and reg.get("rev_bar"):
+        lines.append(
+            f"Warm running: {reg['idle_bar']} bar at idle against the healthy car's "
+            f"{reg['healthy_idle_bar']}, and {reg['rev_bar']} bar off idle against "
+            f"the healthy car's {reg['healthy_rev_bar']}. So this engine is BELOW "
+            "the good car at idle and WELL ABOVE it under revs.")
+        if reg.get("spread") and reg["spread"] > reg["healthy_spread"] * 1.3:
+            lines.append(
+                f"Pressure rises {reg['spread']}x from idle to 2500 rpm; on the "
+                f"healthy car it rises {reg['healthy_spread']}x. Pressure climbing "
+                "with engine speed that steeply is what an UNREGULATED pump does -- "
+                "the pressure is following pump speed instead of being held to a "
+                "target.")
+            verdict_line = ("Oil pressure is not being regulated: too low at idle, "
+                            "far too high under revs.")
+        if reg.get("commandFixed"):
+            lines.append(
+                f"The pump control value never moved off {reg['commandValues'][0]} "
+                "at any engine speed, while the healthy car's moved between 35 at "
+                "warm idle and 255 under revs. The ECU's control of the pump is "
+                "therefore not varying with conditions on this car.")
     return verdict_line, lines
+
+
+def _advice(runs, reg):
+    """What to do next, in the order that costs least and proves most."""
+    steps = []
+    codes = {d.get("code") for run in runs
+             for d in (run.get("result") or {}).get("dtcs") or []}
+    unregulated = bool(reg and reg.get("spread") and reg.get("healthy_spread")
+                       and reg["spread"] > reg["healthy_spread"] * 1.3)
+
+    if unregulated or {"P15A0", "P15A9", "P0945"} & codes:
+        steps.append((
+            "Confirm the reading with a mechanical gauge before any more parts.",
+            "Tee a mechanical gauge into the oil galley and repeat idle and "
+            "2500 rpm. If the gauge agrees (low at idle, over 4 bar at revs) the "
+            "pressure really is unregulated. If the gauge reads normal and only "
+            "the ECU sees these numbers, the sensor or its wiring is lying and "
+            "nothing inside the engine is wrong. This one test splits the whole "
+            "problem in two and costs nothing but time."))
+        steps.append((
+            "Prove the regulation solenoid is actually being driven.",
+            "The solenoid has already been replaced, so the question is no longer "
+            "whether the part is good -- it is whether current is reaching it and "
+            "whether it is being commanded. Back-probe the solenoid connector with "
+            "the engine running and watch for a varying drive signal as revs rise, "
+            "and check resistance and continuity back to the ECU. A new solenoid "
+            "that is never energised behaves exactly like a failed one."))
+        steps.append((
+            "Check the regulator valve and its circuit inside the pump housing.",
+            "If the solenoid is being driven correctly and pressure still is not "
+            "regulated, the control valve or its spool is not moving -- a stuck "
+            "spool, debris, or the wrong pump variant fitted. Since the pump was "
+            "renewed, verify the part number matches this engine's specification "
+            "and that any control ports were not blocked or mis-seated on assembly."))
+    if {"P1336"} & codes:
+        steps.append((
+            "Carry out the flywheel (crankshaft target) adaptation.",
+            "P1336 says the adaptation has not been learned. Until it is, the "
+            "misfire counters cannot be trusted, so do this before drawing any "
+            "conclusion from misfire codes. It needs a tool that can run the "
+            "PSA adaptation procedure."))
+    if {"P1339", "P0318"} & codes:
+        steps.append((
+            "Deal with the misfire separately from the oil problem.",
+            "P1339 and P0318 point at ignition or crank-signal disturbance, not "
+            "at oil pressure. Your spark-plug theory fits; fix that on its own "
+            "merits and re-read the codes, so it is not confused with the "
+            "pressure work."))
+    steps.append((
+        "Re-run this capture after each change.",
+        "The same two commands produce a directly comparable set of curves. If "
+        "the change worked, pressure at 2500 rpm comes down toward the healthy "
+        "car's 3.4 bar and idle comes up toward 1.4, and the control value starts "
+        "moving with engine speed."))
+    return steps
 
 
 def build(car: str) -> Path:
@@ -235,16 +364,41 @@ def build(car: str) -> Path:
                            "down to about 35 once warm. A flat line means the "
                            "solenoid is never being modulated."))
 
-    spot_points = []
-    for run in runs:
-        for entry in (run.get("result") or {}).get("curve") or []:
-            spot_points.append((entry["rpm"], entry["bar"]))
+    reg = _regulation(runs)
+    spot_points = (reg or {}).get("points") or []
     if spot_points:
         charts.append(("Pressure against engine speed, warm",
                        _svg_scatter(spot_points, HEALTHY_RPM_POINTS),
                        "Each point pairs a real rpm reading with the pressure at that "
                        "moment. The healthy cars ran 1.4 bar at idle and 3.0-3.4 bar "
-                       "at 2500-3000 rpm."))
+                       "at 2500-3000 rpm. A line that climbs far more steeply than "
+                       "the green one is pressure following pump speed rather than "
+                       "being regulated to a target."))
+    if reg and reg.get("commands"):
+        charts.append(("Pump control value against engine speed, warm",
+                       _svg_line([("this car", "#c62828", reg["commands"]),
+                                  ("healthy RCZ", "#2e7d32", [(800, 35), (2436, 255)])],
+                                 xlabel="engine rpm", ylabel="control value (0-255)"),
+                       "The healthy car's control value moves with conditions. A flat "
+                       "line means the pump is not being modulated as engine speed "
+                       "changes."))
+
+    dtc_rows = []
+    seen_codes = set()
+    for run in runs:
+        for dtc in (run.get("result") or {}).get("dtcs") or []:
+            code = dtc.get("code")
+            if code in seen_codes:
+                continue
+            seen_codes.add(code)
+            dtc_rows.append(
+                f"<tr><td><strong>{code}</strong></td>"
+                f"<td>{DTC_MEANINGS.get(code, 'Raw code, no plain-English mapping held.')}"
+                f"</td></tr>")
+
+    advice_html = "".join(
+        f"<li><strong>{title}</strong><br>{body}</li>"
+        for title, body in _advice(runs, reg))
 
     rows = []
     for run in runs:
@@ -290,7 +444,9 @@ def build(car: str) -> Path:
  table {{ border-collapse: collapse; width: 100%; font-size: 13.5px; }}
  th, td {{ border: 1px solid #ddd; padding: 6px 9px; text-align: left; }}
  th {{ background: #f5f5f5; }}
- li {{ margin-bottom: 8px; }}
+ li {{ margin-bottom: 10px; }}
+ ol.advice li {{ margin-bottom: 14px; }}
+ ol.advice strong {{ color: #0d47a1; }}
  .muted {{ color: #777; }}
  footer {{ margin-top: 34px; color: #777; font-size: 12.5px;
            border-top: 1px solid #ddd; padding-top: 10px; }}
@@ -303,6 +459,13 @@ def build(car: str) -> Path:
 
 <h2>What the data says</h2>
 <ul>{findings_html or '<li class="muted">No findings recorded.</li>'}</ul>
+
+<h2>Fault codes stored in the engine ECU</h2>
+<table><tr><th>code</th><th>meaning</th></tr>{''.join(dtc_rows) or
+ '<tr><td colspan="2" class="muted">No fault codes captured.</td></tr>'}</table>
+
+<h2>What to do next, in order</h2>
+<ol class="advice">{advice_html}</ol>
 
 <h2>Charts</h2>
 {charts_html or '<p class="muted">No plottable captures.</p>'}
