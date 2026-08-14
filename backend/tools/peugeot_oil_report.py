@@ -45,8 +45,10 @@ def _load(car):
         except (OSError, ValueError):
             continue
         data["_path"] = path.name
-        # Re-decode raw blocks so an older capture gains newer signals.
-        for sample in (data.get("result") or {}).get("samples") or []:
+        # Re-decode raw blocks so an older capture gains newer signals. Drive
+        # logs keep their samples under "readings" rather than "samples".
+        result = data.get("result") or {}
+        for sample in (result.get("samples") or []) + (result.get("readings") or []):
             if sample.get("blk_C2"):
                 try:
                     sample.update(peugeot_oil.decode_c2(bytes.fromhex(sample["blk_C2"])))
@@ -59,6 +61,36 @@ def _load(car):
 def _series(run, key):
     return [(s["t"], s[key]) for s in (run.get("result") or {}).get("samples") or []
             if s.get(key) is not None and s.get("t") is not None]
+
+
+def _readings(run, key):
+    """The same as _series but for a drive log, which stores "readings"."""
+    return [(s["t"], s[key]) for s in (run.get("result") or {}).get("readings") or []
+            if s.get(key) is not None and s.get("t") is not None]
+
+
+def _bucket_max(points, buckets=800):
+    """Thin a long series for plotting while keeping every peak.
+
+    A half-hour drive logged twice a second is far more points than a chart can
+    show. Averaging would erase exactly what matters here -- brief pressure
+    excursions -- so each bucket keeps its highest value instead.
+    """
+    if len(points) <= buckets:
+        return points
+    span = points[-1][0] - points[0][0]
+    if span <= 0:
+        return points
+    width = span / buckets
+    out, current, edge = [], [], points[0][0] + width
+    for x, y in points:
+        if x > edge and current:
+            out.append(max(current, key=lambda p: p[1]))
+            current, edge = [], edge + width
+        current.append((x, y))
+    if current:
+        out.append(max(current, key=lambda p: p[1]))
+    return out
 
 
 def _svg_line(series_list, width=760, height=300, xlabel="", ylabel="",
@@ -160,7 +192,18 @@ DTC_MEANINGS = {
     "P0318": "Rough road / crankshaft signal disturbance, usually recorded "
              "alongside misfire.",
     "U1113": "CAN communication fault recorded by the engine ECU.",
+    "P0A1A": "Piloted alternator: the signal on the BSS control line is outside "
+             "its valid range. An electrical fault on the charging system, "
+             "unrelated to oil pressure.",
 }
+
+# The relief valve caps a healthy EP6 around 4.5 bar, and an owner log has the
+# sensor's own 5 V rail reading as 10.5 bar when the signal is lost. Anything
+# above the first figure needs explaining; anything near the second is more
+# likely to be electrical than hydraulic.
+RELIEF_CAP_BAR = 4.5
+SENSOR_RAIL_BAR = 10.5
+EXCURSION_BAR = 6.0
 
 
 def _regulation(runs):
@@ -217,6 +260,58 @@ def _regulation(runs):
         out["spread"] = round(out["rev_bar"] / out["idle_bar"], 2)
         out["healthy_spread"] = round(3.38 / 1.43, 2)
     return out
+
+
+def _drive_stats(run):
+    """Summarise a drive log: how the pressure was distributed, and where it
+    left the range the relief valve should be holding it inside.
+
+    A drive is the only capture taken under real load, so it is the only one
+    that can show a sustained deviation -- which is what actually sets the
+    regulation fault. Excursions are grouped into runs rather than counted
+    sample by sample, because six seconds above range means something very
+    different from one sample above it.
+    """
+    readings = (run.get("result") or {}).get("readings") or []
+    press = [(s["t"], s["oil_pressure_bar"]) for s in readings
+             if s.get("oil_pressure_bar") is not None and s.get("t") is not None]
+    if not press:
+        return None
+
+    values = sorted(p[1] for p in press)
+    anchors = [s for s in readings if s.get("engine_rpm") is not None]
+    running = [s for s in anchors if s["engine_rpm"] > 300]
+
+    excursions, current = [], []
+    for t, bar in press:
+        if bar > EXCURSION_BAR:
+            current.append((t, bar))
+        elif current:
+            excursions.append(current)
+            current = []
+    if current:
+        excursions.append(current)
+
+    def pct(p):
+        return values[min(len(values) - 1, int(len(values) * p))]
+
+    return {
+        "samples": len(readings),
+        "with_pressure": len(press),
+        "minutes": press[-1][0] / 60.0,
+        "median": statistics.median(values),
+        "p95": pct(0.95),
+        "max": values[-1],
+        "over_relief": sum(1 for v in values if v > RELIEF_CAP_BAR),
+        "over_excursion": sum(1 for v in values if v > EXCURSION_BAR),
+        "over_rail": sum(1 for v in values if v > SENSOR_RAIL_BAR),
+        "excursions": sorted(excursions,
+                             key=lambda e: e[-1][0] - e[0][0], reverse=True),
+        "anchors": anchors,
+        "running_anchors": running,
+        "curve": [(s["engine_rpm"], s["oil_pressure_bar"]) for s in running
+                  if s.get("oil_pressure_bar") is not None],
+    }
 
 
 def _split_by_clear(runs):
@@ -511,7 +606,81 @@ def build(car: str) -> Path:
     else:
         verdict_line, findings = _findings(car, runs)
 
+    drives = [r for r in runs if r.get("command") == "drive"
+              and (r.get("result") or {}).get("readings")]
+    dstats = _drive_stats(drives[-1]) if drives else None
+
     charts = []
+    if dstats:
+        press = _bucket_max(_readings(drives[-1], "oil_pressure_bar"))
+        mirror = _bucket_max(_readings(drives[-1], "oil_pressure_mirror_bar"))
+        charts.append((
+            "Oil pressure across the whole drive",
+            _svg_line([("measured", "#c62828", press),
+                       (f"relief cap {RELIEF_CAP_BAR} bar", "#2e7d32",
+                        [(press[0][0], RELIEF_CAP_BAR), (press[-1][0], RELIEF_CAP_BAR)]),
+                       (f"sensor rail {SENSOR_RAIL_BAR} bar", "#ef6c00",
+                        [(press[0][0], SENSOR_RAIL_BAR), (press[-1][0], SENSOR_RAIL_BAR)])],
+                      xlabel="seconds into the drive", ylabel="oil pressure (bar)"),
+            "Every peak is preserved: the trace is thinned by keeping the highest "
+            "value in each slice rather than by averaging, so a spike lasting one "
+            "sample still appears. The green line is the pressure the relief valve "
+            "should be capping at; the orange line is what this sensor's supply "
+            "rail reads as if the signal is lost, which is the value to suspect "
+            "when a reading approaches it."))
+        charts.append((
+            "The ECU's two pressure copies against each other",
+            _svg_line([("value A (offset 7)", "#c62828", press),
+                       ("value B (offset 47)", "#1565c0", mirror)],
+                      xlabel="seconds into the drive", ylabel="bar"),
+            "These two copies of the pressure sit in different places in the same "
+            "block. On both healthy cars they tracked within 0.25 bar. They track "
+            "here too, including through the excursions -- which means the high "
+            "readings are what the ECU is genuinely reporting, not a single "
+            "corrupted byte."))
+        rpm = _readings(drives[-1], "engine_rpm")
+        if rpm:
+            charts.append((
+                "Engine speed through the drive",
+                _svg_line([("rpm anchor", "#00695c", rpm)],
+                          xlabel="seconds into the drive", ylabel="engine rpm"),
+                "Sampled roughly every 45 seconds. The diagnostic session has to be "
+                "closed to read engine speed at all, so these are deliberate breaks "
+                "in the pressure log rather than a continuous trace. The run of "
+                "zeroes at the end is the engine switched off with the ignition "
+                "still on."))
+        coolant = _readings(drives[-1], "coolant_c")
+        if coolant:
+            charts.append((
+                "Coolant temperature through the drive",
+                _svg_line([("coolant", "#ef6c00", coolant)],
+                          xlabel="seconds into the drive", ylabel="degrees C"),
+                "This engine has no oil temperature sensor: the ECU models oil "
+                "temperature from this reading, and that model sets the pressure "
+                "target. The climb after the engine stops is heat soak, which is "
+                "normal."))
+        duty = _bucket_max(_readings(drives[-1], "pump_command_pct"))
+        if duty:
+            charts.append((
+                "Pump control value through the drive",
+                _svg_line([("control value %", "#6a1b9a", duty)],
+                          xlabel="seconds into the drive", ylabel="percent of full scale"),
+                "Taken from the byte in the block that moves with the pump stage. "
+                "It is NOT confirmed to be the solenoid duty cycle -- on this car it "
+                "read about 14% at an idle where the scan tool reported 84% -- so "
+                "read it as an unidentified control signal that does at least show "
+                "when the ECU changes what it is asking for."))
+        if dstats["curve"]:
+            charts.append((
+                "Pressure against engine speed, under load",
+                _svg_scatter(dstats["curve"], HEALTHY_RPM_POINTS),
+                "Each point pairs an engine-speed reading with the pressure beside "
+                "it. Unlike the yard captures these were taken under real load. The "
+                "pairs are a second or two apart, so a point taken during a gear "
+                "change can put a low engine speed next to a pressure that belonged "
+                "to a higher one -- which is the first thing to rule out about any "
+                "point sitting well above the green healthy line."))
+
     if cold:
         latest = cold[-1]
         press = _series(latest, "oil_pressure_bar")
@@ -589,18 +758,96 @@ def build(car: str) -> Path:
                        "about 9. This car holds its warm-idle value at every speed, "
                        "so the control is not backing off as engine speed rises."))
 
-    dtc_rows = []
-    seen_codes = set()
-    for run in runs:
+    # Which codes are in the ECU NOW matters far more than which have ever been
+    # seen, because clearing the memory is part of the diagnosis here: a code
+    # that stayed away through a drive has been answered, and one that came back
+    # has not. The most recent fault read is therefore the live list, and
+    # everything before it is history.
+    dtc_reads = sorted((r for r in runs if (r.get("result") or {}).get("dtcs") is not None),
+                       key=lambda r: r.get("savedAt") or "")
+    latest_read = dtc_reads[-1] if dtc_reads else None
+    current_codes = [d.get("code") for d in
+                     ((latest_read or {}).get("result") or {}).get("dtcs") or []]
+
+    def _dtc_row(code, state):
+        return (f"<tr><td><strong>{code}</strong></td><td>{state}</td>"
+                f"<td>{DTC_MEANINGS.get(code, 'Raw code, no plain-English mapping held.')}"
+                f"</td></tr>")
+
+    dtc_rows = [_dtc_row(code, "<strong>stored now</strong>") for code in current_codes]
+    seen_codes = set(current_codes)
+    for run in reversed(dtc_reads[:-1] if dtc_reads else []):
+        when = (run.get("savedAt") or "")[:16].replace("T", " ")
         for dtc in (run.get("result") or {}).get("dtcs") or []:
             code = dtc.get("code")
             if code in seen_codes:
                 continue
             seen_codes.add(code)
-            dtc_rows.append(
-                f"<tr><td><strong>{code}</strong></td>"
-                f"<td>{DTC_MEANINGS.get(code, 'Raw code, no plain-English mapping held.')}"
-                f"</td></tr>")
+            dtc_rows.append(_dtc_row(code, f"cleared &mdash; last seen {when}Z"))
+    dtc_when = ((latest_read or {}).get("savedAt") or "")[:16].replace("T", " ")
+    dtc_caption = (
+        f"Read from the engine ECU at {dtc_when}Z. Codes marked "
+        f"<em>stored now</em> are in the memory at that moment; the rest were "
+        f"present earlier and have not come back since the memory was cleared."
+        if latest_read else "No fault read captured.")
+
+    drive_html = '<p class="muted">No drive log captured.</p>'
+    if dstats:
+        pct_over = 100.0 * dstats["over_excursion"] / dstats["with_pressure"]
+        if dstats["excursions"]:
+            longest = dstats["excursions"][0]
+            drive_finding = (
+                f"Driven for {dstats['minutes']:.0f} minutes under real load, the "
+                f"pressure sat at a median {dstats['median']:.2f} bar but rose above "
+                f"the relief valve's {RELIEF_CAP_BAR} bar cap on "
+                f"{dstats['over_relief']} samples, spending {pct_over:.1f}% of the "
+                f"log above {EXCURSION_BAR:.0f} bar and peaking at "
+                f"{dstats['max']:.2f} bar. The longest single excursion lasted "
+                f"{longest[-1][0] - longest[0][0]:.0f} seconds.")
+        else:
+            drive_finding = (
+                f"Driven for {dstats['minutes']:.0f} minutes under real load, the "
+                f"pressure stayed inside range at a median {dstats['median']:.2f} "
+                f"bar, peaking at {dstats['max']:.2f} bar.")
+        findings.insert(0, drive_finding)
+        rows_ex = "".join(
+            f"<tr><td>{e[0][0]:.0f}&ndash;{e[-1][0]:.0f} s</td>"
+            f"<td>{e[-1][0] - e[0][0]:.1f} s</td>"
+            f"<td>{max(b for _, b in e):.2f} bar</td><td>{len(e)}</td></tr>"
+            for e in dstats["excursions"][:12])
+        drive_html = f"""
+<table>
+ <tr><th>measure</th><th>value</th></tr>
+ <tr><td>length of log</td><td>{dstats['minutes']:.0f} minutes,
+     {dstats['samples']} samples, {dstats['with_pressure']} carrying a pressure</td></tr>
+ <tr><td>median pressure</td><td>{dstats['median']:.2f} bar</td></tr>
+ <tr><td>95th percentile</td><td>{dstats['p95']:.2f} bar</td></tr>
+ <tr><td>highest reading</td><td>{dstats['max']:.2f} bar</td></tr>
+ <tr><td>samples above the {RELIEF_CAP_BAR} bar relief cap</td>
+     <td>{dstats['over_relief']}</td></tr>
+ <tr><td>samples above {EXCURSION_BAR:.0f} bar</td>
+     <td>{dstats['over_excursion']}</td></tr>
+ <tr><td>samples above the {SENSOR_RAIL_BAR} bar sensor rail</td>
+     <td>{dstats['over_rail']}</td></tr>
+ <tr><td>separate excursions above {EXCURSION_BAR:.0f} bar</td>
+     <td>{len(dstats['excursions'])}</td></tr>
+</table>
+<h3>The longest excursions</h3>
+<table><tr><th>when</th><th>duration</th><th>peak</th><th>samples</th></tr>
+{rows_ex or '<tr><td colspan="4" class="muted">None.</td></tr>'}</table>"""
+
+    # The scan-tool verdict and the drive log disagree, and the report must not
+    # bury that. Say both, and say which reading is doing the disagreeing.
+    if dstats and dstats["excursions"] and "WORKING" in verdict_line:
+        verdict_line += (
+            f" That verdict comes from a short scan-tool log in the yard. The "
+            f"30-minute drive that followed did not contradict it in the way "
+            f"that counts -- no oil-pressure code was set -- but the pressure "
+            f"channel itself logged {len(dstats['excursions'])} excursions above "
+            f"{EXCURSION_BAR:.0f} bar, peaking at {dstats['max']:.2f} bar, which "
+            f"is beyond anything the relief valve should allow and beyond what "
+            f"the scan tool ever showed. Until that is cross-checked against a "
+            f"scan tool under load, treat the car as improved rather than fixed.")
 
     advice_html = "".join(
         f"<li><strong>{title}</strong><br>{body}</li>"
@@ -611,7 +858,7 @@ def build(car: str) -> Path:
         result = run.get("result") or {}
         rows.append(
             f"<tr><td>{run.get('command')}</td><td>{run.get('savedAt', '')[:19]}Z</td>"
-            f"<td>{len(result.get('samples') or [])}</td>"
+            f"<td>{len(result.get('samples') or result.get('readings') or [])}</td>"
             f"<td>{(run.get('note') or '')[:90]}</td></tr>")
 
     baseline = ((cold[-1].get("result") or {}).get("baseline") if cold else {}) or {}
@@ -666,9 +913,13 @@ def build(car: str) -> Path:
 <h2>What the data says</h2>
 <ul>{findings_html or '<li class="muted">No findings recorded.</li>'}</ul>
 
+<h2>The drive under load</h2>
+{drive_html}
+
 <h2>Fault codes stored in the engine ECU</h2>
-<table><tr><th>code</th><th>meaning</th></tr>{''.join(dtc_rows) or
- '<tr><td colspan="2" class="muted">No fault codes captured.</td></tr>'}</table>
+<table><tr><th>code</th><th>state</th><th>meaning</th></tr>{''.join(dtc_rows) or
+ '<tr><td colspan="3" class="muted">No fault codes captured.</td></tr>'}</table>
+<p class="caption">{dtc_caption}</p>
 
 <h2>What to do next, in order</h2>
 <ol class="advice">{advice_html}</ol>
