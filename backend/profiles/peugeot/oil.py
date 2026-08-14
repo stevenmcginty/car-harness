@@ -665,7 +665,8 @@ def block_capture(adapter: Optional[dict], seconds: float = 90.0,
                 "message": str(exc), "timestamp": _now()}
 
 
-def drive(adapter: Optional[dict], minutes: float = 30.0, mode: str = "real") -> dict:
+def drive(adapter: Optional[dict], minutes: float = 30.0, mode: str = "real",
+          dense: bool = True, anchor_seconds: float = 45.0) -> dict:
     """Log a whole drive as paired rpm-and-pressure samples.
 
     A drive is the test a yard full of revving cannot replace: real load, real
@@ -675,6 +676,14 @@ def drive(adapter: Optional[dict], minutes: float = 30.0, mode: str = "real") ->
     coolant, opens the session for the pressure block, closes it, and waits out
     the session lapse before the next pass -- about one paired sample every
     eight seconds, which is plenty for a drive lasting half an hour.
+
+    dense=True (the default) does better than that. What the fault needs is a
+    SUSTAINED pressure deviation, so pressure resolution matters more than
+    having an rpm figure beside every single sample. In dense mode the session
+    stays open and pressure is logged as fast as the dongle allows -- roughly
+    every two seconds -- dropping out only every ``anchor_seconds`` to take an
+    rpm and coolant anchor. Samples between anchors carry the rpm of the anchor
+    before them, marked so it is never mistaken for a fresh reading.
 
     Everything is stored raw as well as decoded, so if the pressure setpoint or
     the valve duty are later identified inside these blocks, this log can be
@@ -699,22 +708,41 @@ def drive(adapter: Optional[dict], minutes: float = 30.0, mode: str = "real") ->
         while monotonic() - started < minutes * 60:
             client = PsaElm327UdsClient(session, OIL_ID_MAP)
             client.begin()
-            sample = {"t": round(monotonic() - started, 1)}
+            anchor_rpm = anchor_coolant = None
             try:
+                # Anchor: generic OBD, only possible with the session shut.
                 body = _read_pid(client, 0x0C, timeout=1.2)
-                sample["engine_rpm"] = _decode_pid(0x0C, body) if body else None
+                anchor_rpm = _decode_pid(0x0C, body) if body else None
                 body = _read_pid(client, 0x05, timeout=1.2)
-                sample["coolant_c"] = _decode_pid(0x05, body) if body else None
+                anchor_coolant = _decode_pid(0x05, body) if body else None
+
                 client.open_session(ENGINE_PSA)
-                block = _read_kwp_block(client, 0xC2, timeout=1.0)
-                sample["blk_C2"] = block.hex().upper() if block else None
-                sample.update(decode_c2(block))
+                # Then hold the session open and log pressure hard.
+                burst_started = monotonic()
+                first = True
+                while True:
+                    sample = {"t": round(monotonic() - started, 1)}
+                    block = _read_kwp_block(client, 0xC2, timeout=1.0)
+                    sample["blk_C2"] = block.hex().upper() if block else None
+                    sample.update(decode_c2(block))
+                    if first:
+                        sample["engine_rpm"] = anchor_rpm
+                        sample["coolant_c"] = anchor_coolant
+                    elif anchor_rpm is not None:
+                        # Carried from the last anchor, never presented as fresh.
+                        sample["engine_rpm_anchor"] = anchor_rpm
+                    readings.append(sample)
+                    first = False
+                    if (not dense
+                            or monotonic() - burst_started >= anchor_seconds
+                            or monotonic() - started >= minutes * 60):
+                        break
             except Exception:
                 pass
             finally:
                 client.restore()
-            readings.append(sample)
-            if sample.get("engine_rpm") is None and sample.get("blk_C2") is None:
+            recent = readings[-1] if readings else {}
+            if recent.get("engine_rpm") is None and recent.get("blk_C2") is None:
                 misses += 1
                 if misses >= 8:
                     break
@@ -727,17 +755,19 @@ def drive(adapter: Optional[dict], minutes: float = 30.0, mode: str = "real") ->
                   and r.get("oil_pressure_bar") is not None]
         elapsed = (monotonic() - started) / 60.0
         rpms = [r["engine_rpm"] for r in paired]
-        press = [r["oil_pressure_bar"] for r in paired]
+        press = [r["oil_pressure_bar"] for r in readings
+                 if r.get("oil_pressure_bar") is not None]
+        rate = len(readings) / (elapsed * 60) if elapsed else 0
         return {
             "ok": True, "simulated": False, "readings": readings,
             "curve": [{"rpm": r["engine_rpm"], "bar": r["oil_pressure_bar"]}
                       for r in paired],
             "message": (
-                f"Drive log: {len(readings)} pass(es) over {elapsed:.0f} min, "
-                f"{len(paired)} with both rpm and pressure."
-                + (f" rpm {min(rpms):.0f}-{max(rpms):.0f}, pressure "
-                   f"{min(press):.2f}-{max(press):.2f} bar."
-                   if paired else " Nothing paired -- check the dongle stayed awake.")
+                f"Drive log: {len(readings)} sample(s) over {elapsed:.0f} min "
+                f"(~{rate:.2f}/s), {len(paired)} carrying a fresh rpm anchor."
+                + (f" Pressure {min(press):.2f}-{max(press):.2f} bar."
+                   if press else " No pressure decoded -- check the dongle stayed awake.")
+                + (f" Anchor rpm {min(rpms):.0f}-{max(rpms):.0f}." if rpms else "")
                 + " Read-only throughout."
             ),
             "timestamp": _now(),
