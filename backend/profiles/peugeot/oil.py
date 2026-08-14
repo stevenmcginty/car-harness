@@ -496,12 +496,20 @@ def decode_c2(body: bytes) -> dict:
     if "oil_pressure_bar" in out and "oil_pressure_mirror_bar" in out:
         out["oil_pressure_delta_bar"] = round(
             out["oil_pressure_bar"] - out["oil_pressure_mirror_bar"], 2)
-    if len(body) > C2_PUMP_COMMAND:
+    # The command is only trusted when its twin agrees. A 255 paired with a 0
+    # is not a full-scale command, it is the block's not-available marker, and
+    # taking it at face value once produced a confident but wrong conclusion
+    # about what a healthy car commands under revs. The twins otherwise track
+    # within one count on every sample of every car recorded so far.
+    if len(body) > max(C2_PUMP_COMMAND, C2_PUMP_COMMAND_MIRROR):
         raw = body[C2_PUMP_COMMAND]
-        out["pump_command"] = raw
-        out["pump_command_pct"] = round(raw * 100.0 / 255.0, 1)
-    if len(body) > C2_PUMP_COMMAND_MIRROR:
-        out["pump_command_mirror"] = body[C2_PUMP_COMMAND_MIRROR]
+        twin = body[C2_PUMP_COMMAND_MIRROR]
+        out["pump_command_mirror"] = twin
+        if abs(raw - twin) <= 3:
+            out["pump_command"] = raw
+            out["pump_command_pct"] = round(raw * 100.0 / 255.0, 1)
+        else:
+            out["pump_command_invalid"] = f"{raw}/{twin}"
     return out
 
 

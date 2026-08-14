@@ -28,6 +28,11 @@ REPORTS = Path(__file__).resolve().parents[2] / "captures" / "reports"
 HEALTHY_CURVE = [(6, 3.96), (15, 4.61), (25, 4.67), (34, 3.73), (44, 2.29),
                  (63, 2.04), (82, 2.01), (121, 2.06), (178, 1.93)]
 HEALTHY_PUMP = [(6, 240), (25, 240), (44, 27), (63, 35), (121, 35), (178, 35)]
+# Warm command against engine speed, from RCZ #1 held at 3000 rpm and back to
+# idle: the command FALLS as revs rise. An earlier reading of 255 at 2436 rpm
+# was discarded -- its twin byte read 0, which is the block's not-available
+# marker rather than a full-scale command.
+HEALTHY_PUMP_VS_RPM = [(760, 35), (3000, 9)]
 HEALTHY_RPM_POINTS = [(800, 1.43), (2436, 3.38), (2500, 3.0), (3000, 3.41)]
 
 
@@ -182,6 +187,23 @@ def _regulation(runs):
         "healthy_rev_bar": 3.38,
     }
     out["commandFixed"] = len(out["commandValues"]) <= 1 and len(commands) >= 4
+
+    # Did the solenoid actually DO anything when the command changed? Find the
+    # cold-start step and look at the pressure either side of it. This is the
+    # single most useful fact for a car whose solenoid has already been renewed.
+    for run in runs:
+        samples = [s for s in (run.get("result") or {}).get("samples") or []
+                   if s.get("pump_command") is not None
+                   and s.get("oil_pressure_bar") is not None]
+        for before, after in zip(samples, samples[1:]):
+            if before["pump_command"] - after["pump_command"] >= 60:
+                drop = before["oil_pressure_bar"] - after["oil_pressure_bar"]
+                if drop > 0.8:
+                    out["respondedOnStep"] = True
+                    out["stepFrom"] = before["oil_pressure_bar"]
+                    out["stepTo"] = after["oil_pressure_bar"]
+                break
+
     if out["idle_bar"] and out["rev_bar"]:
         out["spread"] = round(out["rev_bar"] / out["idle_bar"], 2)
         out["healthy_spread"] = round(3.38 / 1.43, 2)
@@ -263,10 +285,19 @@ def _findings(car, runs):
                             "far too high under revs.")
         if reg.get("commandFixed"):
             lines.append(
-                f"The pump control value never moved off {reg['commandValues'][0]} "
-                "at any engine speed, while the healthy car's moved between 35 at "
-                "warm idle and 255 under revs. The ECU's control of the pump is "
-                "therefore not varying with conditions on this car.")
+                f"Warm, the pump control value stayed at {reg['commandValues'][0]} "
+                "at every engine speed, where the healthy car dropped to about 9 "
+                "when held at 3000 rpm. So the control is not backing off as engine "
+                "speed rises the way the good car's does.")
+    if reg and reg.get("respondedOnStep"):
+        lines.append(
+            "IMPORTANT, and it points away from the parts already replaced: on the "
+            "cold start this car's control value stepped from 240 to 35 and the "
+            "pressure fell from " + f"{reg['stepFrom']} to {reg['stepTo']} bar in "
+            "the same moment. The solenoid was therefore commanded AND physically "
+            "responded. A solenoid that was dead, disconnected or unpowered could "
+            "not move the pressure like that, so a third solenoid and a wiring hunt "
+            "are not where this points.")
     return verdict_line, lines
 
 
@@ -287,21 +318,40 @@ def _advice(runs, reg):
             "the ECU sees these numbers, the sensor or its wiring is lying and "
             "nothing inside the engine is wrong. This one test splits the whole "
             "problem in two and costs nothing but time."))
+        if reg and reg.get("respondedOnStep"):
+            steps.append((
+                "Do NOT replace the solenoid again, and do not start with wiring.",
+                "The capture shows the command stepping down and the pressure "
+                f"falling from {reg['stepFrom']} to {reg['stepTo']} bar at the same "
+                "moment, so the solenoid is being energised and is physically "
+                "moving. An electrical fault is the one thing this data rules out. "
+                "A quick confirmation while you are there: resistance across the "
+                "solenoid should read a sensible coil value rather than open "
+                "circuit -- but expect it to be fine."))
+        else:
+            steps.append((
+                "Prove the regulation solenoid is actually being driven.",
+                "Back-probe the solenoid connector with the engine running and "
+                "watch for a drive signal, and check continuity back to the ECU. A "
+                "new solenoid that is never energised behaves exactly like a failed "
+                "one."))
         steps.append((
-            "Prove the regulation solenoid is actually being driven.",
-            "The solenoid has already been replaced, so the question is no longer "
-            "whether the part is good -- it is whether current is reaching it and "
-            "whether it is being commanded. Back-probe the solenoid connector with "
-            "the engine running and watch for a varying drive signal as revs rise, "
-            "and check resistance and continuity back to the ECU. A new solenoid "
-            "that is never energised behaves exactly like a failed one."))
+            "Look at what the valve is controlling, not the valve itself.",
+            "The solenoid moves, yet pressure is low at idle and overshoots under "
+            "revs -- so the regulation has the wrong authority over the circuit. "
+            "The things that do that are a control spool that moves but does not "
+            "seal or travel fully, a blocked or mis-seated control gallery in the "
+            "pump housing, a relief valve stuck or wrongly rated, or a pump variant "
+            "that does not match this engine. Since the pump was renewed, check its "
+            "part number against the 5FV specification and that its control ports "
+            "were clear and correctly seated on assembly."))
         steps.append((
-            "Check the regulator valve and its circuit inside the pump housing.",
-            "If the solenoid is being driven correctly and pressure still is not "
-            "regulated, the control valve or its spool is not moving -- a stuck "
-            "spool, debris, or the wrong pump variant fitted. Since the pump was "
-            "renewed, verify the part number matches this engine's specification "
-            "and that any control ports were not blocked or mis-seated on assembly."))
+            "Check oil grade and level before stripping anything.",
+            "Pressure that runs low at idle and high under revs is also what the "
+            "wrong oil viscosity produces, and it is free to rule out. Confirm the "
+            "grade in the sump is what this engine specifies and that the level and "
+            "the filter are right, especially if the oil was changed during the "
+            "recent work."))
     if {"P1336"} & codes:
         steps.append((
             "Carry out the flywheel (crankshaft target) adaptation.",
@@ -377,11 +427,11 @@ def build(car: str) -> Path:
     if reg and reg.get("commands"):
         charts.append(("Pump control value against engine speed, warm",
                        _svg_line([("this car", "#c62828", reg["commands"]),
-                                  ("healthy RCZ", "#2e7d32", [(800, 35), (2436, 255)])],
+                                  ("healthy RCZ", "#2e7d32", HEALTHY_PUMP_VS_RPM)],
                                  xlabel="engine rpm", ylabel="control value (0-255)"),
-                       "The healthy car's control value moves with conditions. A flat "
-                       "line means the pump is not being modulated as engine speed "
-                       "changes."))
+                       "Held at 3000 rpm the healthy car's control value falls to "
+                       "about 9. This car holds its warm-idle value at every speed, "
+                       "so the control is not backing off as engine speed rises."))
 
     dtc_rows = []
     seen_codes = set()
