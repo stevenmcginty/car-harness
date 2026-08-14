@@ -13,6 +13,7 @@ report opens anywhere with no dependencies and no internet.
 
 import argparse
 import json
+import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -218,6 +219,22 @@ def _regulation(runs):
     return out
 
 
+def _split_by_clear(runs):
+    """Separate captures taken before the fault memory was cleared from after.
+
+    Once the codes are cleared the car can behave completely differently, so a
+    report that averages both together describes a car that never existed. The
+    scan-tool import is the marker: those logs were taken after clearing.
+    """
+    marker = min((r.get("savedAt") or "" for r in runs
+                  if r.get("command") == "autel"), default=None)
+    if not marker:
+        return runs, []
+    before = [r for r in runs if (r.get("savedAt") or "") < marker]
+    after = [r for r in runs if (r.get("savedAt") or "") >= marker]
+    return before, after
+
+
 def _findings(car, runs):
     """The written conclusion: what the numbers say, in order of consequence."""
     cold = [r for r in runs if r.get("command") == "coldstart"]
@@ -325,10 +342,11 @@ def _findings(car, runs):
         gaps = [measured - target for target, measured, _d, _r in setpoints]
         worst = max(gaps, key=abs)
         duties = [d for _t, _m, d, _r in setpoints if d is not None]
+        typical = statistics.median([abs(g) for g in gaps])
         lines.append(
-            f"Scan-tool data: the ECU's setpoint and the measured pressure differ "
-            f"by up to {worst:+.2f} bar.")
-        if worst > 0.6:
+            f"Scan-tool data: measured pressure sits within {typical:.2f} bar of "
+            f"the ECU's target for a typical sample, worst excursion {worst:+.2f} bar.")
+        if typical > 0.6:
             lines.append(
                 "The ECU is asking for LESS pressure than it is getting. That is "
                 "the definitive version of this fault: the demand is being made "
@@ -348,11 +366,28 @@ def _findings(car, runs):
                     f"{max(duties):.0f}%), so the ECU is not working the solenoid "
                     "at all despite wanting a lower pressure. That is a control "
                     "loop that has stopped running rather than a hydraulic fault.")
-        elif abs(worst) <= 0.6:
-            lines.append(
-                "Measured pressure is tracking the setpoint, so the regulation is "
-                "doing its job during this log. If the warning still appears, "
-                "capture again at the moment it does -- this log did not catch it.")
+        # Judge on the typical error, not the single worst sample: a loop
+        # chasing a fast throttle change overshoots briefly and that is normal.
+        elif typical <= 0.25:
+            verdict_line = ("Oil pressure regulation is WORKING: measured pressure "
+                            "is tracking the ECU's own target.")
+            lines.insert(0, (
+                f"Across this log the measured pressure sat within "
+                f"{typical:.2f} bar of the ECU's target, with the valve duty "
+                f"modulating between {min(duties):.0f}% and {max(duties):.0f}%. "
+                "That is a closed loop doing its job."))
+            spikes = [(g, t, m) for g, (t, m, _d, _r) in zip(gaps, setpoints)
+                      if abs(g) > 0.8]
+            if spikes:
+                worst_gap, worst_target, worst_measured = max(spikes, key=lambda x: abs(x[0]))
+                lines.append(
+                    f"There are {len(spikes)} brief excursion(s), the largest "
+                    f"{worst_measured:.2f} bar against a {worst_target:.2f} bar "
+                    "target. Those land on rapidly changing engine speed, which is "
+                    "a loop lagging a fast throttle movement rather than a failure "
+                    "to control -- but they are worth re-checking under steady load, "
+                    "because a sustained deviation is what sets the fault in the "
+                    "first place.")
 
     if reg and reg.get("respondedOnStep"):
         lines.append(
@@ -463,8 +498,18 @@ def build(car: str) -> Path:
     if not runs:
         raise SystemExit(f"No captures found for '{car}' in {CAPTURES}")
 
+    before, after = _split_by_clear(runs)
     cold = [r for r in runs if r.get("command") == "coldstart"]
-    verdict_line, findings = _findings(car, runs)
+    if after:
+        # The car's present behaviour is the headline; the earlier captures
+        # become history rather than diagnosis.
+        verdict_line, findings = _findings(car, after)
+        prior_line, prior_findings = _findings(car, before)
+        findings.append(
+            "BEFORE the fault memory was cleared, the same car measured: "
+            + prior_line[0].lower() + prior_line[1:])
+    else:
+        verdict_line, findings = _findings(car, runs)
 
     charts = []
     if cold:

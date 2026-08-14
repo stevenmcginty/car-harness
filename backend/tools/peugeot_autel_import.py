@@ -42,13 +42,16 @@ FIELDS = [
     ("oil_pressure_setpoint_bar",
      ["oil pressure setpoint", "oil press setpoint", "pressure setpoint",
       "consigne pression", "pression consigne", "setpoint", "consigne",
-      "target pressure", "requested pressure", "reference value"]),
+      "target pressure", "requested pressure", "reference value",
+      "ref oil pressure", "oil pressure ref", "reference oil pressure",
+      "demanded oil pressure", "desired oil pressure"]),
     ("pump_duty_pct",
      ["oil pump valve", "pump valve duty", "duty cycle", "rapport cyclique",
-      "rco", "solenoid duty", "valve duty", "oil pump duty", "opv"]),
+      "rco", "solenoid duty", "valve duty", "oil pump duty", "opv",
+      "solenoid valve ref", "solenoid valve", "electrovanne"]),
     ("oil_pressure_bar",
-     ["oil pressure", "pression d'huile", "pression huile", "oil press",
-      "engine oil pressure"]),
+     ["measured oil pressure", "oil pressure measured", "oil pressure",
+      "pression d'huile", "pression huile", "oil press", "engine oil pressure"]),
     ("engine_rpm",
      ["engine speed", "engine rpm", "regime moteur", "régime moteur",
       "rpm", "regime", "régime"]),
@@ -64,12 +67,26 @@ _UNIT_RE = re.compile(r"[\(\[]\s*([^)\]]+?)\s*[\)\]]")
 
 
 def _norm(text):
-    return re.sub(r"\s+", " ", (text or "").strip().lower())
+    """Lower-case, and treat underscores and hyphens as spaces.
+
+    Machine-written headers arrive as measured_oil_pressure_mbar rather than
+    "Oil Pressure (mbar)", and both have to match the same patterns.
+    """
+    return re.sub(r"\s+", " ", re.sub(r"[_\-]+", " ", (text or "").strip().lower()))
+
+
+# Units written as a trailing word instead of in brackets: ..._mbar, ..._pct.
+_SUFFIX_UNITS = ("mbar", "kpa", "psi", "bar", "pct", "percent", "rpm", "degc", "c", "f")
 
 
 def _header_unit(header):
     found = _UNIT_RE.search(header or "")
-    return _norm(found.group(1)) if found else ""
+    if found:
+        return _norm(found.group(1))
+    words = _norm(header).split()
+    if words and words[-1] in _SUFFIX_UNITS:
+        return words[-1]
+    return ""
 
 
 def _to_float(raw):
@@ -92,6 +109,24 @@ def _to_float(raw):
         return float(text)
     except ValueError:
         return None
+
+
+def _to_seconds(raw):
+    """Time cell to seconds. Handles 12.5, 00:26 and 01:02:03."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if ":" in text:
+        parts = text.split(":")
+        try:
+            values = [float(p.replace(",", ".")) for p in parts]
+        except ValueError:
+            return None
+        seconds = 0.0
+        for value in values:
+            seconds = seconds * 60 + value
+        return seconds
+    return _to_float(text)
 
 
 def _find_header(rows):
@@ -182,7 +217,12 @@ def parse(path: Path) -> dict:
     raw = {key: [] for key in mapping}
     for row in body:
         for key, index in mapping.items():
-            raw[key].append(_to_float(row[index]) if index < len(row) else None)
+            if index >= len(row):
+                raw[key].append(None)
+            elif key == "time_s":
+                raw[key].append(_to_seconds(row[index]))
+            else:
+                raw[key].append(_to_float(row[index]))
 
     notes = []
     for key, index in mapping.items():
