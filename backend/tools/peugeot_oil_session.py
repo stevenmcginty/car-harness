@@ -100,7 +100,7 @@ def main() -> int:
     parser.add_argument(
         "command",
         choices=["probe", "capture", "sweep", "scan", "blocks", "coldstart",
-                 "spot"])
+                 "spot", "drive"])
     parser.add_argument("bounds", nargs="*", help="sweep: FIRST LAST as hex")
     parser.add_argument("--car", default="unknown")
     parser.add_argument("--adapter", default=None)
@@ -119,6 +119,9 @@ def main() -> int:
 
     if args.command == "probe":
         result = peugeot_oil.probe(adapter)
+    elif args.command == "drive":
+        result = peugeot_oil.drive(adapter, args.seconds / 60.0
+                                   if args.seconds > 60 else args.seconds)
     elif args.command == "spot":
         result = peugeot_oil.spot(adapter, int(args.seconds) if args.seconds < 10 else 3)
     elif args.command == "coldstart":

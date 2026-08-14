@@ -665,6 +665,91 @@ def block_capture(adapter: Optional[dict], seconds: float = 90.0,
                 "message": str(exc), "timestamp": _now()}
 
 
+def drive(adapter: Optional[dict], minutes: float = 30.0, mode: str = "real") -> dict:
+    """Log a whole drive as paired rpm-and-pressure samples.
+
+    A drive is the test a yard full of revving cannot replace: real load, real
+    heat, and the conditions that actually set the fault. But this ECU will not
+    answer generic OBD while its diagnostic session is open, so rpm and oil
+    pressure cannot be sampled together. Each pass therefore reads rpm and
+    coolant, opens the session for the pressure block, closes it, and waits out
+    the session lapse before the next pass -- about one paired sample every
+    eight seconds, which is plenty for a drive lasting half an hour.
+
+    Everything is stored raw as well as decoded, so if the pressure setpoint or
+    the valve duty are later identified inside these blocks, this log can be
+    re-read for them without driving the car again.
+
+    Read-only. Leave it running and drive normally.
+    """
+    if mode == "sim":
+        return {"ok": True, "simulated": True, "readings": [],
+                "message": "SIMULATED -- no real car connected.", "timestamp": _now()}
+
+    def run(session, entry):
+        session.ensure_protocol()
+        bad = _bad_protocol(session, "the drive log")
+        if bad:
+            bad["readings"] = []
+            return bad
+
+        readings: List[dict] = []
+        started = monotonic()
+        misses = 0
+        while monotonic() - started < minutes * 60:
+            client = PsaElm327UdsClient(session, OIL_ID_MAP)
+            client.begin()
+            sample = {"t": round(monotonic() - started, 1)}
+            try:
+                body = _read_pid(client, 0x0C, timeout=1.2)
+                sample["engine_rpm"] = _decode_pid(0x0C, body) if body else None
+                body = _read_pid(client, 0x05, timeout=1.2)
+                sample["coolant_c"] = _decode_pid(0x05, body) if body else None
+                client.open_session(ENGINE_PSA)
+                block = _read_kwp_block(client, 0xC2, timeout=1.0)
+                sample["blk_C2"] = block.hex().upper() if block else None
+                sample.update(decode_c2(block))
+            except Exception:
+                pass
+            finally:
+                client.restore()
+            readings.append(sample)
+            if sample.get("engine_rpm") is None and sample.get("blk_C2") is None:
+                misses += 1
+                if misses >= 8:
+                    break
+            else:
+                misses = 0
+            sleep(_SESSION_LAPSE_S)
+
+        paired = [r for r in readings
+                  if r.get("engine_rpm") is not None
+                  and r.get("oil_pressure_bar") is not None]
+        elapsed = (monotonic() - started) / 60.0
+        rpms = [r["engine_rpm"] for r in paired]
+        press = [r["oil_pressure_bar"] for r in paired]
+        return {
+            "ok": True, "simulated": False, "readings": readings,
+            "curve": [{"rpm": r["engine_rpm"], "bar": r["oil_pressure_bar"]}
+                      for r in paired],
+            "message": (
+                f"Drive log: {len(readings)} pass(es) over {elapsed:.0f} min, "
+                f"{len(paired)} with both rpm and pressure."
+                + (f" rpm {min(rpms):.0f}-{max(rpms):.0f}, pressure "
+                   f"{min(press):.2f}-{max(press):.2f} bar."
+                   if paired else " Nothing paired -- check the dongle stayed awake.")
+                + " Read-only throughout."
+            ),
+            "timestamp": _now(),
+        }
+
+    try:
+        return obd_service._with_session(adapter, run)
+    except obd_service.ObdServiceError as exc:
+        return {"ok": False, "simulated": False, "readings": [],
+                "message": str(exc), "timestamp": _now()}
+
+
 def spot(adapter: Optional[dict], repeats: int = 3, mode: str = "real") -> dict:
     """One rpm reading paired with one oil-pressure reading, several times over.
 
