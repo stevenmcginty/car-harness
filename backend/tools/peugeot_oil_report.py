@@ -313,6 +313,47 @@ def _findings(car, runs):
                 "at every engine speed, where the healthy car dropped to about 9 "
                 "when held at 3000 rpm. So the control is not backing off as engine "
                 "speed rises the way the good car's does.")
+    # Scan-tool data, if any was imported: the setpoint is the one thing a
+    # dongle cannot read, and it settles the central question outright.
+    setpoints = [(s.get("oil_pressure_setpoint_bar"), s.get("oil_pressure_bar"),
+                  s.get("pump_duty_pct"), s.get("engine_rpm"))
+                 for run in runs
+                 for s in (run.get("result") or {}).get("samples") or []
+                 if s.get("oil_pressure_setpoint_bar") is not None
+                 and s.get("oil_pressure_bar") is not None]
+    if setpoints:
+        gaps = [measured - target for target, measured, _d, _r in setpoints]
+        worst = max(gaps, key=abs)
+        duties = [d for _t, _m, d, _r in setpoints if d is not None]
+        lines.append(
+            f"Scan-tool data: the ECU's setpoint and the measured pressure differ "
+            f"by up to {worst:+.2f} bar.")
+        if worst > 0.6:
+            lines.append(
+                "The ECU is asking for LESS pressure than it is getting. That is "
+                "the definitive version of this fault: the demand is being made "
+                "and the oil circuit is not obeying it.")
+            if duties and max(duties) - min(duties) > 5:
+                lines.append(
+                    f"The valve duty is modulating ({min(duties):.0f}-"
+                    f"{max(duties):.0f}%), so the ECU is genuinely working the "
+                    "solenoid. A command that moves while pressure refuses to "
+                    "follow means the solenoid's hydraulic output is not reaching "
+                    "the pump's regulating valve -- the control passage across the "
+                    "pump-to-block joint, which no replacement pump or solenoid "
+                    "includes.")
+            elif duties:
+                lines.append(
+                    f"The valve duty barely moved ({min(duties):.0f}-"
+                    f"{max(duties):.0f}%), so the ECU is not working the solenoid "
+                    "at all despite wanting a lower pressure. That is a control "
+                    "loop that has stopped running rather than a hydraulic fault.")
+        elif abs(worst) <= 0.6:
+            lines.append(
+                "Measured pressure is tracking the setpoint, so the regulation is "
+                "doing its job during this log. If the warning still appears, "
+                "capture again at the moment it does -- this log did not catch it.")
+
     if reg and reg.get("respondedOnStep"):
         lines.append(
             "IMPORTANT, and it points away from the parts already replaced: on the "
@@ -455,6 +496,34 @@ def build(car: str) -> Path:
                            "The healthy cars command about 240 while cold and step "
                            "down to about 35 once warm. A flat line means the "
                            "solenoid is never being modulated."))
+
+    # Setpoint against measured, from any imported scan-tool log.
+    for run in runs:
+        samples = (run.get("result") or {}).get("samples") or []
+        measured = [(s["t"], s["oil_pressure_bar"]) for s in samples
+                    if s.get("oil_pressure_bar") is not None and s.get("t") is not None]
+        target = [(s["t"], s["oil_pressure_setpoint_bar"]) for s in samples
+                  if s.get("oil_pressure_setpoint_bar") is not None
+                  and s.get("t") is not None]
+        if target and measured:
+            charts.append((
+                "What the ECU asked for against what it got",
+                _svg_line([("measured", "#c62828", measured),
+                           ("ECU setpoint", "#1565c0", target)],
+                          xlabel="sample", ylabel="bar"),
+                "Read from the scan tool, which unlike a dongle exposes the ECU's "
+                "own target. Measured sitting above the setpoint means the demand "
+                "is being made and not obeyed."))
+            duty = [(s["t"], s["pump_duty_pct"]) for s in samples
+                    if s.get("pump_duty_pct") is not None and s.get("t") is not None]
+            if duty:
+                charts.append((
+                    "Solenoid duty cycle through the same log",
+                    _svg_line([("valve duty %", "#6a1b9a", duty)],
+                              xlabel="sample", ylabel="duty (%)"),
+                    "Documented healthy running is 50-72%. A flat line means the "
+                    "ECU is not modulating the valve."))
+            break
 
     reg = _regulation(runs)
     spot_points = (reg or {}).get("points") or []
