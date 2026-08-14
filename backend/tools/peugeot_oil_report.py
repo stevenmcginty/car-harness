@@ -141,9 +141,17 @@ def _svg_scatter(points, healthy, width=760, height=300):
 
 # Fault codes worth naming in plain English. Anything else is listed raw.
 DTC_MEANINGS = {
-    "P15A0": "Oil pressure regulation -- the ECU is not satisfied with what the "
-             "oil pressure control is doing.",
-    "P15A9": "Oil pressure regulation, second code in the same family.",
+    "P15A0": "PSA factory definition: pump regulated permanently at MAXIMUM "
+             "pressure, oil pressure higher than the valid range. This is the "
+             "central code on this car.",
+    "P15A9": "Same oil-pressure-regulation family. Not present in the 09/2013 "
+             "factory list, so its exact wording is unconfirmed; readings suggest "
+             "either a frozen pressure signal or high pressure in mechanical mode.",
+    "P15A1": "Pump regulated permanently at minimum pressure, oil pressure lower "
+             "than the reference value.",
+    "P15A4": "Solenoid stays in the no-voltage state, so the pump is regulated "
+             "permanently at maximum pressure.",
+    "P15A6": "Oil pressure too high relative to the setpoint.",
     "P0945": "Oil pressure regulation solenoid valve circuit.",
     "P0521": "Oil pressure sensor / switch range or performance.",
     "P1336": "Flywheel (crankshaft target) adaptation not learned.",
@@ -277,12 +285,28 @@ def _findings(car, runs):
         if reg.get("spread") and reg["spread"] > reg["healthy_spread"] * 1.3:
             lines.append(
                 f"Pressure rises {reg['spread']}x from idle to 2500 rpm; on the "
-                f"healthy car it rises {reg['healthy_spread']}x. Pressure climbing "
-                "with engine speed that steeply is what an UNREGULATED pump does -- "
-                "the pressure is following pump speed instead of being held to a "
-                "target.")
-            verdict_line = ("Oil pressure is not being regulated: too low at idle, "
-                            "far too high under revs.")
+                f"healthy car it rises {reg['healthy_spread']}x.")
+            verdict_line = (
+                "The pump is running permanently at its mechanical maximum -- the "
+                "electronic pressure control is having no effect.")
+            if reg["rev_bar"] >= 4.0:
+                lines.append(
+                    f"The {reg['rev_bar']} bar measured off idle is not an arbitrary "
+                    "high number: Citroen's own EP6 documentation gives 4.5 bar "
+                    "+/- 0.5 as the figure the pump's HYDRO-MECHANICAL regulation "
+                    "holds with no electronic control involved. This engine is "
+                    "producing exactly that, and PSA's factory definition of the "
+                    "stored P15A0 is 'pump regulated permanently on max pressure'. "
+                    "Two independent sources therefore say the same thing: the "
+                    "electronic control has no authority over this pump.")
+            lines.append(
+                "The idle figure needs care rather than alarm. By design this pump "
+                "sits at maximum displacement below about 2000 rpm -- regulation "
+                "only begins above it -- so idle pressure is set by pump capacity "
+                "against bearing clearance, not by the control system. The 1.7 bar "
+                "workshop figure is also quoted at 1000 rpm, not at a 750 rpm idle. "
+                "The gap to the healthy car at idle is real but modest, and it is "
+                "the high-rpm behaviour that carries the diagnosis.")
         if reg.get("commandFixed"):
             lines.append(
                 f"Warm, the pump control value stayed at {reg['commandValues'][0]} "
@@ -311,61 +335,79 @@ def _advice(runs, reg):
 
     if unregulated or {"P15A0", "P15A9", "P0945"} & codes:
         steps.append((
-            "Confirm the reading with a mechanical gauge before any more parts.",
-            "Tee a mechanical gauge into the oil galley and repeat idle and "
-            "2500 rpm. If the gauge agrees (low at idle, over 4 bar at revs) the "
-            "pressure really is unregulated. If the gauge reads normal and only "
-            "the ECU sees these numbers, the sensor or its wiring is lying and "
-            "nothing inside the engine is wrong. This one test splits the whole "
-            "problem in two and costs nothing but time."))
-        if reg and reg.get("respondedOnStep"):
-            steps.append((
-                "Do NOT replace the solenoid again, and do not start with wiring.",
-                "The capture shows the command stepping down and the pressure "
-                f"falling from {reg['stepFrom']} to {reg['stepTo']} bar at the same "
-                "moment, so the solenoid is being energised and is physically "
-                "moving. An electrical fault is the one thing this data rules out. "
-                "A quick confirmation while you are there: resistance across the "
-                "solenoid should read a sensible coil value rather than open "
-                "circuit -- but expect it to be fine."))
-        else:
-            steps.append((
-                "Prove the regulation solenoid is actually being driven.",
-                "Back-probe the solenoid connector with the engine running and "
-                "watch for a drive signal, and check continuity back to the ECU. A "
-                "new solenoid that is never energised behaves exactly like a failed "
-                "one."))
+            "Read setpoint, measured pressure and valve duty cycle together in "
+            "Diagbox, hot, across an rpm sweep.",
+            "This is the test that discriminates almost everything, and it needs "
+            "the PSA cable rather than a dongle because only Diagbox shows the "
+            "ECU's own SETPOINT next to the measured value. Documented healthy "
+            "figures are 2900-3500 mbar at 50-72% duty. If duty sits at 0% while "
+            "pressure sits at maximum, the ECU has dropped into its fallback and "
+            "the high pressure is a CONSEQUENCE of the stored fault, not its "
+            "cause. If duty modulates properly at 50-72% and pressure still will "
+            "not come down, the command is being made but has no hydraulic "
+            "authority -- the control circuit is leaking or blocked."))
         steps.append((
-            "Look at what the valve is controlling, not the valve itself.",
-            "The solenoid moves, yet pressure is low at idle and overshoots under "
-            "revs -- so the regulation has the wrong authority over the circuit. "
-            "The things that do that are a control spool that moves but does not "
-            "seal or travel fully, a blocked or mis-seated control gallery in the "
-            "pump housing, a relief valve stuck or wrongly rated, or a pump variant "
-            "that does not match this engine. Since the pump was renewed, check its "
-            "part number against the 5FV specification and that its control ports "
-            "were clear and correctly seated on assembly."))
+            "Clear the codes and watch duty and pressure from a fresh cold start.",
+            "If it regulates correctly for a while and THEN jumps to maximum, you "
+            "have caught the moment the ECU gives up and can see what deviation "
+            "triggered it. A pump remanufacturer's own fitting instruction says to "
+            "clear the codes BEFORE fitting a new pump, because this strategy "
+            "latches -- which is a plausible reason two pumps and two solenoids "
+            "appeared to change nothing."))
         steps.append((
-            "Check oil grade and level before stripping anything.",
-            "Pressure that runs low at idle and high under revs is also what the "
-            "wrong oil viscosity produces, and it is free to rule out. Confirm the "
-            "grade in the sump is what this engine specifies and that the level and "
-            "the filter are right, especially if the oil was changed during the "
-            "recent work."))
-    if {"P1336"} & codes:
+            "Read the part number stamped on the fitted oil pump.",
+            "Two EP6 pumps bolt in identically and are sold against the same "
+            "application list. The correct piloted pump for this engine is PSA "
+            "1001F9 (BMW 11417647376 lineage). The non-piloted Euro 4 pump -- PSA "
+            "1001F3 or 1001H1 -- has no electronic control at all, and an engine "
+            "fitted with one reverts to exactly the fixed mechanical regulation "
+            "being measured here. Given this engine had been opened by someone "
+            "before, the wrong pump may have gone in then and been matched again "
+            "at the last rebuild, which would explain a fault that survived two "
+            "pumps."))
         steps.append((
-            "Carry out the flywheel (crankshaft target) adaptation.",
-            "P1336 says the adaptation has not been learned. Until it is, the "
-            "misfire counters cannot be trusted, so do this before drawing any "
-            "conclusion from misfire codes. It needs a tool that can run the "
-            "PSA adaptation procedure."))
-    if {"P1339", "P0318"} & codes:
+            "With the sump off, inspect the pump's control circuit, not the pump.",
+            "The pump has TWO outlets: one feeding the engine, and a separate duct "
+            "dedicated to the regulation valve. That duct crosses the joint into "
+            "the bearing ladder, and neither it, its seal, nor the ladder drilling "
+            "is part of a replacement pump or solenoid. A leak or blockage there "
+            "makes the solenoid electrically perfect and hydraulically powerless. "
+            "Check the solenoid gasket ring and seal cap are present and the right "
+            "generation, and probe the control drilling for debris."))
         steps.append((
-            "Deal with the misfire separately from the oil problem.",
-            "P1339 and P0318 point at ignition or crank-signal disturbance, not "
-            "at oil pressure. Your spark-plug theory fits; fix that on its own "
-            "merits and re-read the codes, so it is not confused with the "
-            "pressure work."))
+            "Hunt the missing plastic cover.",
+            "A cover over the oil pump chain was missing when this engine was "
+            "opened, so its fragments went somewhere. There is a documented PSA "
+            "case of broken cover plastic obstructing galleries and sending idle "
+            "pressure to 10 bar. Cut open the old filter, check the sump magnet and "
+            "the pickup strainer for plastic, and confirm the replacement cover is "
+            "the correct generation for this engine."))
+        steps.append((
+            "Check the ECU's software level against the latest for this VIN.",
+            "There is a published case with this exact repair history -- pressure "
+            "sensor, pump regulating solenoid, VVT solenoid, oil and filter all "
+            "replaced with no effect -- where the cause was an ECU that had never "
+            "received a service-campaign firmware revision, and the pressure "
+            "normalised after the update."))
+    if {"U1113"} & codes:
+        steps.append((
+            "Fix the ABS/ESP communication fault before believing the misfire codes.",
+            "In PSA's own definitions U1113 is 'the ABS computer is confirmed "
+            "absent' and P0318 is 'the four wheel speeds received on CAN are "
+            "wrong'. This engine has no rough-road sensor -- it derives rough-road "
+            "from ABS wheel speeds, and uses it to inhibit misfire diagnosis. With "
+            "the ABS silent that inhibit is gone and the misfire counters run "
+            "unfiltered, so P1336 and P1339 may be a downstream consequence rather "
+            "than four separate faults. P1339 naming cylinder 3 specifically is "
+            "still worth acting on."))
+    if {"P1336", "P1339"} & codes:
+        steps.append((
+            "Treat the misfire codes as a separate job, after the ABS fault.",
+            "In PSA's list P1336 is a catalyst-damaging misfire across several "
+            "cylinders with the cylinder undetermined, and P1339 is the same on "
+            "cylinder 3 -- not the generic meanings those numbers carry on other "
+            "makes. Coils, plugs and injector on cylinder 3 are the place to look, "
+            "on its own merits and not mixed into the oil work."))
     steps.append((
         "Re-run this capture after each change.",
         "The same two commands produce a directly comparable set of curves. If "
