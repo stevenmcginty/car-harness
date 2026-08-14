@@ -376,6 +376,36 @@ def main() -> int:
     check("oil: generic reads are sent functionally on 0x7DF",
           peugeot_oil.OIL_ID_MAP.get(0x7DF) == 0x7E8)
 
+    # Cold-start verdicts, against the healthy RCZ #2 shape and the failure
+    # shapes it has to separate from it.
+    healthy = [{"t": 6.0, "oil_pressure_bar": 3.96, "oil_pressure_delta_bar": 0.0},
+               {"t": 25.0, "oil_pressure_bar": 4.67, "oil_pressure_delta_bar": 0.25},
+               {"t": 44.0, "oil_pressure_bar": 2.29, "oil_pressure_delta_bar": 0.01},
+               {"t": 120.0, "oil_pressure_bar": 2.06, "oil_pressure_delta_bar": 0.03},
+               {"t": 178.0, "oil_pressure_bar": 1.93, "oil_pressure_delta_bar": 0.02}]
+    for label, samples, want in (
+        ("healthy cold start is in_spec", healthy, "in_spec"),
+        ("never decaying is stuck_high",
+         [{"t": i * 10.0, "oil_pressure_bar": 5.2} for i in range(15)], "stuck_high"),
+        ("pinned at the sensor rail is sensor_rail",
+         [{"t": i * 10.0, "oil_pressure_bar": 10.4} for i in range(15)], "sensor_rail"),
+        ("no pressure at all is low_not_delivering",
+         [{"t": i * 10.0, "oil_pressure_bar": 0.4} for i in range(15)],
+         "low_not_delivering"),
+        ("the two copies parting company is split",
+         [{"t": i * 10.0, "oil_pressure_bar": 4.0 if i < 4 else 2.0,
+           "oil_pressure_delta_bar": 0.9} for i in range(15)], "split"),
+    ):
+        got = peugeot_oil.assess_coldstart(samples)["verdict"]
+        check(f"oil: {label}", got == want, got)
+    check("oil: assess_coldstart flags a start that was not actually cold",
+          any("NOT a cold start" in n for n in
+              peugeot_oil.assess_coldstart(healthy, {"coolant_c": 85.0})["notes"]))
+    check("oil: assess_coldstart with no pressure says so",
+          peugeot_oil.assess_coldstart([{"t": 1.0}])["verdict"] == "no_pressure_data")
+    check("oil: sim spot is labelled",
+          peugeot_oil.spot(None, mode="sim")["simulated"] is True)
+
     for name, result in (("probe", peugeot_oil.probe(None, "sim")),
                          ("coldstart", peugeot_oil.coldstart(None, mode="sim")),
                          ("blocks", peugeot_oil.block_capture(None, mode="sim")),

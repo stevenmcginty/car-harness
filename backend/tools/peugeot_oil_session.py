@@ -97,7 +97,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=["probe", "capture", "sweep", "scan", "blocks", "coldstart"])
+        choices=["probe", "capture", "sweep", "scan", "blocks", "coldstart",
+                 "spot"])
     parser.add_argument("bounds", nargs="*", help="sweep: FIRST LAST as hex")
     parser.add_argument("--car", default="unknown")
     parser.add_argument("--adapter", default=None)
@@ -116,6 +117,8 @@ def main() -> int:
 
     if args.command == "probe":
         result = peugeot_oil.probe(adapter)
+    elif args.command == "spot":
+        result = peugeot_oil.spot(adapter, int(args.seconds) if args.seconds < 10 else 3)
     elif args.command == "coldstart":
         blocks = None if args.dids is None else [
             b.strip() for b in args.dids.split(",") if b.strip()

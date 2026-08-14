@@ -103,6 +103,24 @@
       "valve": "50-72%"
     }
   ],
+  "measured_baselines": {
+    "note": "Read on Steve's own known-good RCZs on 2026-08-14 with this harness, block C2 offset 7. These are the comparison the 308 CC is judged against; everything above is published or third-party.",
+    "rcz_1_warm": {
+      "coolant_c": 71,
+      "idle_bar": [1.41, 1.48],
+      "rpm_2500_bar": [2.89, 3.04],
+      "rpm_3000_bar": [3.36, 3.46]
+    },
+    "rcz_2_cold_start": {
+      "start_coolant_c": 25,
+      "cold_idle_rpm": 1091,
+      "curve_t_s_bar": [[6, 3.96], [15, 4.61], [25, 4.67], [34, 3.73], [44, 2.29],
+                        [63, 2.04], [82, 2.01], [121, 2.06], [178, 1.93]],
+      "shape": "Pressure is HIGH from the first reading (3.96 bar 6 s after start), peaks near 4.7 bar around 25 s while the oil is still cold and thick, then decays as it warms and settles flat at about 2.0 bar by 60 s.",
+      "warm_point": {"rpm": 2436, "bar": 3.38, "coolant_c": 81}
+    },
+    "mirror_agreement": "The offset-47 copy tracked the offset-7 value within +/-0.25 bar on every sample of both healthy cars, usually within 0.1. A car where those two separate is doing something these two do not."
+  },
   "bands_gauge_bar": {
     "idle_hot_ok": [1.3, 2.4],
     "idle_hot_high_mechanical_mode": [2.8, 8.0],

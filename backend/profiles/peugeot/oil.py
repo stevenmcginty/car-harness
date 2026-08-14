@@ -126,6 +126,7 @@ except OSError:
 
 _MAX_SWEEP = 4096          # ids per call; keeps one call under ~45 min worst-case
 _CAPTURE_DEAD_TICKS = 25   # consecutive all-silent ticks before giving up
+_SESSION_LAPSE_S = 5.0     # how long the ECU's KWP session lingers after silence
 
 
 def _now() -> str:
@@ -190,6 +191,86 @@ def decode_oil_did(did: int, body: bytes) -> Optional[Tuple[str, float, str]]:
             return None
         return ("oil_pressure_sensor_mV", round(raw * 0.2, 0), "mV")
     return None
+
+
+def assess_coldstart(samples: List[dict], baseline: Optional[dict] = None) -> dict:
+    """Judge a cold-start pressure curve against the two healthy RCZs.
+
+    A block capture cannot carry rpm (the session locks generic OBD out), so
+    this reads the SHAPE instead, which is what a cold start is diagnostic for:
+
+        healthy   pressure is already high at the first reading, peaks while
+                  the oil is cold and thick, then decays as it warms and
+                  settles flat. RCZ #2: 3.96 bar at 6 s, 4.67 peak, 2.0 settled.
+        low       pressure never gets up there at all -- the pump is not
+                  delivering, or the sensor reads low.
+        rail      pressure pinned at the top of the sensor's range: 5 V on the
+                  signal wire, a circuit fault rather than real oil.
+        stuck_high  high pressure that never decays as the engine warms, which
+                  is the dead-solenoid signature (the pump stays in mechanical
+                  full-delivery mode and nothing regulates it down).
+        split     the two copies of the pressure value disagree by more than
+                  the healthy cars ever did, which is what a car whose demanded
+                  and measured pressure have parted company would show.
+    """
+    press = [(s["t"], s["oil_pressure_bar"]) for s in samples
+             if s.get("oil_pressure_bar") is not None]
+    deltas = [abs(s["oil_pressure_delta_bar"]) for s in samples
+              if s.get("oil_pressure_delta_bar") is not None]
+    if not press:
+        return {"verdict": "no_pressure_data", "notes": [
+            "Block C2 never decoded -- check it answered."]}
+
+    values = [p for _, p in press]
+    peak = max(values)
+    early = [p for t, p in press if t <= 30]
+    late = [p for t, p in press if t >= press[-1][0] - 30]
+    settled = round(sum(late) / len(late), 2) if late else None
+    early_peak = max(early) if early else None
+    worst_delta = max(deltas) if deltas else None
+    notes = []
+    if baseline and baseline.get("coolant_c") is not None:
+        notes.append(f"Engine started at {baseline['coolant_c']:.0f} C coolant.")
+        if baseline["coolant_c"] > 50:
+            notes.append("That is NOT a cold start -- the comparison against the "
+                         "cold RCZ baseline is not like for like.")
+
+    verdict = "in_spec"
+    if peak >= 10.2:
+        verdict = "sensor_rail"
+        notes.append(f"Pressure reached {peak:.2f} bar -- that is the top of the "
+                     "sensor's range, i.e. 5 V on the signal wire, not oil.")
+    elif peak <= 1.0:
+        verdict = "low_not_delivering"
+        notes.append(f"Pressure never exceeded {peak:.2f} bar. The healthy cars "
+                     "were at 3.96 bar six seconds after a cold start.")
+    elif settled is not None and settled >= 3.5 and len(press) > 10:
+        verdict = "stuck_high"
+        notes.append(f"Pressure settled at {settled:.2f} bar instead of decaying "
+                     "to about 2.0 as the healthy car did -- the regulation is "
+                     "not bringing it down (dead or unpowered solenoid).")
+    elif early_peak is not None and early_peak < 2.5:
+        verdict = "low_cold"
+        notes.append(f"Cold peak only {early_peak:.2f} bar; both healthy cars "
+                     "exceeded 3.9 bar while cold.")
+    else:
+        notes.append(f"Cold peak {peak:.2f} bar, settled {settled:.2f} bar -- the "
+                     "same shape as the healthy RCZ (4.67 peak, 2.0 settled).")
+
+    if worst_delta is not None and worst_delta > 0.35:
+        verdict = "split" if verdict == "in_spec" else verdict
+        notes.append(f"The two copies of the pressure value disagreed by up to "
+                     f"{worst_delta:.2f} bar; on both healthy cars they never "
+                     "parted by more than 0.25.")
+
+    return {
+        "verdict": verdict,
+        "cold_peak_bar": round(peak, 2),
+        "settled_bar": settled,
+        "worst_mirror_delta_bar": round(worst_delta, 2) if worst_delta is not None else None,
+        "notes": notes,
+        "reference": "backend/profiles/peugeot/data/ep6_oil.json (measured_baselines)",
+    }
 
 
 def assess(samples: List[dict]) -> dict:
@@ -505,6 +586,85 @@ def block_capture(adapter: Optional[dict], seconds: float = 90.0,
                 "message": str(exc), "timestamp": _now()}
 
 
+def spot(adapter: Optional[dict], repeats: int = 3, mode: str = "real") -> dict:
+    """One rpm reading paired with one oil-pressure reading, several times over.
+
+    Needed because this ECU will not answer generic OBD while its diagnostic
+    session is open, so a capture that logs pressure cannot log rpm alongside
+    it. Each pass here reads rpm and coolant FIRST, then opens the session and
+    reads block C2, then closes it -- roughly a second apart rather than
+    simultaneous, which is close enough while the driver holds a steady throttle
+    and is the only way to put a pressure figure against a real rpm figure.
+
+    The driver does NOT have to hit a target rpm. Each pass records whatever
+    rpm was actually there, so the useful instruction is "hold roughly steady,
+    anywhere, for a few seconds at a time, at a few different throttle
+    openings" -- the pairs then plot themselves into a pressure-against-rpm
+    curve. Chasing an exact figure by ear adds error rather than removing it.
+    Read-only.
+    """
+    if mode == "sim":
+        return {"ok": True, "simulated": True, "readings": [],
+                "message": "SIMULATED -- no real car connected.", "timestamp": _now()}
+
+    def run(session, entry):
+        session.ensure_protocol()
+        bad = _bad_protocol(session, "the paired spot read")
+        if bad:
+            bad["readings"] = []
+            return bad
+
+        readings: List[dict] = []
+        for index in range(max(1, min(repeats, 10))):
+            # The KWP session does not close when we stop talking to it -- it
+            # LAPSES, a few seconds later, and until it does the ECU keeps
+            # ignoring generic OBD. Without this wait only the first pass ever
+            # gets an rpm figure, which is exactly what the first field run did.
+            if index:
+                sleep(_SESSION_LAPSE_S)
+            client = PsaElm327UdsClient(session, OIL_ID_MAP)
+            client.begin()
+            entry_reading: dict = {}
+            try:
+                body = _read_pid(client, 0x0C, timeout=1.2)
+                entry_reading["engine_rpm"] = _decode_pid(0x0C, body) if body else None
+                body = _read_pid(client, 0x05, timeout=1.2)
+                entry_reading["coolant_c"] = _decode_pid(0x05, body) if body else None
+                client.open_session(ENGINE_PSA)
+                block = _read_kwp_block(client, 0xC2, timeout=1.0)
+                entry_reading.update(decode_c2(block))
+                entry_reading["blk_C2"] = block.hex().upper() if block else None
+            finally:
+                client.restore()
+            readings.append(entry_reading)
+
+        paired = sorted(
+            (r for r in readings
+             if r.get("engine_rpm") is not None
+             and r.get("oil_pressure_bar") is not None),
+            key=lambda r: r["engine_rpm"])
+        return {
+            "ok": True, "simulated": False, "readings": readings,
+            "curve": [{"rpm": r["engine_rpm"], "bar": r["oil_pressure_bar"]}
+                      for r in paired],
+            "message": (
+                f"{len(readings)} pass(es), {len(paired)} with both rpm and pressure. "
+                + ("; ".join(f"{r['engine_rpm']:.0f} rpm -> {r['oil_pressure_bar']:.2f} bar"
+                             for r in paired) or "no complete pair")
+                + ". Each pair carries the rpm that was actually there, so there is "
+                  "no need to hold an exact figure -- just hold roughly steady at a "
+                  "few different openings. Read-only."
+            ),
+            "timestamp": _now(),
+        }
+
+    try:
+        return obd_service._with_session(adapter, run)
+    except obd_service.ObdServiceError as exc:
+        return {"ok": False, "simulated": False, "readings": [],
+                "message": str(exc), "timestamp": _now()}
+
+
 # --------------------------------------------------------------------------- #
 # coldstart: the whole cold start on one timeline, for a car whose complaint
 # only appears in the first seconds after the key turns
@@ -605,7 +765,7 @@ def coldstart(adapter: Optional[dict], seconds: float = 180.0,
             "sampleRate": round(rate, 2),
             "pressure": {"firstReading_s": first_t, "peak_bar": peak,
                          "settled_bar": settled},
-            "assessment": assess(samples),
+            "assessment": assess_coldstart(samples, baseline),
             "message": (
                 f"Cold start: {len(samples)} tick(s) over {elapsed:.0f}s "
                 f"(~{rate:.2f}/s) across {len(wanted)} block(s). Baseline before "
