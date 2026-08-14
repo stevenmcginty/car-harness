@@ -104,6 +104,13 @@ class FakePsaCar:
                 return bytes([0x62, 0xF1, 0x88]) + b"1037564321"
             if tx == ENGINE and did == 0x1E20:   # stand-in oil-pressure DID
                 return bytes([0x62, 0x1E, 0x20, 0x01, 0x90])
+            # Imported THP catalog (208 GTi / VLud). 1.70 bar, 80 C, ~1135 mV.
+            if tx == ENGINE and did == 0xD429:
+                return bytes([0x62, 0xD4, 0x29, 0x29, 0x81])
+            if tx == ENGINE and did == 0xD47D:
+                return bytes([0x62, 0xD4, 0x7D, 0x01, 0x40])
+            if tx == ENGINE and did == 0xD41D:
+                return bytes([0x62, 0xD4, 0x1D, 0x16, 0x2B])
             # EV HV battery (BMS) health-check DIDs.
             if tx == BMS:
                 ev = {
@@ -320,8 +327,35 @@ def main() -> int:
     check("oil: engine DID 1E20 raw payload 0190",
           oil_body is not None and oil_body.hex().upper() == "0190",
           oil_body.hex().upper() if oil_body else "None")
+    d429 = peugeot_oil._read_did_raw(client, ENGINE, 0xD429)
+    check("oil: D429 raw 2981 (1.70 bar)",
+          d429 is not None and d429.hex().upper() == "2981",
+          d429.hex().upper() if d429 else "None")
+    dec = peugeot_oil.decode_oil_did(0xD429, d429) if d429 else None
+    check("oil: D429 decodes to 1.7 bar",
+          dec == ("oil_pressure_bar", 1.7, "bar"), str(dec))
+    rail = peugeot_oil.decode_oil_did(0xD429, bytes([0xFF, 0xFF]))
+    check("oil: D429 0xFFFF is sensor rail ~10.49 bar",
+          rail is not None and rail[1] == 10.486, str(rail))
+    d47d = peugeot_oil._read_did_raw(client, ENGINE, 0xD47D)
+    dec_t = peugeot_oil.decode_oil_did(0xD47D, d47d) if d47d else None
+    check("oil: D47D decodes to 80.0 C",
+          dec_t == ("oil_temp_c", 80.0, "°C"), str(dec_t))
     check("oil: unimplemented DID (NRC 31) reads as None",
           peugeot_oil._read_did_raw(client, ENGINE, 0x1E21) is None)
+    healthy = peugeot_oil.assess([
+        {"engine_rpm": 800.0, "oil_pressure_bar": 1.7, "did_D429": "2981"},
+        {"engine_rpm": 2000.0, "oil_pressure_bar": 2.0, "did_D429": "30D4"},
+    ])
+    check("oil: assess healthy idle is in_spec",
+          healthy["verdict"] == "in_spec", healthy["verdict"])
+    dead = peugeot_oil.assess([
+        {"engine_rpm": 800.0, "oil_pressure_bar": 3.5, "did_D429": "55F0"},
+    ])
+    check("oil: assess 3.5 bar idle is high_mechanical_mode",
+          dead["verdict"] == "high_mechanical_mode", dead["verdict"])
+    check("oil: catalog json loaded",
+          bool(peugeot_oil.REFERENCE.get("dids")))
 
     for name, result in (("probe", peugeot_oil.probe(None, "sim")),
                          ("sweep", peugeot_oil.sweep(None, 0, 1, mode="sim")),

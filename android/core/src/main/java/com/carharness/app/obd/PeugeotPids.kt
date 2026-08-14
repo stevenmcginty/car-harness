@@ -68,6 +68,11 @@ object PeugeotPids {
     private fun u16(b: ByteArray, i: Int): Int? =
         if (b.size > i + 1) ((b[i].toInt() and 0xFF) shl 8) or (b[i + 1].toInt() and 0xFF) else null
 
+    private fun s16(b: ByteArray, i: Int): Int? {
+        val v = u16(b, i) ?: return null
+        return if (v > 0x7FFF) v - 0x10000 else v
+    }
+
     private fun u24(b: ByteArray, i: Int): Int? =
         if (b.size > i + 2) ((b[i].toInt() and 0xFF) shl 16) or
             ((b[i + 1].toInt() and 0xFF) shl 8) or (b[i + 2].toInt() and 0xFF) else null
@@ -85,6 +90,14 @@ object PeugeotPids {
         lo: Double = Double.NEGATIVE_INFINITY, hi: Double = Double.POSITIVE_INFINITY,
     ): (ByteArray) -> String? = { b ->
         u16(b, i)?.let { val v = it * scale + offset; if (v in lo..hi) fmt(v, dp) else null }
+    }
+
+    /** s16 at index [i] -> scaled string, or null outside [lo]..[hi]. */
+    private fun s16At(
+        i: Int, scale: Double = 1.0, offset: Double = 0.0, dp: Int = 0,
+        lo: Double = Double.NEGATIVE_INFINITY, hi: Double = Double.POSITIVE_INFINITY,
+    ): (ByteArray) -> String? = { b ->
+        s16(b, i)?.let { val v = it * scale + offset; if (v in lo..hi) fmt(v, dp) else null }
     }
 
     /** u8 at index [i] -> scaled string, or null outside [lo]..[hi]. */
@@ -114,6 +127,16 @@ object PeugeotPids {
         // D86F / D870 min & max cell voltage: len 16, unit mV.
         PsaDid(0x6B4, 0xD86F, "HV min cell voltage", "mV", u16At(0, lo = 0.0, hi = 5000.0)),
         PsaDid(0x6B4, 0xD870, "HV max cell voltage", "mV", u16At(0, lo = 0.0, hi = 5000.0)),
+        // EP6/THP oil circuit on the engine (0x6A8). VLud + 208 GTi Diagbox
+        // telemetry. A diesel/non-THP simply NAKs.
+        PsaDid(0x6A8, 0xD429, "Engine oil pressure", "bar",
+            u16At(0, 0.00016, dp = 2, lo = 0.0, hi = 10.6)),
+        PsaDid(0x6A8, 0xD47D, "Engine oil temperature", "°C",
+            s16At(0, 0.25, dp = 1, lo = -40.0, hi = 200.0)),
+        PsaDid(0x6A8, 0xD4D6, "Engine oil temperature (estimated)", "°C",
+            s16At(0, 0.25, dp = 1, lo = -40.0, hi = 200.0)),
+        PsaDid(0x6A8, 0xD41D, "Oil pressure sensor voltage", "mV",
+            u16At(0, 0.2, dp = 0, lo = 0.0, hi = 6000.0)),
     )
 
     // ---------------------------------------------------------- KWP 0x21 blocks

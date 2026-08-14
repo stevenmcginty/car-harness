@@ -17,12 +17,23 @@ fault codes -- P0945, P15A0-family -- name the regulation solenoid directly).
 So the interesting signals are: measured oil pressure, the ECU's
 setpoint/stage decision, and the solenoid command.
 
-THE HONEST PROBLEM: no public, verified mode-22 DID exists for any of those
-on the PSA MED17 petrol ECUs. The community sources that gave us the diesel
-DPF blocks (ludwig-v, PSA-RE, OBDb) carry nothing for the petrol oil circuit.
-Inventing DIDs would produce confident-looking garbage. So this module is
-built for DISCOVERY on the known-good car first, the same way the Astra K
-TCM map was built (backend/profiles/vauxhall/tcm.py):
+THE HONEST PROBLEM (updated 2026-08-14): the diesel DPF sources (ludwig-v
+zones, PSA-RE, OBDb) still carry nothing for the petrol oil circuit, but
+the live DIDs are public after all. VLud (arduino-psa-diag) and the 208 GTi
+Diagbox-telemetry dump both name the same three:
+
+  0xD429  measured oil pressure     u16 * 0.00016 bar
+  0xD47D  oil temperature           s16 * 0.25 °C
+  0xD4D6  oil temperature (est.)    s16 * 0.25 °C
+  0xD41D  sensor voltage            u16 * 0.2 mV   (not on every cal)
+
+Confirmed on 208 I / 208 GTi THP (MED17, same generation as the RCZ / 308
+5FV). Not yet read on a 5FV -- a silent D429 is possible; the sweep stays.
+No public DID exists for OilPressInstr or OilPumpValve. Catalog + workshop
+bands live in data/ep6_oil.json.
+
+Discovery on the known-good car still matters for the two missing signals,
+the same way the Astra K TCM map was built (backend/profiles/vauxhall/tcm.py):
 
   probe()    -- which address does this engine answer on (PSA 0x6A8 pair or
                 standard OBD 0x7E0), which services work, what identifies the
@@ -43,9 +54,11 @@ compared offline. Everything here is read-only: services 0x01, 0x09, 0x22,
 0x3E and the read-safe PSA session ladder. Nothing is written to the car.
 """
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from time import monotonic, sleep
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
@@ -79,7 +92,23 @@ _MIRROR_DIDS = [0xF40C, 0xF405, 0xF45C, 0xF40B, 0xF442]
 
 # Sweep ranges that have historically carried live data on PSA/Bosch petrol
 # ECUs -- offered as defaults, not as truth; sweep() takes any range.
-DEFAULT_SWEEP_RANGES = "0100-04FF, 1000-13FF, 2000-21FF, F400-F4FF"
+# D400-D4FF is now first: that is where D429/D47D live on MED17 THP.
+DEFAULT_SWEEP_RANGES = "D400-D4FF, 0100-04FF, 1000-13FF, 2000-21FF, F400-F4FF"
+
+# Imported catalog (see data/ep6_oil.json). Capture uses these when the
+# caller does not pass dids. A 5FV that does not implement one simply
+# returns None on that tick.
+DEFAULT_CAPTURE_DIDS = ["D429", "D47D", "D41D"]
+
+# u16 * 0.00016 bar. 0xFFFF = 10.4856 bar -- the FAP "10500 mbar" rail.
+_OIL_PRESS_SCALE = 0.00016
+_OIL_PRESS_RAIL = 0xFFFF
+
+_DATA_PATH = Path(__file__).resolve().parent / "data" / "ep6_oil.json"
+try:
+    REFERENCE = json.loads(_DATA_PATH.read_text(encoding="utf-8"))
+except OSError:
+    REFERENCE = {}
 
 _MAX_SWEEP = 4096          # ids per call; keeps one call under ~45 min worst-case
 _CAPTURE_DEAD_TICKS = 25   # consecutive all-silent ticks before giving up
@@ -103,6 +132,121 @@ def _decode_pid(pid: int, body: bytes) -> Optional[float]:
     except IndexError:
         return None
     return None
+
+
+def _u16_be(body: bytes) -> Optional[int]:
+    if len(body) < 2:
+        return None
+    return (body[0] << 8) | body[1]
+
+
+def _s16_be(body: bytes) -> Optional[int]:
+    v = _u16_be(body)
+    if v is None:
+        return None
+    return v - 0x10000 if v > 0x7FFF else v
+
+
+def decode_oil_did(did: int, body: bytes) -> Optional[Tuple[str, float, str]]:
+    """Known-catalog decode -> (name, value, unit) or None.
+
+    D429 uses unsigned on purpose: 0xFFFF is the sensor-rail max (~10.49 bar),
+    not a negative INT16. Temps are signed.
+    """
+    if body is None:
+        return None
+    if did == 0xD429:
+        raw = _u16_be(body)
+        if raw is None:
+            return None
+        return ("oil_pressure_bar", round(raw * _OIL_PRESS_SCALE, 3), "bar")
+    if did == 0xD47D:
+        raw = _s16_be(body)
+        if raw is None:
+            return None
+        return ("oil_temp_c", round(raw * 0.25, 1), "°C")
+    if did == 0xD4D6:
+        raw = _s16_be(body)
+        if raw is None:
+            return None
+        return ("oil_temp_estimated_c", round(raw * 0.25, 1), "°C")
+    if did == 0xD41D:
+        raw = _u16_be(body)
+        if raw is None:
+            return None
+        return ("oil_pressure_sensor_mV", round(raw * 0.2, 0), "mV")
+    return None
+
+
+def assess(samples: List[dict]) -> dict:
+    """Score a capture against the imported 5FV / THP field bands."""
+    bands = (REFERENCE.get("bands_gauge_bar") or {
+        "idle_hot_ok": [1.3, 2.4],
+        "idle_hot_high_mechanical_mode": [2.8, 8.0],
+        "rev_2000_ok": [1.5, 3.0],
+        "rev_2000_high": [4.5, 10.0],
+        "sensor_rail": [10.2, 10.6],
+        "too_low_running": [0.0, 1.0],
+    })
+    idle: List[float] = []
+    rev: List[float] = []
+    rail = False
+    saw_pressure = False
+    for s in samples:
+        raw = s.get("did_D429")
+        if isinstance(raw, str) and raw.upper() == "FFFF":
+            rail = True
+        p = s.get("oil_pressure_bar")
+        rpm = s.get("engine_rpm")
+        if p is None:
+            continue
+        saw_pressure = True
+        if p >= bands["sensor_rail"][0]:
+            rail = True
+        if rpm is None or rpm < 400:
+            continue
+        if 600 <= rpm <= 950:
+            idle.append(p)
+        elif 1800 <= rpm <= 2200:
+            rev.append(p)
+
+    def _mid(xs):
+        return round(sorted(xs)[len(xs) // 2], 3) if xs else None
+
+    idle_p, rev_p = _mid(idle), _mid(rev)
+    notes = []
+    if rail:
+        verdict = "sensor_rail"
+        notes.append("D429 at ~10.5 bar / 0xFFFF -- 5 V on the signal, not oil.")
+    elif not saw_pressure:
+        verdict = "no_pressure_data"
+        notes.append("D429 never decoded. ECU silent on that id, or no ticks.")
+    elif idle_p is not None and idle_p <= bands["too_low_running"][1]:
+        verdict = "low_not_delivering"
+        notes.append(f"Idle {idle_p} bar -- pump not delivering or sensor at 0.")
+    elif idle_p is not None and idle_p >= bands["idle_hot_high_mechanical_mode"][0]:
+        verdict = "high_mechanical_mode"
+        notes.append(
+            f"Idle {idle_p} bar -- solenoid likely unpowered (P0945 downgrade)."
+        )
+    elif rev_p is not None and rev_p >= bands["rev_2000_high"][0]:
+        verdict = "high_mechanical_mode"
+        notes.append(f"~2000 rpm {rev_p} bar -- well above 5FV spec 1.7-2.3.")
+    elif idle_p is not None and bands["idle_hot_ok"][0] <= idle_p <= bands["idle_hot_ok"][1]:
+        verdict = "in_spec"
+        notes.append(f"Idle {idle_p} bar sits in Autodata 5FV hot-idle band.")
+    else:
+        verdict = "needs_curve"
+        notes.append("Pressure moved but not enough idle/rev ticks to call it.")
+
+    return {
+        "verdict": verdict,
+        "idle_bar": idle_p,
+        "rev_2000_bar": rev_p,
+        "sensor_rail": rail,
+        "notes": notes,
+        "reference": "backend/profiles/peugeot/data/ep6_oil.json",
+    }
 
 
 def _read_pid(client: PsaElm327UdsClient, pid: int, timeout: float = 1.0) -> Optional[bytes]:
@@ -161,6 +305,7 @@ def probe(adapter: Optional[dict], mode: str = "real") -> dict:
         return {
             "ok": True, "simulated": True,
             "addresses": [], "identity": {}, "obd_pids": [], "mirror_dids": [],
+            "oil_dids": [],
             "message": "SIMULATED -- no real car connected.", "timestamp": _now(),
         }
 
@@ -168,7 +313,8 @@ def probe(adapter: Optional[dict], mode: str = "real") -> dict:
         session.ensure_protocol()
         bad = _bad_protocol(session, "PSA engine diagnostics")
         if bad:
-            bad.update({"addresses": [], "identity": {}, "obd_pids": [], "mirror_dids": []})
+            bad.update({"addresses": [], "identity": {}, "obd_pids": [],
+                        "mirror_dids": [], "oil_dids": []})
             return bad
 
         client = PsaElm327UdsClient(session, PEUGEOT_ID_MAP)
@@ -177,6 +323,7 @@ def probe(adapter: Optional[dict], mode: str = "real") -> dict:
         identity: dict = {}
         obd_pids: List[dict] = []
         mirrors: List[dict] = []
+        oil_dids: List[dict] = []
         try:
             for label, addr in (("psa", ENGINE_PSA), ("obd", ENGINE_OBD)):
                 report = {"address": f"0x{addr:03X}", "label": label,
@@ -235,15 +382,34 @@ def probe(adapter: Optional[dict], mode: str = "real") -> dict:
                     if body is not None:
                         mirrors.append({"did": f"{did:04X}", "address": label,
                                         "raw": body.hex().upper()})
+
+            # Imported THP oil catalog -- try both addresses, keep first hit.
+            for did_hex in ("D429", "D47D", "D4D6", "D41D"):
+                did = int(did_hex, 16)
+                for label, addr in (("psa", ENGINE_PSA), ("obd", ENGINE_OBD)):
+                    body = _read_did_raw(client, addr, did)
+                    if body is None:
+                        continue
+                    decoded = decode_oil_did(did, body)
+                    oil_dids.append({
+                        "did": did_hex, "address": label,
+                        "raw": body.hex().upper(),
+                        "name": decoded[0] if decoded else None,
+                        "value": decoded[1] if decoded else None,
+                        "unit": decoded[2] if decoded else None,
+                    })
+                    break
         finally:
             client.restore()
 
         answering = [a for a in addresses if a["answers"]]
         has_5c = any(p["pid"] == "5C" for p in obd_pids)
+        d429 = next((d for d in oil_dids if d["did"] == "D429"), None)
         return {
             "ok": True, "simulated": False,
             "addresses": addresses, "identity": identity,
             "obd_pids": obd_pids, "mirror_dids": mirrors,
+            "oil_dids": oil_dids,
             "message": (
                 f"Engine answered on {len(answering)} of 2 address(es): "
                 + (", ".join(a["address"] for a in answering) or "none")
@@ -251,6 +417,11 @@ def probe(adapter: Optional[dict], mode: str = "real") -> dict:
                 + (" (incl. oil temp 0x5C)." if has_5c else
                    " (oil temp 0x5C NOT implemented -- captures rely on coolant"
                    " for warm-up context).")
+                + (
+                    f" Oil DID D429 answered: {d429['value']} {d429['unit']}."
+                    if d429 and d429["value"] is not None
+                    else " Oil DID D429 silent -- sweep D400-D4FF or try the other address."
+                )
                 + " Read-only probe; nothing was changed on the car."
             ),
             "timestamp": _now(),
@@ -260,8 +431,8 @@ def probe(adapter: Optional[dict], mode: str = "real") -> dict:
         return obd_service._with_session(adapter, run)
     except obd_service.ObdServiceError as exc:
         return {"ok": False, "simulated": False, "addresses": [], "identity": {},
-                "obd_pids": [], "mirror_dids": [], "message": str(exc),
-                "timestamp": _now()}
+                "obd_pids": [], "mirror_dids": [], "oil_dids": [],
+                "message": str(exc), "timestamp": _now()}
 
 
 # --------------------------------------------------------------------------- #
@@ -393,19 +564,35 @@ def capture(adapter: Optional[dict], seconds: float = 120.0,
     Bluetooth depending on how many DIDs ride along; the result reports the
     rate it actually achieved. Read-only.
 
-    dids: hex strings from the sweep (e.g. ["1E20", "2104"]); empty is valid
-        and still yields the rpm/coolant/voltage baseline timeline.
+    dids: hex strings. None uses the imported catalog (D429/D47D/D41D).
+        An explicit empty list is still the rpm/coolant/voltage baseline.
     """
     if mode == "sim":
-        return {"ok": True, "simulated": True, "samples": [],
-                "message": "SIMULATED -- no real car connected.", "timestamp": _now()}
+        # Fake 5FV idle at 1.70 bar (raw 0x2981) after a crank gap.
+        samples = [
+            {"t": 0.0, "engine_rpm": 0.0, "did_D429": "0000",
+             "oil_pressure_bar": 0.0, "coolant_c": 18.0, "module_voltage": 12.1},
+            {"t": 6.0, "engine_rpm": None, "did_D429": None,
+             "oil_pressure_bar": None, "module_voltage": 9.8},
+            {"t": 8.0, "engine_rpm": 850.0, "did_D429": "2981",
+             "oil_pressure_bar": 1.7, "coolant_c": 19.0, "module_voltage": 14.1},
+            {"t": 20.0, "engine_rpm": 2000.0, "did_D429": "30D4",
+             "oil_pressure_bar": 2.0, "module_voltage": 14.1},
+        ]
+        return {
+            "ok": True, "simulated": True, "samples": samples,
+            "dids": list(DEFAULT_CAPTURE_DIDS),
+            "assessment": assess(samples),
+            "message": "SIMULATED -- no real car connected.", "timestamp": _now(),
+        }
 
     if address not in _ADDRESSES:
         return {"ok": False, "simulated": False, "samples": [],
                 "message": f"address must be one of {sorted(_ADDRESSES)}.",
                 "timestamp": _now()}
     try:
-        did_list = [int(d, 16) & 0xFFFF for d in (dids or [])]
+        src = DEFAULT_CAPTURE_DIDS if dids is None else dids
+        did_list = [int(d, 16) & 0xFFFF for d in src]
     except (TypeError, ValueError):
         return {"ok": False, "simulated": False, "samples": [],
                 "message": "dids must be hex strings like ['1E20', 'F40C'].",
@@ -438,6 +625,10 @@ def capture(adapter: Optional[dict], seconds: float = 120.0,
                 for did in did_list:
                     body = _read_did_raw(client, addr, did, timeout=0.5)
                     sample[f"did_{did:04X}"] = body.hex().upper() if body else None
+                    if body is not None:
+                        decoded = decode_oil_did(did, body)
+                        if decoded:
+                            sample[decoded[0]] = decoded[1]
                     alive = alive or body is not None
                 if tick % 5 == 0:
                     for pid, key in ((0x05, "coolant_c"), (0x5C, "oil_temp_c"),
@@ -466,6 +657,7 @@ def capture(adapter: Optional[dict], seconds: float = 120.0,
             "ok": True, "simulated": False, "samples": samples,
             "sampleRate": round(rate, 2), "busGaps": gaps,
             "address": address, "dids": [f"{d:04X}" for d in did_list],
+            "assessment": assess(samples),
             "message": (
                 f"Captured {len(samples)} tick(s) over {elapsed:.0f}s (~{rate:.2f}/s), "
                 f"{gaps} bus gap(s) survived (cranking shows up as a gap plus a "

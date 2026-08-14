@@ -440,14 +440,15 @@ def peugeot_engine_sweep(
 ) -> dict:
     """Walk a mode-22 DID range on a PSA engine ECU and keep every answer (read-only).
 
-    The discovery tool behind the EP6 oil-pressure work: no public DID exists
-    for the THP's oil pressure / pump-stage solenoid, so the live-data block is
-    found by sweeping the known-good car twice -- once at idle, once held at
-    ~2500 rpm -- and diffing payloads. Answers come back raw; NRC refusals are
-    counted per code (0x31 = id not implemented, which proves the ECU listens).
+    Walk a mode-22 DID range and keep every raw answer (read-only).
 
-    first/last: hex DID bounds like "1000"/"13FF"; max 4096 ids per call.
-        Suggested starting ranges: 0100-04FF, 1000-13FF, 2000-21FF, F400-F4FF.
+    Catalog already has oil pressure at D429 (and D47D / D41D). Sweep is for
+    the two still-missing signals -- OilPressInstr and OilPumpValve -- plus
+    a 5FV that stays silent on D429. Diff idle vs ~2500 rpm. NRC 0x31
+    refusals are counted, not listed (ECU listens, id not implemented).
+
+    first/last: hex DID bounds like "D400"/"D4FF"; max 4096 ids per call.
+        Start at D400-D4FF, then 0100-04FF, 1000-13FF, 2000-21FF, F400-F4FF.
     address: "psa" (0x6A8 pair, what Diagbox uses) or "obd" (0x7E0) -- pick
         whichever peugeot_engine_probe showed answering service 0x22.
     extended: open the read-safe PSA session ladder first (some DIDs only
@@ -481,8 +482,9 @@ def peugeot_oil_capture(
     ECU dropping off the bus during cranking -- gaps are recorded, not fatal.
     Same capture on the known-good RCZ and the problem 308, then compare.
 
-    dids: hex DIDs the sweep surfaced, e.g. ["1E20", "F40C"]; empty still
-        yields the rpm/coolant/voltage baseline. Fewer DIDs = faster ticks.
+    dids: omit to use the imported catalog (D429 pressure, D47D oil temp,
+        D41D sensor mV). Pass [] for the rpm/coolant/voltage baseline only.
+        Result includes decoded bar/C plus an assessment vs the 5FV bands.
     address: "psa" (0x6A8) or "obd" (0x7E0), per peugeot_engine_probe.
     extended: open the read-safe PSA session first for DIDs that need it.
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
