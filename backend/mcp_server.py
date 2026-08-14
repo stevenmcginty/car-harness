@@ -36,6 +36,7 @@ from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
 from backend.profiles.mercedes import pids as mercedes_pids  # noqa: E402
 from backend.profiles.mercedes import scan as mercedes_scan  # noqa: E402
+from backend.profiles.peugeot import oil as peugeot_oil  # noqa: E402
 from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
 from backend.profiles.vauxhall import pids as vauxhall_pids  # noqa: E402
@@ -409,6 +410,88 @@ def peugeot_clear_module(
     if error is not None:
         return error
     return peugeot_scan.clear(instance, mode, address)
+
+
+@mcp.tool()
+def peugeot_engine_probe(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Map a PSA petrol engine ECU's diagnostic surface (read-only, EP6/THP work).
+
+    Reports, for both the PSA pair (0x6A8/0x688) and the standard OBD slot
+    (0x7E0): does the engine answer, does service 0x22 work, do the 10 C0 /
+    10 03 sessions open. Adds VIN + calibration id (tells a THP 156 "5FV" from
+    a THP 200 "5FF"), the live generic PIDs (incl. whether oil temp 0x5C is
+    implemented), and any 0xF4xx mirror DIDs. Run this FIRST on a car, then
+    aim peugeot_engine_sweep / peugeot_oil_capture at the address that
+    answered. Ignition ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.probe(instance, mode)
+
+
+@mcp.tool()
+def peugeot_engine_sweep(
+    first: str, last: str, adapter_id: str | None = None, address: str = "psa",
+    extended: bool = False, mode: str = "real",
+) -> dict:
+    """Walk a mode-22 DID range on a PSA engine ECU and keep every answer (read-only).
+
+    The discovery tool behind the EP6 oil-pressure work: no public DID exists
+    for the THP's oil pressure / pump-stage solenoid, so the live-data block is
+    found by sweeping the known-good car twice -- once at idle, once held at
+    ~2500 rpm -- and diffing payloads. Answers come back raw; NRC refusals are
+    counted per code (0x31 = id not implemented, which proves the ECU listens).
+
+    first/last: hex DID bounds like "1000"/"13FF"; max 4096 ids per call.
+        Suggested starting ranges: 0100-04FF, 1000-13FF, 2000-21FF, F400-F4FF.
+    address: "psa" (0x6A8 pair, what Diagbox uses) or "obd" (0x7E0) -- pick
+        whichever peugeot_engine_probe showed answering service 0x22.
+    extended: open the read-safe PSA session ladder first (some DIDs only
+        answer there).
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    try:
+        first_i, last_i = int(first, 16), int(last, 16)
+    except (TypeError, ValueError):
+        return {"ok": False, "message": "first/last must be hex like '1000'."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.sweep(instance, first_i, last_i, address, extended, mode=mode)
+
+
+@mcp.tool()
+def peugeot_oil_capture(
+    adapter_id: str | None = None, seconds: float = 120.0,
+    dids: list[str] | None = None, address: str = "psa",
+    extended: bool = False, mode: str = "real",
+) -> dict:
+    """Timestamped cold-start capture on a PSA petrol engine (read-only, crank-proof).
+
+    Built for the EP6/THP oil-pressure-at-startup complaint: connect with
+    ignition ON engine OFF, start the capture, wait ~5 s, crank, idle, and near
+    the end rev slowly to ~3000 rpm (pump stage switch). Every tick logs engine
+    rpm plus each DID in ``dids`` raw; every fifth tick adds coolant, oil temp
+    and module voltage (the voltage dip timestamps the crank). Survives the
+    ECU dropping off the bus during cranking -- gaps are recorded, not fatal.
+    Same capture on the known-good RCZ and the problem 308, then compare.
+
+    dids: hex DIDs the sweep surfaced, e.g. ["1E20", "F40C"]; empty still
+        yields the rpm/coolant/voltage baseline. Fewer DIDs = faster ticks.
+    address: "psa" (0x6A8) or "obd" (0x7E0), per peugeot_engine_probe.
+    extended: open the read-safe PSA session first for DIDs that need it.
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.capture(instance, seconds, dids, address, extended, mode=mode)
 
 
 # --------------------------------------------------------------------------- #

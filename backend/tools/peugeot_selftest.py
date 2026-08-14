@@ -48,7 +48,24 @@ class FakePsaCar:
         self.kwp = {ABS}         # modules speaking PSA's KWP dialect
 
     def handle(self, tx, req):
-        if tx not in PRESENT or not req:
+        if not req:
+            return None
+        # The standard OBD slot a petrol THP always occupies alongside its PSA
+        # pair: generic Mode 01 PIDs and Mode 09 identity for the oil tooling.
+        if tx == 0x7E0:
+            if req[0] == 0x01 and len(req) >= 2:
+                pid_data = {
+                    0x0C: bytes([0x1A, 0xF8]),   # 1726.0 rpm
+                    0x05: bytes([0x5A]),          # 50 C coolant
+                    0x42: bytes([0x37, 0x9E]),    # 14.238 V
+                }
+                if req[1] in pid_data:
+                    return bytes([0x41, req[1]]) + pid_data[req[1]]
+                return None                       # unsupported PID: silence
+            if req[0] == 0x09 and len(req) >= 2 and req[1] == 0x04:
+                return bytes([0x49, 0x04, 0x01]) + b"5FV0123456"  # calibration id
+            return None
+        if tx not in PRESENT:
             return None
         svc = req[0]
         if svc == 0x3E:                                   # TesterPresent
@@ -85,6 +102,8 @@ class FakePsaCar:
                 return bytes([0x62, 0xF1, 0x90]) + FAKE_VIN.encode()
             if tx == ENGINE and did == 0xF188:
                 return bytes([0x62, 0xF1, 0x88]) + b"1037564321"
+            if tx == ENGINE and did == 0x1E20:   # stand-in oil-pressure DID
+                return bytes([0x62, 0x1E, 0x20, 0x01, 0x90])
             # EV HV battery (BMS) health-check DIDs.
             if tx == BMS:
                 ev = {
@@ -282,6 +301,40 @@ def main() -> int:
     hsim = peugeot_pids.live(None, "sim")
     check("sim health check ok+simulated", hsim["ok"] and hsim["simulated"])
     check("sim health check labelled SIMULATED", "SIMULATED" in hsim["message"])
+
+    # --- integration: the EP6 oil tooling's transport layer ------------------
+    from backend.profiles.peugeot import oil as peugeot_oil
+
+    rpm_body = peugeot_oil._read_pid(client, 0x0C)
+    check("oil: generic rpm read on 0x7E0", rpm_body is not None)
+    check("oil: rpm decodes to 1726.0",
+          rpm_body is not None and peugeot_oil._decode_pid(0x0C, rpm_body) == 1726.0,
+          str(peugeot_oil._decode_pid(0x0C, rpm_body) if rpm_body else None))
+    volt_body = peugeot_oil._read_pid(client, 0x42)
+    check("oil: module voltage decodes to 14.24 V",
+          volt_body is not None and peugeot_oil._decode_pid(0x42, volt_body) == 14.24,
+          str(peugeot_oil._decode_pid(0x42, volt_body) if volt_body else None))
+    check("oil: unsupported PID (0x5C) reads as None",
+          peugeot_oil._read_pid(client, 0x5C) is None)
+    oil_body = peugeot_oil._read_did_raw(client, ENGINE, 0x1E20)
+    check("oil: engine DID 1E20 raw payload 0190",
+          oil_body is not None and oil_body.hex().upper() == "0190",
+          oil_body.hex().upper() if oil_body else "None")
+    check("oil: unimplemented DID (NRC 31) reads as None",
+          peugeot_oil._read_did_raw(client, ENGINE, 0x1E21) is None)
+
+    for name, result in (("probe", peugeot_oil.probe(None, "sim")),
+                         ("sweep", peugeot_oil.sweep(None, 0, 1, mode="sim")),
+                         ("capture", peugeot_oil.capture(None, mode="sim"))):
+        check(f"oil: sim {name} ok+simulated+labelled",
+              result["ok"] and result["simulated"] and "SIMULATED" in result["message"])
+    bad = peugeot_oil.sweep(None, 0x1000, 0x2FFF)
+    check("oil: sweep refuses ranges over 4096 ids",
+          bad["ok"] is False and "Range too wide" in bad["message"])
+    bad = peugeot_oil.sweep(None, 0x1000, 0x10FF, address="nope")
+    check("oil: sweep refuses unknown address", bad["ok"] is False)
+    bad = peugeot_oil.capture(None, dids=["xyz"])
+    check("oil: capture refuses non-hex dids", bad["ok"] is False)
 
     client.restore()
     check("restore hands ELM back to generic stack (ATSH7DF)", "ATSH7DF" in session.at_log)
