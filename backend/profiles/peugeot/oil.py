@@ -263,11 +263,50 @@ def assess_coldstart(samples: List[dict], baseline: Optional[dict] = None) -> di
                      f"{worst_delta:.2f} bar; on both healthy cars they never "
                      "parted by more than 0.25.")
 
+    # The pump command tells you something pressure cannot: whether the ECU is
+    # even asking. A car that never commands, or commands flat out forever, has
+    # a control or wiring problem regardless of what the pressure reads.
+    commands = [(s["t"], s["pump_command"]) for s in samples
+                if s.get("pump_command") is not None]
+    pump = None
+    if commands:
+        vals = [c for _, c in commands]
+        cold_cmd = max((c for t, c in commands if t <= 30), default=None)
+        warm_cmd = (round(sum(c for t, c in commands if t >= commands[-1][0] - 30)
+                          / max(1, len([c for t, c in commands
+                                        if t >= commands[-1][0] - 30])))
+                    if len(commands) > 3 else None)
+        stepped = (cold_cmd is not None and warm_cmd is not None
+                   and cold_cmd - warm_cmd >= 60)
+        # Kept as its own verdict rather than folded into the pressure one: a
+        # car can have a healthy-looking pressure curve AND a dead command, or
+        # the reverse, and collapsing them would hide whichever came second.
+        pump_verdict = "ok"
+        pump = {"cold": cold_cmd, "warm": warm_cmd, "min": min(vals),
+                "max": max(vals), "steppedDown": stepped}
+        if max(vals) == min(vals):
+            pump_verdict = "stuck"
+            notes.append(f"The pump command never moved off {vals[0]} for the whole "
+                         "run. On a healthy car it sits near 240 cold and steps "
+                         "down to about 35 once the oil warms.")
+        elif not stepped and len(commands) > 8:
+            pump_verdict = "never_stepped_down"
+            notes.append("The pump command never made the big cold-to-warm step "
+                         "the healthy cars made (240 down to ~35). Either the run "
+                         "was too short to warm up, or the pump is not being "
+                         "switched out of its high-pressure stage.")
+        else:
+            notes.append(f"Pump command behaved: {cold_cmd} cold, {warm_cmd} warm "
+                         "-- it stepped down as the oil warmed, like the healthy cars.")
+        pump["verdict"] = pump_verdict
+
     return {
         "verdict": verdict,
         "cold_peak_bar": round(peak, 2),
         "settled_bar": settled,
         "worst_mirror_delta_bar": round(worst_delta, 2) if worst_delta is not None else None,
+        "pumpVerdict": pump.get("verdict") if pump else None,
+        "pumpCommand": pump,
         "notes": notes,
         "reference": "backend/profiles/peugeot/data/ep6_oil.json (measured_baselines)",
     }
@@ -417,6 +456,32 @@ C2_OIL_PRESSURE = 7
 C2_OIL_PRESSURE_MIRROR = 47
 C2_PRESSURE_SCALE = 0.01
 
+# OIL PUMP CONTROL: single byte at offset 18, with a twin at offset 20 that
+# tracks it within 1 count. This is the solenoid command -- the thing that was
+# replaced on the 308 and the thing pressure alone cannot tell you about.
+#
+# Evidence, all from the two healthy RCZs:
+#   cold start, first 25 s   240 (94%) while pressure sat at 3.96-4.67 bar
+#   at 44 s                   27 (11%) -- and pressure fell to 2.29 bar in the
+#                             same step, which is the pump leaving its
+#                             high-pressure stage
+#   warm idle, steady         35 (14%) with pressure flat at 2.0 bar
+#   warm, held 3000 rpm       23 (9%) with pressure at 3.4 bar
+#
+# The last line is the one that makes it a command rather than a consequence:
+# revving the engine RAISES pressure while this value FALLS. A signal that
+# moves opposite to the thing it is supposed to be measuring is not a
+# measurement; it is a controller backing off because it is getting what it
+# asked for. Nothing else in the block does that.
+#
+# Reported as the raw count and as a percentage of full scale. The percentage
+# is a convenience, not a claim: whether the ECU means 240/255 as 94% duty or
+# as a stage code is not settled, and a car cannot be judged on the unit. What
+# a faulty car is judged on is behaviour -- a command pinned at one end, or
+# hunting, or never stepping down as the engine warms.
+C2_PUMP_COMMAND = 18
+C2_PUMP_COMMAND_MIRROR = 20
+
 
 def decode_c2(body: bytes) -> dict:
     """Decode what block C2 is known to carry. Unknown bytes stay unread."""
@@ -431,6 +496,12 @@ def decode_c2(body: bytes) -> dict:
     if "oil_pressure_bar" in out and "oil_pressure_mirror_bar" in out:
         out["oil_pressure_delta_bar"] = round(
             out["oil_pressure_bar"] - out["oil_pressure_mirror_bar"], 2)
+    if len(body) > C2_PUMP_COMMAND:
+        raw = body[C2_PUMP_COMMAND]
+        out["pump_command"] = raw
+        out["pump_command_pct"] = round(raw * 100.0 / 255.0, 1)
+    if len(body) > C2_PUMP_COMMAND_MIRROR:
+        out["pump_command_mirror"] = body[C2_PUMP_COMMAND_MIRROR]
     return out
 
 

@@ -33,3 +33,4 @@ server.log.err
 # machine (see backend/tools/bmw_live_extract.py). Regenerate, never commit.
 backend/profiles/bmw/live_pack.json
 captures/
+captures/reports/

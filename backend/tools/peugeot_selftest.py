@@ -406,6 +406,39 @@ def main() -> int:
     check("oil: sim spot is labelled",
           peugeot_oil.spot(None, mode="sim")["simulated"] is True)
 
+    # Pump command: the healthy cars step ~240 cold down to ~35 warm. A command
+    # that never moves is the failure this has to name.
+    warm_cold = [
+        {"t": 6.0, "oil_pressure_bar": 3.96, "pump_command": 240},
+        {"t": 25.0, "oil_pressure_bar": 4.67, "pump_command": 240},
+        {"t": 44.0, "oil_pressure_bar": 2.29, "pump_command": 27},
+        {"t": 120.0, "oil_pressure_bar": 2.06, "pump_command": 35},
+        {"t": 178.0, "oil_pressure_bar": 1.93, "pump_command": 35},
+    ]
+    got = peugeot_oil.assess_coldstart(warm_cold)
+    check("oil: healthy pump command is reported as stepping down",
+          got["pumpCommand"]["steppedDown"] is True and got["verdict"] == "in_spec",
+          str(got["pumpCommand"]))
+    stuck = [{"t": i * 10.0, "oil_pressure_bar": 2.0, "pump_command": 0}
+             for i in range(15)]
+    stuck_result = peugeot_oil.assess_coldstart(stuck)
+    check("oil: a pump command that never moves gets its own verdict",
+          stuck_result["pumpVerdict"] == "stuck", str(stuck_result["pumpVerdict"]))
+    check("oil: pressure and pump verdicts are reported independently",
+          stuck_result["verdict"] == "low_cold",
+          f"{stuck_result['verdict']} / {stuck_result['pumpVerdict']}")
+    check("oil: healthy pump command verdict is ok",
+          peugeot_oil.assess_coldstart(warm_cold)["pumpVerdict"] == "ok")
+    c2_cold = bytearray(60)
+    c2_cold[7:9] = (0x01, 0x8C)      # 3.96 bar
+    c2_cold[18] = 240
+    c2_cold[20] = 240
+    decoded = peugeot_oil.decode_c2(bytes(c2_cold))
+    check("oil: C2 decodes the pump command and its percentage",
+          decoded.get("pump_command") == 240
+          and decoded.get("pump_command_pct") == 94.1
+          and decoded.get("pump_command_mirror") == 240, str(decoded))
+
     for name, result in (("probe", peugeot_oil.probe(None, "sim")),
                          ("coldstart", peugeot_oil.coldstart(None, mode="sim")),
                          ("blocks", peugeot_oil.block_capture(None, mode="sim")),

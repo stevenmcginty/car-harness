@@ -47,6 +47,8 @@ _COLUMNS = [
     ("oil_pressure_bar", "oil bar", 8),
     ("oil_pressure_mirror_bar", "mirror", 7),
     ("oil_pressure_delta_bar", "delta", 6),
+    ("pump_command", "pump", 5),
+    ("pump_command_pct", "pump%", 6),
     ("did_D429", "D429", 6),
     ("oil_temp_c", "oil C", 6),
     ("coolant_c", "clt C", 6),
