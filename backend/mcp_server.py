@@ -434,6 +434,56 @@ def peugeot_engine_probe(adapter_id: str | None = None, mode: str = "real") -> d
 
 
 @mcp.tool()
+def peugeot_oil_coldstart(
+    adapter_id: str | None = None, seconds: float = 180.0,
+    blocks: list[str] | None = None, mode: str = "real",
+) -> dict:
+    """Capture a PSA petrol engine's whole cold start (read-only, EP6/THP).
+
+    For the oil-pressure-warning-at-startup complaint. Takes a generic-OBD
+    baseline (rpm, coolant, voltage, fuel trims) BEFORE opening the diagnostic
+    session -- on these ECUs the two are mutually exclusive -- then logs every
+    KWP measurement block raw for the whole run, decoding oil pressure live
+    from block C2 (u16 at offset 7, hundredths of a bar, identified on a known
+    good RCZ).
+
+    Procedure: ignition ON, engine OFF and cold, start this, then crank and let
+    it idle untouched. No throttle -- the idle curve is the evidence.
+
+    blocks: hex block ids; omit for all ten that a THP answers.
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.coldstart(instance, seconds, blocks, mode)
+
+
+@mcp.tool()
+def peugeot_engine_blocks(
+    adapter_id: str | None = None, seconds: float = 90.0,
+    blocks: list[str] | None = None, mode: str = "real",
+) -> dict:
+    """Log PSA KWP measurement blocks against a rev change (read-only).
+
+    The discovery counterpart to peugeot_oil_coldstart, for engine ECUs that
+    refuse UDS service 0x22 so the published oil DIDs are unreachable. Logs
+    blocks raw while the engine is revved; a signal is then identified by which
+    bytes move with rpm. Block C2's oil pressure is decoded live.
+
+    blocks: hex block ids like ["C2","CB"]; omit for all ten. Fewer blocks
+        means a faster sample rate, which matters when chasing a transient.
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.block_capture(instance, seconds, blocks, mode)
+
+
+@mcp.tool()
 def peugeot_engine_sweep(
     first: str, last: str, adapter_id: str | None = None, address: str = "psa",
     extended: bool = False, mode: str = "real",

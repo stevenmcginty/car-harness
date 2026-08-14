@@ -45,8 +45,9 @@ _COLUMNS = [
     ("t", "t(s)", 7),
     ("engine_rpm", "rpm", 7),
     ("oil_pressure_bar", "oil bar", 8),
+    ("oil_pressure_mirror_bar", "mirror", 7),
+    ("oil_pressure_delta_bar", "delta", 6),
     ("did_D429", "D429", 6),
-    ("oil_pressure_sensor_mV", "sens mV", 8),
     ("oil_temp_c", "oil C", 6),
     ("coolant_c", "clt C", 6),
     ("module_voltage", "volts", 6),
@@ -94,7 +95,9 @@ def _print_samples(samples):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["probe", "capture", "sweep", "scan"])
+    parser.add_argument(
+        "command",
+        choices=["probe", "capture", "sweep", "scan", "blocks", "coldstart"])
     parser.add_argument("bounds", nargs="*", help="sweep: FIRST LAST as hex")
     parser.add_argument("--car", default="unknown")
     parser.add_argument("--adapter", default=None)
@@ -113,6 +116,16 @@ def main() -> int:
 
     if args.command == "probe":
         result = peugeot_oil.probe(adapter)
+    elif args.command == "coldstart":
+        blocks = None if args.dids is None else [
+            b.strip() for b in args.dids.split(",") if b.strip()
+        ]
+        result = peugeot_oil.coldstart(adapter, args.seconds, blocks)
+    elif args.command == "blocks":
+        blocks = None if args.dids is None else [
+            b.strip() for b in args.dids.split(",") if b.strip()
+        ]
+        result = peugeot_oil.block_capture(adapter, args.seconds, blocks)
     elif args.command == "scan":
         result = peugeot_scan.scan(adapter)
     elif args.command == "sweep":

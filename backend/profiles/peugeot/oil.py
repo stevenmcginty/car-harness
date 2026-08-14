@@ -71,7 +71,21 @@ from backend.profiles.peugeot.scan import PEUGEOT_ID_MAP
 ENGINE_PSA = 0x6A8   # -> 0x688 (PEUGEOT_ID_MAP)
 ENGINE_OBD = 0x7E0   # -> 0x7E8 (request+8 fallback in the client)
 
+# FIELD FINDING (RCZ #1, 2026-08-14): this car ignores the PHYSICAL generic-OBD
+# request id 0x7E0 completely -- 01 00 there returns NO DATA -- but answers the
+# FUNCTIONAL broadcast 0x7DF from 0x7E8 (engine) and 0x7E9 (second ECU). So every
+# generic Mode-01 read goes out on 0x7DF with the receive filter pinned to 0x7E8,
+# which is why the id map below is extended rather than left to the +8 rule.
+ENGINE_OBD_FUNC = 0x7DF
+ENGINE_OBD_RESP = 0x7E8
+
 _ADDRESSES = {"psa": ENGINE_PSA, "obd": ENGINE_OBD}
+
+# The map handed to every client here: PSA's own pairs plus the functional
+# broadcast pairing the generic reads depend on.
+OIL_ID_MAP = dict(PEUGEOT_ID_MAP)
+OIL_ID_MAP[ENGINE_OBD_FUNC] = ENGINE_OBD_RESP
+OIL_ID_MAP[ENGINE_OBD] = ENGINE_OBD_RESP
 
 # Generic Mode-01 PIDs worth polling around an oil problem. Oil temperature
 # (0x5C) is optional equipment in the standard -- the probe reports whether
@@ -250,14 +264,105 @@ def assess(samples: List[dict]) -> dict:
 
 
 def _read_pid(client: PsaElm327UdsClient, pid: int, timeout: float = 1.0) -> Optional[bytes]:
-    """One generic Mode-01 read on the standard engine slot."""
+    """One generic Mode-01 read, sent functionally (see ENGINE_OBD_FUNC)."""
     try:
-        payload = client.request(ENGINE_OBD, bytes([0x01, pid]), timeout=timeout)
+        payload = client.request(ENGINE_OBD_FUNC, bytes([0x01, pid]), timeout=timeout)
     except (ObdError, TransportError):
         return None
     if len(payload) < 3 or payload[0] != 0x41 or payload[1] != pid:
         return None
     return payload[2:]
+
+
+# Generic Mode-01 fuel trims. Short term is the ECU's live correction, long term
+# is what it has learned; a pair that sits well off zero on one car and near zero
+# on another is a real difference in how the engine is breathing or fuelling.
+TRIM_PIDS = [
+    (0x06, "stft_b1_pct"),
+    (0x07, "ltft_b1_pct"),
+    (0x08, "stft_b2_pct"),
+    (0x09, "ltft_b2_pct"),
+]
+
+
+def _trim_pct(body: bytes) -> Optional[float]:
+    """Standard trim decode: (A - 128) * 100 / 128, i.e. -100%..+99.2%."""
+    if not body:
+        return None
+    return round((body[0] - 128) * 100.0 / 128.0, 1)
+
+
+def read_trims(client: PsaElm327UdsClient) -> dict:
+    """Short- and long-term fuel trims, both banks. Absent banks are skipped."""
+    out = {}
+    for pid, key in TRIM_PIDS:
+        body = _read_pid(client, pid, timeout=0.6)
+        if body is None:
+            continue
+        value = _trim_pct(body)
+        if value is not None:
+            out[key] = value
+    return out
+
+
+# PSA KWP measurement blocks on the engine, request 21 <hi> 80 01. Which ids
+# exist is calibration-specific; these are the ones that answered on RCZ #1
+# (EP6 THP, engine ECU that refuses UDS service 0x22 entirely). The payload
+# layout is NOT decoded here on purpose -- byte meanings are identified by
+# capturing the blocks while rpm changes and diffing, not by guessing.
+KWP_BLOCK_IDS = ["C0", "C1", "C2", "C3", "C4", "C5", "C6", "C7", "CA", "CB"]
+
+# ---- Block C2, decoded on RCZ #1 (2026-08-14) ------------------------------
+# OIL PRESSURE: u16 big-endian at offset 7, in hundredths of a bar. A second
+# copy sits at offset 47 and tracks the first within +/-0.07 bar.
+#
+# Evidence, from four captures on one warm engine:
+#   idle held 22 s          1.41-1.48 bar, dead steady
+#   3000 rpm held           3.36-3.46 bar, falling back to 1.43 as revs dropped
+#   idle -> 2500 -> idle    2.89-3.04 bar while revved, 1.43-1.53 at idle
+# Pressure rising with rpm and returning to exactly the same idle value is what
+# an oil-pressure signal does and what no temperature or counter does. The
+# numbers also land on the published figures for this engine without being
+# fitted to them: Autodata gives 1.7 +/- 0.3 bar hot idle (measured 1.43) and
+# 1.7-2.3 bar at 2000 rpm, and the healthy-EP6 field curve gives 2.4 bar at
+# 2900 rpm (measured 3.4 at ~3000 -- same shape, healthy side of it).
+#
+# The offset-47 twin is NOT yet proven to be the ECU's demanded pressure. On a
+# healthy engine a measured and a demanded value sit on top of each other, so
+# this car cannot separate them; a car with a regulation fault would. Both are
+# therefore reported, and the difference between them is reported too, because
+# on the 308 that difference is the whole question.
+C2_OIL_PRESSURE = 7
+C2_OIL_PRESSURE_MIRROR = 47
+C2_PRESSURE_SCALE = 0.01
+
+
+def decode_c2(body: bytes) -> dict:
+    """Decode what block C2 is known to carry. Unknown bytes stay unread."""
+    out = {}
+    if body is None:
+        return out
+    for offset, key in ((C2_OIL_PRESSURE, "oil_pressure_bar"),
+                        (C2_OIL_PRESSURE_MIRROR, "oil_pressure_mirror_bar")):
+        raw = _u16_be(body[offset:offset + 2]) if len(body) > offset + 1 else None
+        if raw is not None:
+            out[key] = round(raw * C2_PRESSURE_SCALE, 2)
+    if "oil_pressure_bar" in out and "oil_pressure_mirror_bar" in out:
+        out["oil_pressure_delta_bar"] = round(
+            out["oil_pressure_bar"] - out["oil_pressure_mirror_bar"], 2)
+    return out
+
+
+def _read_kwp_block(client: PsaElm327UdsClient, hi: int,
+                    timeout: float = 0.6) -> Optional[bytes]:
+    """One 21 <hi> 80 01 measurement-block read; payload after the echo."""
+    try:
+        reply = client.request(ENGINE_PSA, bytes([0x21, hi, 0x80, 0x01]), timeout=timeout)
+    except (ObdError, TransportError):
+        return None
+    if not reply or reply[0] != 0x61 or len(reply) <= 4:
+        return None
+    return reply[4:]
 
 
 def _read_did_raw(client: PsaElm327UdsClient, addr: int, did: int,
@@ -286,6 +391,239 @@ def _bad_protocol(session, what: str) -> Optional[dict]:
             "timestamp": _now(),
         }
     return None
+
+
+# --------------------------------------------------------------------------- #
+# block_capture: the KWP measurement blocks as a timeline, for cars whose
+# engine ECU refuses UDS service 0x22 (so D429 and friends are unreachable)
+# --------------------------------------------------------------------------- #
+def block_capture(adapter: Optional[dict], seconds: float = 90.0,
+                  blocks: Optional[List[str]] = None, mode: str = "real") -> dict:
+    """Log PSA KWP measurement blocks against rpm while the revs are varied.
+
+    For an engine ECU that answers 21 <hi> 80 01 but refuses service 0x22 --
+    the RCZ #1 case -- this is the only route to oil data, and the block byte
+    layout is unpublished. So the method is the one that built the Astra K
+    gearbox map: log every block RAW alongside engine rpm through a rev
+    profile, then identify signals afterwards by which bytes move WITH rpm.
+
+    Drive profile to run while this is capturing (about 90 s):
+        idle 20 s -> hold ~2000 rpm 15 s -> idle 15 s -> hold ~3000 rpm 10 s
+        -> idle to the end.
+    Oil pressure is the byte that rises and falls with every rev and never
+    settles back to a different value; a temperature drifts one way only; the
+    pump's stage command steps between two levels rather than sweeping.
+
+    Each tick also records fuel trims and coolant, so the same capture answers
+    the car-to-car trim comparison without a second run. Read-only.
+    """
+    if mode == "sim":
+        return {"ok": True, "simulated": True, "samples": [], "blocks": [],
+                "message": "SIMULATED -- no real car connected.", "timestamp": _now()}
+
+    wanted = [b.upper() for b in (blocks or KWP_BLOCK_IDS)]
+    try:
+        block_ids = [int(b, 16) & 0xFF for b in wanted]
+    except (TypeError, ValueError):
+        return {"ok": False, "simulated": False, "samples": [], "blocks": [],
+                "message": "blocks must be hex bytes like ['C0','CB'].",
+                "timestamp": _now()}
+
+    def run(session, entry):
+        session.ensure_protocol()
+        bad = _bad_protocol(session, "the block capture")
+        if bad:
+            bad.update({"samples": [], "blocks": wanted})
+            return bad
+
+        client = PsaElm327UdsClient(session, OIL_ID_MAP)
+        client.begin()
+        samples: List[dict] = []
+        started = monotonic()
+        dead = 0
+        tick = 0
+        try:
+            client.open_session(ENGINE_PSA)
+            while monotonic() - started < seconds:
+                sample = {"t": round(monotonic() - started, 3)}
+                alive = False
+                # 1.2 s, not 0.5: a FUNCTIONAL request is answered by every ECU
+                # on the bus (0x7E8 and 0x7E9 here), and the ELM holds the line
+                # open for the whole window collecting them. Half a second
+                # returns empty-handed on this car -- which is exactly how the
+                # first capture came back with no rpm at all.
+                body = _read_pid(client, 0x0C, timeout=1.2)
+                sample["engine_rpm"] = _decode_pid(0x0C, body) if body else None
+                alive = alive or body is not None
+                for hi in block_ids:
+                    body = _read_kwp_block(client, hi)
+                    sample[f"blk_{hi:02X}"] = body.hex().upper() if body else None
+                    if hi == 0xC2 and body is not None:
+                        sample.update(decode_c2(body))
+                    alive = alive or body is not None
+                if tick % 4 == 0:
+                    body = _read_pid(client, 0x05, timeout=1.2)
+                    sample["coolant_c"] = _decode_pid(0x05, body) if body else None
+                    sample.update(read_trims(client))
+                tick += 1
+                samples.append(sample)
+                if alive:
+                    dead = 0
+                else:
+                    dead += 1
+                    if dead >= _CAPTURE_DEAD_TICKS:
+                        break
+                    sleep(0.2)
+        finally:
+            client.restore()
+
+        elapsed = monotonic() - started
+        rate = len(samples) / elapsed if elapsed else 0.0
+        rpms = [s["engine_rpm"] for s in samples if s.get("engine_rpm")]
+        return {
+            "ok": True, "simulated": False, "samples": samples,
+            "blocks": wanted, "sampleRate": round(rate, 2),
+            "rpmRange": [min(rpms), max(rpms)] if rpms else None,
+            "message": (
+                f"Captured {len(samples)} tick(s) over {elapsed:.0f}s (~{rate:.2f}/s) "
+                f"across {len(wanted)} block(s)."
+                + (f" Engine rpm spanned {min(rpms):.0f}-{max(rpms):.0f}."
+                   if rpms else " No rpm was recorded.")
+                + (" WARNING: rpm barely moved, so no byte can be separated from any "
+                   "other -- rev the engine while this runs or the capture cannot "
+                   "identify anything."
+                   if rpms and max(rpms) - min(rpms) < 400 else "")
+                + " Blocks stored raw. Read-only throughout."
+            ),
+            "timestamp": _now(),
+        }
+
+    try:
+        return obd_service._with_session(adapter, run)
+    except obd_service.ObdServiceError as exc:
+        return {"ok": False, "simulated": False, "samples": [], "blocks": wanted,
+                "message": str(exc), "timestamp": _now()}
+
+
+# --------------------------------------------------------------------------- #
+# coldstart: the whole cold start on one timeline, for a car whose complaint
+# only appears in the first seconds after the key turns
+# --------------------------------------------------------------------------- #
+def coldstart(adapter: Optional[dict], seconds: float = 180.0,
+              blocks: Optional[List[str]] = None, mode: str = "real") -> dict:
+    """Capture a cold start end to end: pre-start baseline, then every block.
+
+    Three things this does that block_capture does not, all of them because a
+    cold start happens once and cannot be repeated for an hour:
+
+    1. Reads generic OBD (rpm, coolant, voltage, fuel trims) BEFORE opening the
+       diagnostic session. On this engine the two are mutually exclusive -- the
+       moment the KWP session is open the ECU stops answering generic OBD -- so
+       the pre-start baseline is the only clean chance to record coolant
+       temperature and prove the engine really was cold.
+    2. Logs EVERY measurement block raw for the whole run, not a chosen few.
+       Slower per tick, but a cold start is not repeatable and a block dropped
+       to save a second is a block that cannot be looked at later.
+    3. Decodes oil pressure live from block C2 so the pressure curve is
+       readable without post-processing, while still storing the raw bytes.
+
+    Procedure: connect with ignition ON, engine OFF and stone cold. Start this.
+    It takes the baseline, then tells the timeline where cranking began by the
+    first tick where pressure appears. Crank when the run has started, then let
+    it idle untouched for the rest -- no throttle. The oil-pressure warning
+    lives in those first seconds, so the idle curve is the evidence.
+    """
+    if mode == "sim":
+        return {"ok": True, "simulated": True, "baseline": {}, "samples": [],
+                "message": "SIMULATED -- no real car connected.", "timestamp": _now()}
+
+    wanted = [b.upper() for b in (blocks or KWP_BLOCK_IDS)]
+    try:
+        block_ids = [int(b, 16) & 0xFF for b in wanted]
+    except (TypeError, ValueError):
+        return {"ok": False, "simulated": False, "baseline": {}, "samples": [],
+                "message": "blocks must be hex bytes like ['C0','C2'].",
+                "timestamp": _now()}
+
+    def run(session, entry):
+        session.ensure_protocol()
+        bad = _bad_protocol(session, "the cold-start capture")
+        if bad:
+            bad.update({"baseline": {}, "samples": [], "blocks": wanted})
+            return bad
+
+        client = PsaElm327UdsClient(session, OIL_ID_MAP)
+        client.begin()
+        baseline: dict = {}
+        samples: List[dict] = []
+        started = monotonic()
+        dead = 0
+        try:
+            # Generic OBD first, while the diagnostic session is still shut.
+            for pid, key in ((0x0C, "engine_rpm"), (0x05, "coolant_c"),
+                             (0x42, "module_voltage"), (0x0F, "intake_air_c")):
+                body = _read_pid(client, pid, timeout=1.2)
+                if body is None:
+                    continue
+                value = (_decode_pid(pid, body) if pid != 0x0F
+                         else float(body[0] - 40))
+                baseline[key] = value
+            baseline.update(read_trims(client))
+
+            client.open_session(ENGINE_PSA)
+            while monotonic() - started < seconds:
+                sample = {"t": round(monotonic() - started, 3)}
+                alive = False
+                for hi in block_ids:
+                    body = _read_kwp_block(client, hi)
+                    sample[f"blk_{hi:02X}"] = body.hex().upper() if body else None
+                    if hi == 0xC2 and body is not None:
+                        sample.update(decode_c2(body))
+                    alive = alive or body is not None
+                samples.append(sample)
+                if alive:
+                    dead = 0
+                else:
+                    dead += 1
+                    if dead >= _CAPTURE_DEAD_TICKS:
+                        break
+                    sleep(0.2)
+        finally:
+            client.restore()
+
+        elapsed = monotonic() - started
+        rate = len(samples) / elapsed if elapsed else 0.0
+        press = [(s["t"], s["oil_pressure_bar"]) for s in samples
+                 if s.get("oil_pressure_bar") is not None]
+        running = [(t, p) for t, p in press if p > 0.3]
+        first_t = running[0][0] if running else None
+        peak = max((p for _, p in press), default=None)
+        settled = round(sum(p for _, p in press[-5:]) / len(press[-5:]), 2) if press else None
+        return {
+            "ok": True, "simulated": False,
+            "baseline": baseline, "samples": samples, "blocks": wanted,
+            "sampleRate": round(rate, 2),
+            "pressure": {"firstReading_s": first_t, "peak_bar": peak,
+                         "settled_bar": settled},
+            "assessment": assess(samples),
+            "message": (
+                f"Cold start: {len(samples)} tick(s) over {elapsed:.0f}s "
+                f"(~{rate:.2f}/s) across {len(wanted)} block(s). Baseline before "
+                f"start: {baseline or 'nothing answered'}."
+                + (f" Oil pressure first read {first_t:.0f}s in, peaked "
+                   f"{peak:.2f} bar, settled about {settled:.2f} bar."
+                   if first_t is not None and peak is not None else
+                   " No oil pressure was decoded -- check block C2 answered.")
+                + " Read-only throughout."
+            ),
+            "timestamp": _now(),
+        }
+
+    try:
+        return obd_service._with_session(adapter, run)
+    except obd_service.ObdServiceError as exc:
+        return {"ok": False, "simulated": False, "baseline": {}, "samples": [],
+                "blocks": wanted, "message": str(exc), "timestamp": _now()}
 
 
 # --------------------------------------------------------------------------- #

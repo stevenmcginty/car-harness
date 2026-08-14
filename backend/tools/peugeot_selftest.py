@@ -50,9 +50,9 @@ class FakePsaCar:
     def handle(self, tx, req):
         if not req:
             return None
-        # The standard OBD slot a petrol THP always occupies alongside its PSA
-        # pair: generic Mode 01 PIDs and Mode 09 identity for the oil tooling.
-        if tx == 0x7E0:
+        # Generic OBD. Like the real RCZ, this car answers the FUNCTIONAL
+        # broadcast 0x7DF as well as the physical engine slot 0x7E0.
+        if tx in (0x7E0, 0x7DF):
             if req[0] == 0x01 and len(req) >= 2:
                 pid_data = {
                     0x0C: bytes([0x1A, 0xF8]),   # 1726.0 rpm
@@ -357,7 +357,28 @@ def main() -> int:
     check("oil: catalog json loaded",
           bool(peugeot_oil.REFERENCE.get("dids")))
 
+    # Block C2 decode, against the real bytes captured on RCZ #1: idle sample
+    # (1.43 bar) and the 3000 rpm sample (3.46 bar).
+    idle_c2 = bytes.fromhex(
+        "8F4C1B1C045423009030310606004E01A4012301220601FF01FFFFFFFFFFFF"
+        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF008AFFFFFFFFFFFFFFFFFFFFFF07006B1AFF")
+    c2 = peugeot_oil.decode_c2(idle_c2)
+    check("oil: C2 decodes idle oil pressure 1.44 bar",
+          c2.get("oil_pressure_bar") == 1.44, str(c2.get("oil_pressure_bar")))
+    check("oil: C2 reports the mirror copy and their difference",
+          c2.get("oil_pressure_mirror_bar") == 1.38
+          and c2.get("oil_pressure_delta_bar") == 0.06, str(c2))
+    check("oil: C2 decode of a short block returns nothing rather than guessing",
+          peugeot_oil.decode_c2(bytes(4)) == {})
+    check("oil: trim decode -100%/0%/+99.2% at 0/128/255",
+          (peugeot_oil._trim_pct(bytes([0])), peugeot_oil._trim_pct(bytes([128])),
+           peugeot_oil._trim_pct(bytes([255]))) == (-100.0, 0.0, 99.2))
+    check("oil: generic reads are sent functionally on 0x7DF",
+          peugeot_oil.OIL_ID_MAP.get(0x7DF) == 0x7E8)
+
     for name, result in (("probe", peugeot_oil.probe(None, "sim")),
+                         ("coldstart", peugeot_oil.coldstart(None, mode="sim")),
+                         ("blocks", peugeot_oil.block_capture(None, mode="sim")),
                          ("sweep", peugeot_oil.sweep(None, 0, 1, mode="sim")),
                          ("capture", peugeot_oil.capture(None, mode="sim"))):
         check(f"oil: sim {name} ok+simulated+labelled",
