@@ -26,8 +26,11 @@ from backend.profiles.bmw import ediabas as bmw_ediabas  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.fiat import pids as fiat_pids  # noqa: E402
 from backend.profiles.fiat import scan as fiat_scan  # noqa: E402
+from backend.profiles.jlr import adblue as jlr_adblue  # noqa: E402
+from backend.profiles.jlr import discover as jlr_discover  # noqa: E402
 from backend.profiles.jlr import pids as jlr_pids  # noqa: E402
 from backend.profiles.jlr import scan as jlr_scan  # noqa: E402
+from backend.profiles.jlr import sweep as jlr_sweep  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
@@ -607,6 +610,111 @@ def jlr_clear_module(
     if error is not None:
         return error
     return jlr_scan.clear(instance, mode, address)
+
+
+@mcp.tool()
+def jlr_discover_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Sweep a JLR car's PT-CAN request-id block and report what answers (read-only).
+
+    Walks 0x700-0x7FF (response = request + 8, the verified JLR convention) one id
+    at a time with a quick presence probe (3E 00, then 22 F190); whatever answers
+    gets its identification read. Purpose: build the module map nobody published --
+    find the SCR/reagent controller if a diesel has a separate one, and verify the
+    PCM/TCM addresses the shipped table claims. No fault services, no writes:
+    presence probes and identification reads only. Eight ids at the top of the
+    block are skipped (a +8 response would leave the 11-bit id space). Expect
+    roughly 2-5 minutes over a Bluetooth dongle. Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return jlr_discover.discover(instance, mode)
+
+
+@mcp.tool()
+def jlr_engine_sweep(
+    adapter_id: str | None = None, mode: str = "real", first: str = "0300",
+    last: str = "05FF", target: str = "7E0", extended: bool = False,
+) -> dict:
+    """Walk a 0x22 DID range on one JLR module and keep every answer raw (read-only).
+
+    This is the DID mapping tool for values with no public JLR DID (DPF soot mass,
+    regen status, DEF level/quality, NOx ppm, EGTs). One DID at a time; every
+    answer is kept as raw hex -- NRC 0x31 refusals are counted (module listening,
+    id not implemented), other NRCs are listed by name, the rest are silent. A
+    signal is identified by sweeping once at idle and once warm/loaded and seeing
+    which payloads MOVE -- nothing is decoded or invented here.
+
+    first/last: hex DID bounds like "0300" and "05FF"; max 4096 ids per call.
+        Research seed ranges on the PCM: 0300-05FF, 2100-21FF, 2200-22FF,
+        F400-F4FF.
+    target: the module's hex request id, default the PCM ("7E0").
+    extended: open the UDS extended session (10 03) first -- best-effort.
+    The target must answer a presence probe or the sweep refuses (no blind
+    spraying of a dead bus). Read-only.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return jlr_sweep.sweep(instance, mode, first, last, target, extended)
+
+
+@mcp.tool()
+def jlr_adblue_health(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """One read-only AdBlue/SCR + DPF health pass on a Jaguar X260 3.0d (read-only).
+
+    Built for the 2016 XF (X260) 3.0d V6 diesel, EU6 with SCR. One pass: the
+    generic Mode-01 baseline (rpm, coolant, module voltage) FIRST, then the
+    known-table modules' fault codes through the existing UDS/KWP scan ladder,
+    then the known engine DIDs read RAW with their provenance marked (Old Jaguar
+    Group petrol capture -- unverified on the diesel). The SCR/DPF values are
+    flagged capture-pending: no public JLR DID exists for soot mass / DEF level /
+    NOx ppm, so jlr_engine_sweep must map them on the real car first and nothing
+    here invents a decoding. The assessment block is sourced text -- the ranked
+    AdBlue fault space (crystallised injector, NOx sensor, tank level sensor,
+    contaminated fluid) and the regen thresholds (auto ~26 g soot, forced
+    permissible below ~46 g) -- conditional on the codes actually read. Ignition
+    must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return jlr_adblue.health(instance, mode)
+
+
+@mcp.tool()
+def jlr_adblue_drive_log(
+    adapter_id: str | None = None, mode: str = "real", seconds: float = 300,
+) -> dict:
+    """Log a JLR diesel drive pairing rpm with the AdBlue/DPF candidate DIDs (read-only).
+
+    Every tick reads engine rpm (Mode 01) plus each DID's RAW payload with a
+    timestamp; every fifth tick adds coolant and module voltage; the result
+    reports the sample rate it actually achieved. Run it through warm-up or a
+    regen (a regen is ~20 min at 500 °C+ -- pass seconds=1500+ to span one).
+    Payloads stay raw: a signal is identified by how it moves against rpm, then
+    decoded against the car. Default DIDs are the known Old Jaguar Group engine
+    set; once jlr_engine_sweep has captured aftertreatment candidates on the real
+    car, the backend's drive_log(dids=...) takes them -- this tool logs the
+    default set.
+
+    seconds: how long to log for. Drive normally while it runs.
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return jlr_adblue.drive_log(instance, mode, seconds)
 
 
 # --------------------------------------------------------------------------- #

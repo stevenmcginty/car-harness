@@ -16,6 +16,38 @@
         "busy": "Reading the JLR-specific values…",
         "title": "JLR live extras",
         "hint": "Reads JLR-specific values the generic list doesn't carry -- engine oil temperature, measured oil level in mm and calculated oil volume (the dipstick-less cars carry these), boost, post-intercooler charge temp, ZF gearbox oil temperature and rear e-diff oil temperature. Captured from an on-car X351/XK PID pack (petrol AJ133/AJ126; 'should also work' on the diesels), single-source -- verify the scaling against the car. On a car that answers none of them (DoIP-era or gateway-filtered) it falls back to a curated generic Mode-01 set."
+      },
+      {
+        "id": "discover",
+        "label": "Find modules",
+        "busy": "Sweeping the JLR diagnostic address block…",
+        "title": "Find this car's modules",
+        "hint": "Sweeps the 0x700-0x7FF request-id block one address at a time (response = request + 8, the verified JLR convention) with a quick presence probe, and reads identification from whatever answers. This is how the never-published module map gets built car by car -- on the X260 3.0d it answers whether a separate SCR/reagent controller exists, and it re-verifies the PCM/TCM addresses the shipped table claims. No fault services, no writes: presence probes and identification only. Takes roughly 2-5 minutes over Bluetooth; absent addresses cost one short timeout each.",
+        "readOnly": true
+      },
+      {
+        "id": "sweep",
+        "label": "DID sweep",
+        "busy": "Walking the DID range, keeping every answer raw…",
+        "title": "Map this module's DIDs",
+        "hint": "Walks a 0x22 DID range on one module (default the PCM at 7E0, research seed ranges 0300-05FF / 2100-21FF / 2200-22FF / F400-F4FF) one id at a time and keeps every raw answer. NRC 0x31 refusals are counted (the module is listening, the id isn't implemented); other NRCs are named; the rest are silent. Identify a value by sweeping at idle and again warm/loaded and seeing which payloads MOVE -- nothing is decoded until it has been captured on the car. The target must answer a presence probe or the sweep refuses. Read-only.",
+        "readOnly": true
+      },
+      {
+        "id": "adblue-health",
+        "label": "AdBlue / DPF health",
+        "busy": "Reading faults, baseline and aftertreatment values…",
+        "title": "AdBlue / SCR + DPF health (X260 3.0d)",
+        "hint": "One read-only pass built for the 2016 XF 3.0d: Mode-01 baseline first, the known-table modules' fault codes through the UDS/KWP scan ladder, the known engine DIDs raw with their provenance marked, and a sourced assessment -- the ranked AdBlue fault space (crystallised DEF injector, NOx sensor, tank level sensor, contaminated fluid) and the regen thresholds (auto ~26 g soot, forced permissible below ~46 g, above that a physical clean). Honest gap: no public JLR DID exists for soot mass / DEF level / NOx ppm, so those are flagged capture-pending until the DID sweep maps them on the real car -- no number is invented.",
+        "readOnly": true
+      },
+      {
+        "id": "adblue-drive-log",
+        "label": "AdBlue drive log",
+        "busy": "Logging rpm against the aftertreatment DIDs…",
+        "title": "AdBlue / DPF drive log",
+        "hint": "A timed log pairing engine rpm with the AdBlue/DPF candidate DIDs -- every tick reads rpm plus each DID's RAW payload with a timestamp, every fifth tick adds coolant and module voltage, and the achieved sample rate is reported. Run it through warm-up or a regen (~20 min at 500 °C+, so give it the seconds). Payloads stay raw on purpose: a signal is identified by how it moves against rpm, then decoded against the car. Default DIDs are the known engine set; sweep-captured candidates join later. Read-only.",
+        "readOnly": true
       }
     ]
   }

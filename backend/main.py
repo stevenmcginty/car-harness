@@ -483,12 +483,57 @@ def _brand_capability_or_404(brand: str, name: str):
 
 
 @app.get("/api/{brand}/discover")
-def brand_discover(brand: str) -> dict:
-    """Find the car on a brand's native cable (BMW ENET). Read-only."""
-    module = _brand_capability_or_404(brand, "scan")
-    if not hasattr(module, "discover"):
+def brand_discover(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """Find the car on a brand's native cable (BMW ENET), or -- for a dongle
+    brand that ships a discover.py -- sweep its diagnostic address block and
+    report which modules answer (JLR PT-CAN walk). Read-only either way."""
+    scan_mod = brands.brand_module(brand, "scan")
+    if scan_mod is not None and hasattr(scan_mod, "discover"):
+        return scan_mod.discover()
+    module = brands.brand_module(brand, "discover")
+    if module is None or not hasattr(module, "discover"):
         raise HTTPException(status_code=404, detail=f"'{brand}' has no discover step.")
-    return module.discover()
+    instance = _obd_adapter_or_400(adapter, mode)
+    return module.discover(instance, mode)
+
+
+@app.get("/api/{brand}/sweep")
+def brand_sweep(
+    brand: str,
+    adapter: str | None = None,
+    mode: str = "real",
+    first: str = "0300",
+    last: str = "05FF",
+    target: str = "7E0",
+    extended: bool = False,
+) -> dict:
+    """Walk a 0x22 DID range on one module, keeping every answer raw -- the
+    DID-mapping instrument for values no public table carries (JLR SCR/DPF
+    today). Read-only."""
+    module = _brand_capability_or_404(brand, "sweep")
+    instance = _obd_adapter_or_400(adapter, mode)
+    return module.sweep(instance, mode, first, last, target, extended)
+
+
+@app.get("/api/{brand}/adblue-health")
+def brand_adblue_health(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """One read-only AdBlue/SCR + DPF health pass (JLR X260 3.0d today):
+    Mode-01 baseline, fault codes through the scan ladder, known DIDs raw,
+    sourced assessment, SCR/DPF values honestly flagged capture-pending."""
+    module = _brand_capability_or_404(brand, "adblue")
+    instance = _obd_adapter_or_400(adapter, mode)
+    return module.health(instance, mode)
+
+
+@app.get("/api/{brand}/adblue-drive-log")
+def brand_adblue_drive_log(
+    brand: str, adapter: str | None = None, mode: str = "real", seconds: float = 300,
+) -> dict:
+    """Timed read-only log pairing rpm with the AdBlue/DPF candidate DIDs,
+    payloads kept raw until decoded against the car."""
+    module = _brand_capability_or_404(brand, "adblue")
+    instance = _obd_adapter_or_400(adapter, mode)
+    return module.drive_log(instance, mode, seconds)
 
 
 @app.get("/api/{brand}/scan")
