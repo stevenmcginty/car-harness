@@ -28,3 +28,7 @@ android/autel/
 *.log
 *.err
 server.log.err
+
+# Car captures -- real scan data (may carry VINs) and downloaded binaries,
+# local-only like the logs above
+captures/
