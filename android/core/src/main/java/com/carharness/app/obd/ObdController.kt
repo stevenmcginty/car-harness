@@ -235,6 +235,37 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             JlrUds.readEnhanced(session, onProgress)
         }
 
+    /** JLR address discovery: sweep the 0x700-0x7FF request-id block. Read-only. */
+    suspend fun jlrDiscover(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            JlrDiscover.discover(session, simulated, onProgress)
+        }
+
+    /** Walk one 0x22 DID range on a JLR module, keeping every raw answer. */
+    suspend fun jlrSweep(
+        onProgress: (String) -> Unit,
+        first: String = "0300",
+        last: String = "05FF",
+        target: String = "7E0",
+        extended: Boolean = false,
+    ): List<EnhancedReading> = mutex.withLock {
+        JlrSweep.sweep(session, simulated, onProgress, first, last, target, extended)
+    }
+
+    /** One read-only AdBlue/SCR + DPF health pass (X260 3.0d shape). */
+    suspend fun jlrAdblueHealth(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            JlrAdBlue.health(session, simulated, onProgress)
+        }
+
+    /** Timed rpm + raw DID log through warm-up (default 3 minutes). Read-only. */
+    suspend fun jlrAdblueDriveLog(
+        onProgress: (String) -> Unit,
+        seconds: Long = 180,
+    ): List<EnhancedReading> = mutex.withLock {
+        JlrAdBlue.driveLog(session, simulated, onProgress, seconds)
+    }
+
     /** Porsche module scan (Porsche-own UDS/KWP-over-CAN, VAG-MLB reuse, K-line floor). Serialised. */
     suspend fun porscheScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
         PorscheUds.scan(session, simulated, onProgress)

@@ -47,7 +47,7 @@ object JlrUds {
 
     // Standard UDS identification DIDs (research §4). Modules support different
     // subsets; read best-effort and keep whatever answers as text.
-    private val IDENT_DIDS = listOf(
+    internal val IDENT_DIDS = listOf(
         0xF190 to "VIN",
         0xF187 to "Part number",
         0xF18C to "ECU serial",
@@ -82,7 +82,11 @@ object JlrUds {
 
     // ------------------------------------------------------------- transport
 
-    private fun begin(session: Elm327Session) {
+    // The members from here down marked `internal` (not `private`) are shared
+    // with JlrDiscover / JlrSweep / JlrAdBlue — the same reuse the desktop's
+    // discover.py / sweep.py / adblue.py make of this scan.py's helpers.
+
+    internal fun begin(session: Elm327Session) {
         session.at("ATAT0")   // adaptive timing off: we manage the timeout
         session.at("ATST64")  // ~410ms silence window — plenty for a live module
         target = null
@@ -102,7 +106,7 @@ object JlrUds {
         target = reqId
     }
 
-    private fun restore(session: Elm327Session) {
+    internal fun restore(session: Elm327Session) {
         for (cmd in listOf("ATCRA", "ATSH7DF", "ATFCSM0", "ATAT1", "ATST32")) {
             try {
                 session.at(cmd)
@@ -114,7 +118,7 @@ object JlrUds {
         kwpSession.clear()
     }
 
-    private fun request(
+    internal fun request(
         session: Elm327Session,
         reqId: Int,
         service: Int,
@@ -155,7 +159,7 @@ object JlrUds {
     /** Open a UDS extended session (10 03) so a module that refused a read in
      *  the default session will answer. Read-safe: the session lapses on its
      *  own after a few seconds of silence. */
-    private fun openSession(session: Elm327Session, reqId: Int, trace: Trace): Boolean {
+    internal fun openSession(session: Elm327Session, reqId: Int, trace: Trace): Boolean {
         if (reqId in udsSession) return true
         try {
             request(session, reqId, 0x10, "03", 2000)
@@ -191,7 +195,7 @@ object JlrUds {
 
     /** Per-module debug trail — what we sent and what came back, so a failed
      *  field scan tells us exactly which rung of the ladder broke. */
-    private class Trace {
+    internal class Trace {
         val lines = mutableListOf<String>()
         fun add(line: String) {
             if (lines.size < 14) lines.add(line)
@@ -204,7 +208,7 @@ object JlrUds {
     /** True if anything diagnostic-shaped lives at this id pair. Some ECUs never
      *  answer a naked TesterPresent but do answer an ident read — try both. A
      *  reply of either kind (positive or negative) proves an ECU is there. */
-    private fun testerPresent(session: Elm327Session, reqId: Int, trace: Trace): Boolean {
+    internal fun testerPresent(session: Elm327Session, reqId: Int, trace: Trace): Boolean {
         for ((service, data) in listOf(0x3E to "00", 0x22 to "F190")) {
             try {
                 request(session, reqId, service, data, 3500)
@@ -263,7 +267,7 @@ object JlrUds {
         null
     }
 
-    private fun readIdent(
+    internal fun readIdent(
         session: Elm327Session,
         reqId: Int,
         trace: Trace,
@@ -307,7 +311,7 @@ object JlrUds {
         return out
     }
 
-    private fun printable(body: List<Byte>): String {
+    internal fun printable(body: List<Byte>): String {
         val text = body
             .map { it.toInt() and 0xFF }
             .filter { it in 32..126 }
@@ -327,7 +331,7 @@ object JlrUds {
      * if the module doesn't speak UDS DTCs at all, fall back to the KWP fault
      * read (18 02 FF FF) an older Ford-era module answers.
      */
-    private fun readDtcs(session: Elm327Session, reqId: Int, trace: Trace): List<UdsDtc> {
+    internal fun readDtcs(session: Elm327Session, reqId: Int, trace: Trace): List<UdsDtc> {
         try {
             return readDtcsUds(session, reqId, trace)
         } catch (e: UdsNegativeResponse) {
@@ -637,9 +641,15 @@ object JlrUds {
         return out
     }
 
-    /** One UDS RDBI read -> payload after `62 <did>`, or null. */
-    private fun readDid(session: Elm327Session, reqId: Int, did: Int): ByteArray? = try {
-        val payload = request(session, reqId, 0x22, "%04X".format(did), 2500)
+    /** One UDS RDBI read -> payload after `62 <did>`, or null. The timeout is a
+     *  parameter because the AdBlue tools read with sweep-length windows. */
+    internal fun readDid(
+        session: Elm327Session,
+        reqId: Int,
+        did: Int,
+        timeoutMs: Long = 2500,
+    ): ByteArray? = try {
+        val payload = request(session, reqId, 0x22, "%04X".format(did), timeoutMs)
         if (payload.size < 4 || (payload[0].toInt() and 0xFF) != 0x62) {
             null
         } else {
@@ -650,8 +660,13 @@ object JlrUds {
     }
 
     /** One generic Mode-01 read on the engine -> payload after `41 <pid>`, or null. */
-    private fun readPid(session: Elm327Session, reqId: Int, pid: Int): ByteArray? = try {
-        val payload = request(session, reqId, 0x01, "%02X".format(pid), 2500)
+    internal fun readPid(
+        session: Elm327Session,
+        reqId: Int,
+        pid: Int,
+        timeoutMs: Long = 2500,
+    ): ByteArray? = try {
+        val payload = request(session, reqId, 0x01, "%02X".format(pid), timeoutMs)
         if (payload.size < 3 || (payload[0].toInt() and 0xFF) != 0x41 ||
             (payload[1].toInt() and 0xFF) != pid
         ) {

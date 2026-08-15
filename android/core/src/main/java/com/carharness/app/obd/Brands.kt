@@ -224,6 +224,53 @@ object Brands {
                         "doesn't support are skipped.",
                     run = { ctrl, onStep -> ctrl.jlrEnhanced(onStep) },
                 ),
+                BrandAction(
+                    id = "discover",
+                    label = "Discover",
+                    cardTitle = "JLR ADDRESS DISCOVERY",
+                    emptyHint = "Nothing answered anywhere in the 0x700-0x7FF request-id " +
+                        "block. Make sure the ignition is ON — and remember MY17+ cars " +
+                        "do manufacturer diagnostics over DoIP, which no dongle speaks.",
+                    refreshHint = "Read-only sweep — presence probes and identification " +
+                        "reads only. Roughly 2-5 minutes over Bluetooth (each silent " +
+                        "address costs one short timeout); tap Discover to re-run.",
+                    run = { ctrl, onStep -> ctrl.jlrDiscover(onStep) },
+                ),
+                BrandAction(
+                    id = "sweep",
+                    label = "DID sweep",
+                    cardTitle = "JLR DID SWEEP",
+                    emptyHint = "No DID in the swept range answered with data. The module " +
+                        "is listening but implements none of these ids — try another " +
+                        "research §7 range (2100-21FF, 2200-22FF, F400-F4FF).",
+                    refreshHint = "One DID at a time over 0x22 — raw hex payloads, nothing " +
+                        "decoded. Roughly 0.6 s per id; tap DID sweep to re-run.",
+                    run = { ctrl, onStep -> ctrl.jlrSweep(onStep) },
+                ),
+                BrandAction(
+                    id = "adblue",
+                    label = "AdBlue health",
+                    cardTitle = "JLR ADBLUE / DPF HEALTH",
+                    emptyHint = "Nothing was read — make sure the ignition is ON. The " +
+                        "X260-specific aftertreatment values also need the DID capture " +
+                        "the sweep tool exists for; the fault read and the sourced " +
+                        "assessment stand on their own.",
+                    refreshHint = "One read-only pass — Mode-01 baseline, known-table " +
+                        "faults, known engine DIDs raw. SCR/DPF values stay capture " +
+                        "pending until the DIDs are mapped; nothing is invented.",
+                    run = { ctrl, onStep -> ctrl.jlrAdblueHealth(onStep) },
+                ),
+                BrandAction(
+                    id = "drivelog",
+                    label = "Drive log",
+                    cardTitle = "JLR ADBLUE DRIVE LOG",
+                    emptyHint = "No ticks were recorded — the log needs the dongle awake " +
+                        "and the ignition ON for the whole run.",
+                    refreshHint = "Three minutes of rpm plus raw DID payloads by default — " +
+                        "drive through warm-up while it runs. A regen needs ~20 min at " +
+                        "500 °C+, so a longer window is needed to span one.",
+                    run = { ctrl, onStep -> ctrl.jlrAdblueDriveLog(onStep) },
+                ),
             ),
             scan = { ctrl, onStep -> ctrl.jlrScan(onStep) },
             clear = { ctrl, addr -> ctrl.jlrClear(addr) },
