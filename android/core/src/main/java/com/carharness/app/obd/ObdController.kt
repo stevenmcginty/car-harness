@@ -282,8 +282,9 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
     suspend fun jlrAdblueDriveLog(
         onProgress: (String) -> Unit,
         seconds: Long = 180,
+        onSample: (JlrAdBlue.DriveSample) -> Unit = {},
     ): List<EnhancedReading> = mutex.withLock {
-        JlrAdBlue.driveLog(session, simulated, onProgress, seconds)
+        JlrAdBlue.driveLog(session, simulated, onProgress, seconds, onSample)
     }
 
     /** Porsche module scan (Porsche-own UDS/KWP-over-CAN, VAG-MLB reuse, K-line floor). Serialised. */

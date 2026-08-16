@@ -7,10 +7,12 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult as BleScanResult
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.FileProvider
 import com.carharness.app.harness.DesktopServer
 import com.carharness.app.harness.HarnessClient
 import com.carharness.app.obd.BleTransport
@@ -22,6 +24,7 @@ import com.carharness.app.obd.EnhancedReading
 import com.carharness.app.obd.Dtc
 import com.carharness.app.obd.DtcRecord
 import com.carharness.app.obd.Elm327Session
+import com.carharness.app.obd.JlrAdBlue
 import com.carharness.app.obd.LiveReading
 import com.carharness.app.obd.ObdController
 import com.carharness.app.obd.ObdTransport
@@ -40,6 +43,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.BufferedWriter
+import java.io.File
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 sealed class ConnState {
     data object Idle : ConnState()
@@ -316,6 +325,11 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
         extras = emptyList()
         extrasRead = false
         extrasBrand = ""
+        // The CSV files stay on disk; only the in-memory handle to the last
+        // one goes, with the card that offered its Share button.
+        endDriveLog()
+        driveLogFile = null
+        driveLogSavedTo = null
         resetMessage = ""
         resetProgress = ""
         resetLog = emptyList()
@@ -472,6 +486,114 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     var extrasBrand by mutableStateOf("")       // brand that produced the card
     var extrasRunningId by mutableStateOf<String?>(null) // BrandAction.id in flight
 
+    // ---- drive-log capture (JLR today) -------------------------------------
+    // Each tick streams to a CSV in the app's own external-files dir as it
+    // lands, so the farm-day dataset survives a crash, a dropped dongle or
+    // closing the app mid-run. No storage permission needed (app-private
+    // dir); sharing goes through the FileProvider declared in the manifest.
+    // Sim runs write too, with a sim- filename prefix and a # SIMULATED
+    // header line — the share path is exactly what must not turn out broken
+    // on the day, and the label keeps demo data unmistakable.
+    var driveLogFile by mutableStateOf<File?>(null)
+        private set
+    var driveLogSavedTo by mutableStateOf<String?>(null)
+        private set
+
+    /** Drive-log length picker, seconds. A regen needs ~20 min (1500 s+). */
+    var driveLogSeconds by mutableStateOf(180L)
+    private var driveLogWriter: BufferedWriter? = null
+    private var driveLogDids: List<Int>? = null
+    private var driveLogExtras: List<String>? = null
+
+    /** Reset the capture before a run: close any previous file, forget it. */
+    private fun startDriveLog() {
+        endDriveLog()
+        driveLogFile = null
+        driveLogSavedTo = null
+    }
+
+    /** Append one tick. Called on the IO coroutine the drive log runs on;
+     *  every line is flushed so a dead battery costs at most one tick. */
+    private fun appendDriveSample(s: JlrAdBlue.DriveSample) {
+        val ctrl = controller ?: return
+        try {
+            var writer = driveLogWriter
+            if (writer == null) {
+                val dir = context.getExternalFilesDir(null) ?: context.cacheDir
+                val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+                val name = (if (ctrl.simulated) "sim-" else "") + "jlr-drive-log-$stamp.csv"
+                val file = File(dir, name)
+                writer = file.outputStream().bufferedWriter()
+                if (ctrl.simulated) writer.write("# SIMULATED — no real car connected\n")
+                driveLogWriter = writer
+                driveLogFile = file
+                driveLogSavedTo = file.absolutePath
+            }
+            var dids = driveLogDids
+            if (dids == null) {
+                // Column order is fixed by the first tick's DID set (the log
+                // polls one fixed list, so every tick carries the same keys)
+                // plus whatever aftertreatment values that first tick answered
+                // — a value that only answers later is absent from the sheet
+                // but still on the progress lines.
+                dids = s.dids.keys.sorted()
+                driveLogDids = dids
+                driveLogExtras = s.extras.keys.sorted()
+                val header = buildString {
+                    append("t,engine_rpm,coolant_c,module_voltage")
+                    for (d in dids) append(",did_%04X".format(d))
+                    for (k in driveLogExtras.orEmpty()) append(",$k")
+                }
+                writer.write(header + "\n")
+            }
+            val cells = mutableListOf(
+                "%.3f".format(Locale.US, s.t),
+                s.rpm?.let { "%.0f".format(Locale.US, it) } ?: "",
+                s.coolant?.let { "%.1f".format(Locale.US, it) } ?: "",
+                s.voltage?.let { "%.2f".format(Locale.US, it) } ?: "",
+            )
+            for (d in dids) cells.add(s.dids[d] ?: "")
+            for (k in driveLogExtras.orEmpty()) {
+                val v = s.extras[k]
+                cells.add(if (v != null) "%.1f".format(Locale.US, v) else "")
+            }
+            writer.write(cells.joinToString(",") + "\n")
+            writer.flush()
+        } catch (_: IOException) {
+            // Disk trouble must never take the diagnostic itself down.
+        }
+    }
+
+    private fun endDriveLog() {
+        try {
+            driveLogWriter?.close()
+        } catch (_: IOException) {
+        }
+        driveLogWriter = null
+        driveLogDids = null
+        driveLogExtras = null
+    }
+
+    /** A share intent for the captured CSV, or null when there is nothing
+     *  (yet) to hand over. Caller wraps it in Intent.createChooser. */
+    fun shareDriveLogCsvIntent(): Intent? {
+        val file = driveLogFile ?: return null
+        if (!file.isFile) return null
+        return try {
+            val uri = FileProvider.getUriForFile(
+                context, context.packageName + ".fileprovider", file,
+            )
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        } catch (_: IllegalArgumentException) {
+            // No provider path covers the file — better no share than a crash.
+            null
+        }
+    }
+
     fun chooseModuleBrand(brand: String) {
         // Picking by hand always beats the VIN guess — and stops the picker
         // claiming "FROM VIN" over a choice the user made themselves.
@@ -559,9 +681,23 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
         modError = ""
         scope.launch(Dispatchers.IO) {
             try {
-                val readings = action.run(ctrl) { step ->
+                val onStep: (String) -> Unit = { step ->
                     scope.launch(Dispatchers.Main) { modProgress = step }
                 }
+                // The JLR drive log is the one action that also CAPTURES: each
+                // tick streams to the on-disk CSV as it lands, so the run is a
+                // dataset the moment it happens (see the drive-log block above).
+                val readings =
+                    if (brand == "jlr" && action.id == "drivelog") {
+                        startDriveLog()
+                        try {
+                            ctrl.jlrAdblueDriveLog(onStep, driveLogSeconds, ::appendDriveSample)
+                        } finally {
+                            endDriveLog()
+                        }
+                    } else {
+                        action.run(ctrl, onStep)
+                    }
                 withContext(Dispatchers.Main) {
                     extras = readings
                     extrasRead = true

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="updates" path="updates/" />
+    <!-- Drive-log CSVs (getExternalFilesDir root, cacheDir fallback). Without
+         an entry here FileProvider throws rather than sharing. -->
+    <external-files-path name="logs" path="." />
+    <cache-path name="logs-fallback" path="." />
 </paths>

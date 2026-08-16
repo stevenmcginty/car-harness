@@ -49,6 +49,49 @@ object JlrAdBlue {
 
     private const val OJG_PROVENANCE = "OJG petrol capture, unverified on diesel"
 
+    /** OJG engine set + the external research candidates (042C soot first) —
+     *  the drive log's default poll list. */
+    private fun defaultDriveDids(): List<Int> =
+        OJG_ENGINE_DIDS.map { it.first } + JlrPids.EXTERNAL_ENGINE_DIDS.map { it.first }
+
+    // ------------------------------------------------ aftertreatment Mode-01 --
+    // Legislated SAE J1979DA decoders (public standard formulas — not JLR
+    // inventions). Support on this ECU is unknown until asked: an unsupported
+    // PID answers silence and contributes nothing to the tick.
+    private fun s16(hi: Int, lo: Int): Int {
+        val v = (hi shl 8) or lo
+        return if (v >= 0x8000) v - 0x10000 else v
+    }
+
+    private fun temp10(v: Int?): Double? = v?.let { it / 10.0 - 40 }
+
+    private fun readAftertreatment(session: Elm327Session): Map<String, Double> {
+        val out = LinkedHashMap<String, Double>()
+        fun u16(b: ByteArray, i: Int): Int? =
+            if (b.size > i + 1) ((b[i].toInt() and 0xFF) shl 8) or (b[i + 1].toInt() and 0xFF) else null
+        for ((pid, _) in JlrPids.AFTERTREATMENT_PIDS) {
+            val b = JlrUds.readPid(session, ENGINE, pid, 800) ?: continue
+            when (pid) {
+                0x7A -> if (b.size >= 2) out["dpf_delta_pressure_kpa"] =
+                    s16(b[0].toInt() and 0xFF, b[1].toInt() and 0xFF) / 100.0
+                0x7C -> {
+                    temp10(u16(b, 0))?.let { out["dpf_temp_inlet_c"] = it }
+                    temp10(u16(b, 2))?.let { out["dpf_temp_outlet_c"] = it }
+                }
+                0x83 -> {
+                    u16(b, 0)?.let { out["nox_b1s1_ppm"] = it.toDouble() }
+                    u16(b, 2)?.let { out["nox_b1s2_ppm"] = it.toDouble() }
+                }
+                0x85 -> if (b.size > 5) out["reagent_tank_level_pct"] =
+                    (b[5].toInt() and 0xFF) / 2.55
+                0x8B -> if (b.size > 2) out["dpf_regen_trigger_pct"] =
+                    (b[2].toInt() and 0xFF) / 2.55
+                0x78 -> temp10(u16(b, 0))?.let { out["egt_b1s1_c"] = it }
+            }
+        }
+        return out
+    }
+
     // The aftertreatment candidate set: research §7 seeds RANGES (0300-05FF,
     // 2100-21FF, 2200-22FF, F4xx mirrors on the PCM) but no specific ids —
     // those arrive only when the DID sweep has captured them on the real car.
@@ -373,13 +416,16 @@ object JlrAdBlue {
     // -------------------------------------------------------------- drive log
 
     /** One tick: timestamp, rpm, each DID's raw payload, plus the every-fifth
-     *  coolant/voltage baseline. A null DID payload is a recorded gap. */
-    private data class Sample(
+     *  coolant/voltage baseline. A null DID payload is a recorded gap. Public
+     *  so the app layer can stream each tick to its on-disk CSV as it lands —
+     *  the farm-day dataset must survive a crash or a dropped dongle. */
+    data class DriveSample(
         val t: Double,
         val rpm: Double?,
         val dids: Map<Int, String?>,
         val coolant: Double?,
         val voltage: Double?,
+        val extras: Map<String, Double> = emptyMap(),
     )
 
     /**
@@ -389,42 +435,53 @@ object JlrAdBlue {
      * to cover one). Every tick reads rpm plus each DID's RAW payload with a
      * timestamp; every fifth tick adds coolant and module voltage. Payloads are
      * raw on purpose: a signal is identified by how it moves against rpm, then
-     * decoded against the car — never guessed here.
+     * decoded against the car — never guessed here. Each tick is handed to
+     * [onSample] as it lands, so a caller can persist it immediately.
      */
     fun driveLog(
         session: Elm327Session,
         simulated: Boolean,
         onProgress: (String) -> Unit = {},
         seconds: Long = 180,
+        onSample: (DriveSample) -> Unit = {},
     ): List<EnhancedReading> {
         if (simulated) {
             // Fake warm-up: rpm with raw DID payloads beside it, coolant +
             // voltage on the every-fifth-tick baseline, a non-answer recorded
             // as a gap.
             onProgress("SIMULATED — building the demo drive log…")
-            val didList = OJG_ENGINE_DIDS.map { it.first }
+            val didList = defaultDriveDids()
             val samples = listOf(
-                Sample(
+                DriveSample(
                     0.0, 810.0,
-                    mapOf(0x033E to "0064", 0x03E6 to "34", 0x03F2 to "44", 0x03F3 to "3C", 0x0520 to "1E"),
+                    mapOf(0x033E to "0064", 0x03E6 to "34", 0x03F2 to "44", 0x03F3 to "3C",
+                          0x0520 to "1E", 0x042C to "1F40"),
                     22.0, 12.2,
+                    mapOf("dpf_delta_pressure_kpa" to 0.15, "nox_b1s1_ppm" to 85.0,
+                          "reagent_tank_level_pct" to 62.4, "egt_b1s1_c" to 118.0),
                 ),
-                Sample(
+                DriveSample(
                     4.2, 1750.0,
-                    mapOf(0x033E to "00C4", 0x03E6 to "35", 0x03F2 to "44", 0x03F3 to "42", 0x0520 to "28"),
+                    mapOf(0x033E to "00C4", 0x03E6 to "35", 0x03F2 to "44", 0x03F3 to "42",
+                          0x0520 to "28", 0x042C to "2AF8"),
                     null, null,
                 ),
-                Sample(
+                DriveSample(
                     8.1, 1980.0,
-                    mapOf(0x033E to "00E1", 0x03E6 to "35", 0x03F2 to "45", 0x03F3 to "4B", 0x0520 to "2C"),
+                    mapOf(0x033E to "00E1", 0x03E6 to "35", 0x03F2 to "45", 0x03F3 to "4B",
+                          0x0520 to "2C", 0x042C to "30D4"),
                     null, null,
                 ),
-                Sample(
+                DriveSample(
                     12.4, 690.0,
-                    mapOf(0x033E to "005A", 0x03E6 to null, 0x03F2 to "45", 0x03F3 to "50", 0x0520 to "30"),
+                    mapOf(0x033E to "005A", 0x03E6 to null, 0x03F2 to "45", 0x03F3 to "50",
+                          0x0520 to "30", 0x042C to "2134"),
                     null, null,
                 ),
             )
+            // Demo mode fires the callback too — the CSV writer and the share
+            // sheet are exactly what must not turn out broken on the day.
+            samples.forEach(onSample)
             val summary =
                 "SIMULATED — no real car connected. Fake warm-up shape: rpm with raw DID " +
                     "payloads beside it, coolant + voltage on the every-fifth-tick " +
@@ -432,7 +489,7 @@ object JlrAdBlue {
             return logRows(summary, didList, samples)
         }
 
-        val didList = OJG_ENGINE_DIDS.map { it.first }
+        val didList = defaultDriveDids()
         session.ensureProtocol()
         if (!JlrUds.protocolSupported(session)) {
             throw ObdException(
@@ -442,7 +499,7 @@ object JlrAdBlue {
             )
         }
 
-        val samples = mutableListOf<Sample>()
+        val samples = mutableListOf<DriveSample>()
         val started = System.nanoTime()
         var dead = 0
         var tick = 0
@@ -462,6 +519,7 @@ object JlrAdBlue {
                 }
                 var coolant: Double? = null
                 var voltage: Double? = null
+                var extras: Map<String, Double> = emptyMap()
                 if (tick % 5 == 0) {
                     val cBody = JlrUds.readPid(session, ENGINE, 0x05, 800)
                     coolant = decodePid(0x05, cBody)
@@ -469,9 +527,13 @@ object JlrAdBlue {
                     val vBody = JlrUds.readPid(session, ENGINE, 0x42, 800)
                     voltage = decodePid(0x42, vBody)
                     alive = alive || vBody != null
+                    // Legislated aftertreatment PIDs ride the same baseline.
+                    extras = readAftertreatment(session)
                 }
                 val t = elapsedS()
-                samples.add(Sample(t, rpm, dids, coolant, voltage))
+                val sample = DriveSample(t, rpm, dids, coolant, voltage, extras)
+                samples.add(sample)
+                onSample(sample)
                 val line = StringBuilder("t=%.1fs rpm=%s".format(t, rpm?.let { "%.0f".format(it) } ?: "no answer"))
                 for ((did, payload) in dids) {
                     line.append(" · %04X=%s".format(did, payload ?: "—"))
@@ -520,7 +582,7 @@ object JlrAdBlue {
     private fun logRows(
         summary: String,
         didList: List<Int>,
-        samples: List<Sample>,
+        samples: List<DriveSample>,
     ): List<EnhancedReading> {
         val out = mutableListOf(EnhancedReading("Summary", summary, ""))
         for (did in didList) {

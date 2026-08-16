@@ -31,10 +31,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.content.Intent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -113,6 +115,26 @@ fun ModulesScreen(state: AppState) {
                         )
                     }
                 }
+                // Drive-log length (JLR): a warm-up pass and a regen are an
+                // order of magnitude apart, so the picker sits right under the
+                // buttons it configures.
+                if (brand == "jlr") {
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Drive log length", color = TextFaint, fontFamily = Barlow,
+                            fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        listOf(60L, 180L, 600L, 1500L).forEach { secs ->
+                            DurationChip(
+                                label = if (secs >= 60) "${secs / 60} min" else "$secs s",
+                                selected = state.driveLogSeconds == secs,
+                                onClick = { state.driveLogSeconds = secs },
+                            )
+                        }
+                    }
+                }
                 if ((state.modScanning || state.extrasBusy) && state.modProgress.isNotEmpty()) {
                     Spacer(Modifier.height(14.dp))
                     ScanTicker(state.modProgress)
@@ -170,6 +192,26 @@ fun ModulesScreen(state: AppState) {
                             extrasAction.refreshHint,
                             color = TextFaint, fontFamily = Barlow, fontSize = 11.sp,
                         )
+                    }
+                    // The drive log's capture: where the CSV landed + a share
+                    // hand-off. The file survives the card (and a crash) —
+                    // this is only the handle onto it.
+                    if (state.extrasSource == "drivelog" && state.driveLogSavedTo != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Saved to ${state.driveLogSavedTo}",
+                            color = TextFaint, fontFamily = Mono, fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        val ctx = LocalContext.current
+                        GhostButton("Share CSV", onClick = {
+                            state.shareDriveLogCsvIntent()?.let { intent ->
+                                ctx.startActivity(
+                                    Intent.createChooser(intent, "Share drive log"),
+                                )
+                            }
+                        })
                     }
                 }
             }
@@ -300,6 +342,25 @@ fun ModulesScreen(state: AppState) {
 // ---------------------------------------------------------------- components
 
 private fun Int.hex(): String = if (this > 0xFF) "0x%03X".format(this) else "0x%02X".format(this)
+
+/** One selectable length for the drive log — same pill language as the
+ *  absent-module chips, highlighted when it is the picked one. */
+@Composable
+private fun DurationChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(if (selected) Accent else PanelHi)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 5.dp)
+    ) {
+        Text(
+            label,
+            color = if (selected) PanelHi else TextFaint,
+            fontFamily = Mono, fontSize = 11.sp,
+        )
+    }
+}
 
 @Composable
 private fun ModuleCard(

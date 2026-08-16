@@ -97,4 +97,36 @@ object JlrPids {
             "verify the scaling against the car before trusting absolute figures.",
         "",
     )
+
+    /**
+     * Externally-researched candidate DIDs for the 306DT diesel — the seed
+     * data behind backend/profiles/jlr/data/external_pids.json (research:
+     * docs/private/jlr-306dt-external-pid-research.md). Raw payloads only:
+     * NOTHING here is decoded, because none of it is verified on the 3.0 V6.
+     * The drive log polls these alongside the OJG set so the first run on the
+     * car already answers "does 042C speak?".
+     */
+    val EXTERNAL_ENGINE_DIDS: List<Triple<Int, String, String>> = listOf(
+        Triple(
+            0x042C,
+            "DPF soot concentration",
+            "XF 2.2d forum capture + Car Scanner's JLR PID — unverified on 306DT",
+        ),
+    )
+
+    /**
+     * The legislated Mode-01 aftertreatment set (SAE J1979DA formulas — a
+     * public standard, not JLR-invented; per-car support unknown until
+     * asked). The drive log reads these on its every-fifth-tick baseline and
+     * records whichever answer, decoded; an unsupported PID answers silence
+     * and contributes nothing.
+     */
+    val AFTERTREATMENT_PIDS: List<Pair<Int, String>> = listOf(
+        0x7A to "dpf_delta_pressure_kpa",
+        0x7C to "dpf_temp_inlet_c/dpf_temp_outlet_c",
+        0x83 to "nox_b1s1_ppm/nox_b1s2_ppm",
+        0x85 to "reagent_tank_level_pct",
+        0x8B to "dpf_regen_trigger_pct",
+        0x78 to "egt_b1s1_c",
+    )
 }
