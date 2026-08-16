@@ -8,13 +8,21 @@ light up its routes:
     scan.py      scan(adapter, mode), clear(adapter, mode, address)
                  -- profiles whose profile.json transport is "enet-doip" use
                     the native-cable forms scan(mode) / clear(mode, address)
-                    and may expose discover()
+                 -- may also expose discover(): discover() on a native-cable
+                    profile (it finds the car itself), discover(adapter, mode)
+                    on a dongle profile (it sweeps diagnostic addresses)
     pids.py      live(adapter, mode)      brand-specific live values
                  -- "enet-doip" profiles use live(mode), like scan/clear
                  -- ALSO feeds the Live Data dashboard automatically; see the
                     contract in backend/obd/livefeed.py. A brand with no
                     pids.py still gets the full standard OBD-II set.
     snapshot.py  snapshot(adapter, mode)  passive broadcast capture
+    software.py  versions(adapter, mode)  the flashed software / calibration
+                 part numbers each module reports for itself -- the read that
+                 says whether a manufacturer update is even relevant. Read-only
+                 by construction; the harness never writes a calibration.
+    gearbox.py   analyze(adapter, mode)   TCM-focused diagnosis (ident +
+                 faults + live + clutch map). Read-only.
     resets.py    list_resets(), perform(adapter, mode, reset_id, confirm)
     service_history.py
                  catalogue(), build_argument(...)  the car's own service book
@@ -22,6 +30,10 @@ light up its routes:
     ediabas.py   modules(), run_job(...)  BMW/MINI only: BMW's own SGBD job
                  library driven over ENET via core/ediabas.py (EdiabasTest).
                  Write jobs are confirm-gated inside the profile.
+    cbs.py       catalogue(), read(...), reset(...)  service-interval counters
+                 read and reset natively; reset() is confirm-gated
+    battery.py   status(...), register(...)  battery condition and registering
+                 a replacement; register() is confirm-gated
 
 profile.json may also carry a "panel" object (title/hint/actions) that the
 desktop front-end renders verbatim -- the UI for a new brand is data, not code.
@@ -85,10 +97,19 @@ def features(brand: str) -> dict:
         # advertises one once it has something worth putting a name to.
         "report": pids_mod is not None and hasattr(pids_mod, "report"),
         "snapshot": brand_module(brand, "snapshot") is not None,
+        # Flashed software / calibration part numbers, read from each module.
+        "software": brand_module(brand, "software") is not None,
+        # Gearbox-focused read (ident + faults + live + diagnosis).
+        "gearbox": brand_module(brand, "gearbox") is not None
+        and hasattr(brand_module(brand, "gearbox"), "analyze"),
         "resets": brand_module(brand, "resets") is not None,
         # Building the car's own service-history entry (BMW/MINI iDrive).
         "serviceHistory": brand_module(brand, "service_history") is not None,
         # BMW's own EDIABAS job library driven from the harness (BMW/MINI).
         "ediabas": brand_module(brand, "ediabas") is not None,
+        # Service-interval counters read and reset natively (BMW/MINI CBS).
+        "cbs": brand_module(brand, "cbs") is not None,
+        # Battery condition + registering a replacement (BMW/MINI).
+        "battery": brand_module(brand, "battery") is not None,
         "needsAdapter": needs_adapter(brand),
     }

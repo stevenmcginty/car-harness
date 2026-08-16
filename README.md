@@ -23,8 +23,8 @@ A modular car-diagnostics desktop app + Android companion app.
   `docs/private/service-resets-research.md` for the provenance.
 
 It is built to grow: manufacturer **profiles** (BMW, Mazda, Peugeot/PSA,
-VW/Audi, Mercedes, Fiat/Alfa and Jaguar/Land Rover today; the next brand is a
-folder drop-in) and installable/removable **job
+VW/Audi, Mercedes, Fiat/Alfa, Jaguar/Land Rover and Vauxhall/Opel today; the
+next brand is a folder drop-in) and installable/removable **job
 modules** are both discovered from the filesystem. A profile folder's
 capability files become its API routes and its desktop panel automatically --
 the manufacturer dropdown at the top of the desktop app drives everything.
@@ -177,13 +177,27 @@ Base URL: `http://127.0.0.1:8765`
 | GET | `/api/live/catalog?adapter=<id>&brand=<id>` | **Every value this car will give** -- standard OBD-II (asked of the car itself) plus the manufacturer overlay |
 | GET | `/api/live/read?adapter=<id>&keys=obd.rpm,obd.coolant` | Read the selected channels once; this is what the dashboard polls |
 | GET | `/api/obd/freeze?adapter=<id>` | Freeze frame -- the live data as it was when a fault stored (mode 02) |
+| POST | `/api/raw/did` | Read arbitrary mode-22 DIDs from any module (11-bit or 29-bit addressing) -- the read-only escape hatch beyond the curated packs |
+| POST | `/api/raw/elm` | Run a raw ELM327 command sequence, always restored afterwards -- confirm-gated |
 | GET | `/api/{brand}/scan` | Walk the brand's modules, read each one's fault memory (generic: any profile folder) |
 | POST | `/api/{brand}/clear` | Clear one module (or all) -- confirm-gated |
-| GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check, VW/Audi extras) |
+| GET | `/api/{brand}/live` | Brand-specific live values (Mazda extras, Peugeot health check, VW/Audi extras, Vauxhall gearbox) |
+| GET | `/api/{brand}/software` | The software / calibration part numbers each module reports for itself, with a copy-out worksheet (Vauxhall/Opel) -- read-only; the harness never writes a calibration |
 | GET | `/api/{brand}/snapshot` | Passive broadcast-CAN capture (Mazda) |
-| GET | `/api/{brand}/discover` | Find the car on a native cable (BMW ENET) |
+| GET | `/api/{brand}/discover` | Find the car on a native cable (BMW ENET), or sweep its diagnostic addresses over a dongle (Vauxhall) |
 | GET | `/api/{brand}/resets` | The brand's service-reset catalogue |
 | POST | `/api/{brand}/reset` | Run one service reset -- confirm-gated |
+| GET | `/api/{brand}/cbs` | Service items that can be reset, and which module owns each (BMW/MINI; no car contact) |
+| GET | `/api/{brand}/cbs/read` | Read the car's service-interval counters -- life left, distance, service count |
+| POST | `/api/{brand}/cbs/reset` | Reset one service item natively -- confirm-gated |
+| GET | `/api/{brand}/battery` | Battery condition from the car's own power management: state of health, charge, capacity |
+| POST | `/api/{brand}/battery/register` | Register a replacement battery -- confirm-gated |
+| GET | `/api/{brand}/ediabas/modules` | The manufacturer job library's catalogue (BMW/MINI SGBD jobs) |
+| POST | `/api/{brand}/ediabas/run` | Run one allowlisted manufacturer job -- write jobs confirm-gated |
+| GET | `/api/{brand}/ediabas/installed` | Ask the gateway which control units the car actually has |
+| GET | `/api/{brand}/service-history` | The car's own service-book catalogue (BMW/MINI iDrive) |
+| POST | `/api/{brand}/service-history/build` | Build one history entry (text only, no car contact) |
+| POST | `/api/{brand}/service-history/write` | Write the entry to the car -- confirm-gated |
 | POST | `/api/pair/start` | (localhost only) new 6-digit phone-pairing code |
 | POST | `/api/pair/claim` | Phone exchanges the code for a bearer token |
 | GET | `/api/pair/devices` | Paired phones |
@@ -270,6 +284,33 @@ codes mean different things per make, so the app refuses to guess at them
 offline and offers the in-app AI lookup instead. Part of the generic P0 block
 comes from [mytrile/obd-trouble-codes](https://github.com/mytrile/obd-trouble-codes)
 (MIT license).
+
+The Porsche Taycan live values (`backend/profiles/porsche/taycan.py`) are a
+curated subset of the [OBDb Porsche-Taycan](https://github.com/OBDb/Porsche-Taycan)
+signal database (CC-BY-SA-4.0), bundled unmodified as
+`backend/profiles/porsche/taycan_obdb_signalset.json` — see the NOTICE beside it.
+That data file (and any adaptation of it) stays under CC-BY-SA-4.0; the licence
+does not extend to the car-harness code that reads it.
+
+The Mercedes E-Class mild-hybrid live values
+(`backend/profiles/mercedes/eclass.py`) are a curated, **decode-verified** subset
+of the [OBDb Mercedes-Benz-E-Class](https://github.com/OBDb/Mercedes-Benz-E-Class)
+on-car captures (CC-BY-SA-4.0) — wheel speeds, steering, accelerations, brake
+pressures (0x7E2) and HV battery SoC / converter / aux voltage (0x7E5). The
+bundled `obdb_eclass_signalset.json` cites the upstream `tests/test_cases/`
+vectors each decode was checked against; see the NOTICE beside it. As with the
+Taycan set, that data file stays CC-BY-SA-4.0 while the harness code that reads
+it does not.
+
+The Vauxhall/Opel transmission live values
+(`backend/profiles/vauxhall/pids.py`) take three GM-native TCM decodes —
+fluid temperature `22 04FE`, current gear `22 5503`, commanded gear
+`22 5504` — from the brand-level [OBDb VauxhallOpel](https://github.com/OBDb/VauxhallOpel)
+signalset (CC-BY-SA-4.0); see the NOTICE beside them. Unlike the Taycan and
+E-Class sets these have **no upstream on-car verification vectors**, so they
+are labelled community-sourced and unverified until a real Astra K confirms
+them. Same licence split: the derived data stays CC-BY-SA-4.0, the code that
+reads it does not.
 
 > The `frontend/` folder is owned by a separate front-end app. The backend just
 > serves whatever static files land there; if it is empty the API still works.

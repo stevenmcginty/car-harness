@@ -35,28 +35,61 @@ _DEFAULT_ECU_DIR = Path(r"C:\EDIABAS\ECU")
 # fzd=FZD_F15, acsm=ACSM4I, kombi=KOMB25. egs gave NO RESPONSE because that car
 # is a MANUAL (owner-confirmed -- no gearbox ECU fitted); eps mapping is still
 # unconfirmed (UKL EPS variant unknown) -- both stay flagged verify.
+#
+# "addr" is the module's diagnostic address, the same number
+# profiles/bmw/scan.py walks -- it is what lets the gateway's installed-ECU
+# list (STATUS_VCM_GET_ECU_LIST_ALL) be matched back to a job menu.
 MODULES = {
-    "zgw":    {"code": "ZGW",     "name": "Central gateway",                 "sgbds": ["g_zgw.grp"]},
-    "dme":    {"code": "DME/DDE", "name": "Engine",                          "sgbds": ["g_motor.grp"]},
-    "egs":    {"code": "EGS",     "name": "Automatic transmission",          "sgbds": ["g_egs.grp"], "verify": True},
-    "acsm":   {"code": "ACSM",    "name": "Airbag / crash safety",           "sgbds": ["g_airbag.grp"]},
-    "dsc":    {"code": "DSC",     "name": "ABS / stability control",         "sgbds": ["g_dsc.grp"]},
-    "eps":    {"code": "EPS",     "name": "Power steering",                  "sgbds": ["g_eps.grp"], "verify": True},
-    "fem_bdc": {"code": "FEM/BDC", "name": "Body electronics",               "sgbds": ["FEM_20.prg", "BDC.prg", "g_fxx.grp"]},
-    "rem":    {"code": "REM",     "name": "Rear body electronics",           "sgbds": ["g_remabf.grp"], "verify": True},
-    "kombi":  {"code": "KOMBI",   "name": "Instrument cluster",              "sgbds": ["g_kombi.grp"]},
-    "hu":     {"code": "HU",      "name": "Head unit (nav / radio)",         "sgbds": ["g_mmi.grp"]},
-    "ihka":   {"code": "IHKA",    "name": "Climate control",                 "sgbds": ["g_klima.grp", "g_klima2.grp", "G_KLIMA3.grp"]},
-    "kafas":  {"code": "KAFAS",   "name": "Camera / driver assistance",      "sgbds": ["g_kafas.grp"], "verify": True},
-    "gws":    {"code": "GWS",     "name": "Gear selector",                   "sgbds": ["g_gws.grp"], "verify": True},
-    "fzd":    {"code": "FZD",     "name": "Roof function centre",            "sgbds": ["g_fzd.grp"]},
-    "zbe":    {"code": "ZBE",     "name": "iDrive controller",               "sgbds": ["g_zbe.grp", "g_zbef.grp"], "verify": True},
-    "hud":    {"code": "HUD",     "name": "Head-up display",                 "sgbds": ["g_hud.grp"], "verify": True},
-    "ahm":    {"code": "AHM",     "name": "Trailer module",                  "sgbds": ["g_ahm.grp"], "verify": True},
-    "tcb":    {"code": "TCB",     "name": "Telematics",                      "sgbds": ["g_tel.grp"], "verify": True},
-    "vdm":    {"code": "VDM",     "name": "Adaptive suspension",             "sgbds": ["g_vdc.grp"], "verify": True},
-    "pma":    {"code": "PMA",     "name": "Parking assistant",               "sgbds": ["g_pma.grp", "g_pdc.grp"], "verify": True},
+    "zgw":    {"code": "ZGW",     "name": "Central gateway",                 "addr": 0x10, "sgbds": ["g_zgw.grp"]},
+    "dme":    {"code": "DME/DDE", "name": "Engine",                          "addr": 0x12, "sgbds": ["g_motor.grp"]},
+    "egs":    {"code": "EGS",     "name": "Automatic transmission",          "addr": 0x18, "sgbds": ["g_egs.grp"], "verify": True},
+    "acsm":   {"code": "ACSM",    "name": "Airbag / crash safety",           "addr": 0x01, "sgbds": ["g_airbag.grp"]},
+    "dsc":    {"code": "DSC",     "name": "ABS / stability control",         "addr": 0x29, "sgbds": ["g_dsc.grp"]},
+    "eps":    {"code": "EPS",     "name": "Power steering",                  "addr": 0x30, "sgbds": ["g_eps.grp"], "verify": True},
+    "fem_bdc": {"code": "FEM/BDC", "name": "Body electronics",               "addr": 0x40, "sgbds": ["FEM_20.prg", "BDC.prg", "g_fxx.grp"]},
+    "rem":    {"code": "REM",     "name": "Rear body electronics",           "addr": 0x72, "sgbds": ["g_remabf.grp"], "verify": True},
+    "kombi":  {"code": "KOMBI",   "name": "Instrument cluster",              "addr": 0x60, "sgbds": ["g_kombi.grp"]},
+    "hu":     {"code": "HU",      "name": "Head unit (nav / radio)",         "addr": 0x63, "sgbds": ["g_mmi.grp"]},
+    "ihka":   {"code": "IHKA",    "name": "Climate control",                 "addr": 0x78, "sgbds": ["g_klima.grp", "g_klima2.grp", "G_KLIMA3.grp"]},
+    "kafas":  {"code": "KAFAS",   "name": "Camera / driver assistance",      "addr": 0x5D, "sgbds": ["g_kafas.grp"], "verify": True},
+    "gws":    {"code": "GWS",     "name": "Gear selector",                   "addr": 0x5E, "sgbds": ["g_gws.grp"], "verify": True},
+    "fzd":    {"code": "FZD",     "name": "Roof function centre",            "addr": 0x56, "sgbds": ["g_fzd.grp"]},
+    "zbe":    {"code": "ZBE",     "name": "iDrive controller",               "addr": 0x67, "sgbds": ["g_zbe.grp", "g_zbef.grp"], "verify": True},
+    "hud":    {"code": "HUD",     "name": "Head-up display",                 "addr": 0x3D, "sgbds": ["g_hud.grp"], "verify": True},
+    "ahm":    {"code": "AHM",     "name": "Trailer module",                  "addr": 0x71, "sgbds": ["g_ahm.grp"], "verify": True},
+    "tcb":    {"code": "TCB",     "name": "Telematics",                      "addr": 0x36, "sgbds": ["g_tel.grp"], "verify": True},
+    "vdm":    {"code": "VDM",     "name": "Adaptive suspension",             "addr": 0x21, "sgbds": ["g_vdc.grp"], "verify": True},
+    "pma":    {"code": "PMA",     "name": "Parking assistant",               "addr": 0x64, "sgbds": ["g_pma.grp", "g_pdc.grp"], "verify": True},
 }
+
+
+def module_for_address(address) -> Optional[str]:
+    """Module key for a diagnostic address (int, "0x63", "63" or "99" decimal).
+
+    The gateway reports addresses as strings and BMW's own tooling is
+    inconsistent about the base, so both readings are tried -- hex first,
+    because that is how every BMW document writes them.
+    """
+    if address is None:
+        return None
+    candidates: list[int] = []
+    if isinstance(address, int):
+        candidates = [address]
+    else:
+        text = str(address).strip()
+        if not text:
+            return None
+        try:
+            candidates.append(int(text, 16))
+        except ValueError:
+            pass
+        if text.isdigit():
+            candidates.append(int(text, 10))
+    for value in candidates:
+        for key, meta in MODULES.items():
+            if meta.get("addr") == value:
+                return key
+    return None
 
 
 class EdiabasError(Exception):
@@ -107,22 +140,38 @@ def sgbd_path(filename: str) -> Path:
 
 _RESULT_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_]{1,63})\s*[=:]\s+(.*\S)\s*$")
 _ERROR_RE = re.compile(r"Error occured:\s*(0x[0-9A-Fa-f]+)\s*(.*)")
+_DATASET_RE = re.compile(r"^DATASET:\s*(\d+)", re.IGNORECASE)
 
 
 def parse_output(text: str) -> dict:
-    """Turn EdiabasTest stdout into {job, results, error}.
+    """Turn EdiabasTest stdout into {job, results, sets, error}.
 
     Result lines are Tool32-style `NAME = value` (also tolerates `NAME: value`).
     Anything unrecognised stays in `raw` -- the caller always gets the full
     text, so a parser miss can never hide what the car actually said.
+
+    EDIABAS answers a job with one result SET per row -- one per fault in a
+    fault read, one per ECU in the gateway's installed-ECU list -- and
+    EdiabasTest prints each behind a `DATASET: n` line. Those go in `sets`,
+    in order. `results` stays a flat name->value map (later sets win) because
+    single-set jobs are the common case and every existing caller reads it;
+    anything that can return a list MUST read `sets` or it sees only the last
+    row. Set 0 is EDIABAS's job-wide set (JOB_STATUS and friends).
     """
     job, results, error = None, {}, None
+    sets: list[dict] = []
+    current: Optional[dict] = None
     for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("API Version") or line.startswith("Usage:"):
             continue
         if line.startswith("JOB:"):
             job = line[4:].strip()
+            continue
+        m = _DATASET_RE.match(line)
+        if m:
+            current = {"set": int(m.group(1)), "results": {}}
+            sets.append(current)
             continue
         m = _ERROR_RE.search(line)
         if m:
@@ -133,7 +182,9 @@ def parse_output(text: str) -> dict:
         m = _RESULT_RE.match(line)
         if m:
             results[m.group(1)] = m.group(2)
-    return {"job": job, "results": results, "error": error}
+            if current is not None:
+                current["results"][m.group(1)] = m.group(2)
+    return {"job": job, "results": results, "sets": sets, "error": error}
 
 
 def run_job(
@@ -182,6 +233,7 @@ def run_job(
         "job": parsed["job"] or job,
         "sgbd": path.name,
         "results": parsed["results"],
+        "sets": parsed["sets"],
         "error": parsed["error"] or ({"code": f"exit {proc.returncode}", "detail": ""} if not ok else None),
         "raw": raw.strip(),
         "cmd": " ".join(cmd),

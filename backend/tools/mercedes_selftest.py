@@ -17,7 +17,8 @@ profile honest and correct:
   * the engine 01 00 fallback + generic Mode 03 codes, and the honest
     "nothing answered Mercedes diag -> DoIP-era / pre-2004" note,
   * UDS DTC decode + clear 14 FFFFFF,
-  * the one verified live extra (722.9/9G ATF temp) + a generic Mode-01 read,
+  * the E-Class hybrid live tier (0x7E5/0x7E2 DID set decoded against real
+    OBDb vectors) + the verified ATF extra + a generic Mode-01 read,
   * the reset catalogue (ASSYST procedures + SBC safety warning),
   * the generic FastAPI brand routes actually answer for Mercedes.
 
@@ -168,6 +169,54 @@ class FakePidCar:
             return (resp, None)                           # other PIDs unsupported
         if tx == TRANS and req[:2] == bytes([0x21, 0x30]):
             return (resp, bytes([0x61, 0x30, 0x70]))      # KWP 21 30 ATF temp
+        return (resp, None)
+
+
+class FakeMercedesEclassCar:
+    """An E-Class mild-hybrid (W/S 213): answers the OBDb-verified UDS 0x22 DID
+    set over the standard +8 pairing -- hybrid DIDs on 0x7E5 (resp 0x7ED),
+    chassis group on 0x7E2 (resp 0x7EA). Replays REAL OBDb test_cases payloads:
+
+      * 22 60 50 -> 62 60 50 10 68            HV SoC 42.0 %
+      * 22 60 71 -> 62 60 71 03 E8            converter 25.00 V
+      * 22 20 05 -> 62 20 05 64               aux battery 10.16 V
+      * 22 20 02 -> 62 20 02 ... (5-frame)    steering -176.1, yaw, pressures...
+      * 22 20 01 -> 62 20 01 ... (3-frame)    wheel speeds 12.71/13.73/12.43/13.22
+    """
+
+    PRESENT = {0x7E5, 0x7E2}
+
+    # OBDb 2018 7E2.7EA.222002 vector #1 (reassembled, 34 bytes).
+    DID_2002 = bytes.fromhex(
+        "622002000000000001FFE701F91F0100F90101060100C401B961B7B800FC36011753")
+    # OBDb 2018 7E2.7EA.222001 vector #4 (reassembled, 20 bytes).
+    DID_2001 = bytes.fromhex(
+        "62200100E200F400DD00EBA50000010126BBC2F6")
+
+    def resp_id(self, tx):
+        return tx + 8 if tx in self.PRESENT else None
+
+    def handle(self, tx, req):
+        resp = self.resp_id(tx)
+        if not req or tx not in self.PRESENT:
+            return (resp, None)
+        if req[0] != 0x22 or len(req) < 3:
+            return (resp, None)                           # only UDS 22 reads
+        did = (req[1] << 8) | req[2]
+        if tx == 0x7E5:
+            if did == 0x6050:
+                return (resp, bytes.fromhex("6260501068"))
+            if did == 0x6071:
+                return (resp, bytes.fromhex("62607103E8"))
+            if did == 0x2005:
+                return (resp, bytes.fromhex("62200564"))
+            return (resp, None)
+        if tx == 0x7E2:
+            if did == 0x2002:
+                return (resp, self.DID_2002)
+            if did == 0x2001:
+                return (resp, self.DID_2001)
+            return (resp, None)
         return (resp, None)
 
 
@@ -413,6 +462,67 @@ def main() -> int:
           atf is not None and "-50" in atf.get("description", "")
           and "confirm" in atf.get("description", "").lower(), str(atf))
 
+    # --- pids tier 0: E-Class hybrid DID set decodes the OBDb vectors --------
+    from backend.profiles.mercedes import eclass as mb_eclass  # noqa: E402
+
+    pkg = Path(__file__).resolve().parents[1] / "profiles" / "mercedes"
+    ecjson = json.loads((pkg / "obdb_eclass_signalset.json").read_text(encoding="utf-8"))
+    check("bundled E-Class signalset JSON parses",
+          bool(ecjson.get("commands")), str(len(ecjson.get("commands", []))))
+    check("E-Class signalset carries the unverified 226053 note (not wired)",
+          any(c.get("verified") is False and "NOT WIRED" in c.get("note", "")
+              for c in ecjson["commands"]))
+    check("bundled E-Class signalset NOTICE exists",
+          (pkg / "obdb_eclass_signalset.NOTICE.txt").exists())
+
+    ecar = FakeMercedesEclassCar()
+    esession = FakeElmSession(ecar)
+    obd_service._with_session = lambda adapter, fn: fn(esession, None)
+    try:
+        elive = mb_pids.live({"name": "Fake adapter"}, "real")
+    finally:
+        obd_service._with_session = original
+    egot = {r["name"]: r["value"] for r in elive["readings"]}
+    check("E-Class live ok (Tier 0 answered)", elive["ok"] is True, elive.get("message"))
+    check("E-Class gate probe is on the hybrid HV-SoC DID",
+          mb_eclass._GATE == (0x7E5, 0x6050), str(mb_eclass._GATE))
+    check("HV battery SoC decodes to 42.0 %", egot.get("HV battery state of charge") == "42.0",
+          str(egot.get("HV battery state of charge")))
+    check("converter requested voltage decodes to 25.00 V",
+          egot.get("HV converter requested voltage") == "25.00",
+          str(egot.get("HV converter requested voltage")))
+    check("aux battery voltage decodes to 10.16 V",
+          egot.get("Auxiliary battery voltage") == "10.16",
+          str(egot.get("Auxiliary battery voltage")))
+    check("steering angle decodes to -176.1 deg",
+          egot.get("Steering angle") == "-176.1", str(egot.get("Steering angle")))
+    check("yaw rate decodes to -0.0015 rad/s",
+          egot.get("Yaw rate") == "-0.0015", str(egot.get("Yaw rate")))
+    check("longitudinal acceleration decodes to 0.000",
+          egot.get("Longitudinal acceleration") == "0.000",
+          str(egot.get("Longitudinal acceleration")))
+    check("brake master-cylinder pressure decodes to 3.81 bar",
+          egot.get("Brake master-cylinder pressure") == "3.81",
+          str(egot.get("Brake master-cylinder pressure")))
+    check("brake vacuum-brake pressure decodes to 0.196 bar",
+          egot.get("Brake vacuum-brake pressure") == "0.196",
+          str(egot.get("Brake vacuum-brake pressure")))
+    check("wheel speeds decode 12.71/13.72/12.43/13.22",
+          egot.get("Wheel speed, front-left") == "12.71"
+          and egot.get("Wheel speed, front-right") == "13.72"
+          and egot.get("Wheel speed, rear-left") == "12.43"
+          and egot.get("Wheel speed, rear-right") == "13.22",
+          str({k: egot[k] for k in egot if k.startswith("Wheel speed")}))
+    check("E-Class caveat rides with the readings",
+          any(r["name"] == "Note" and "CC-BY-SA-4.0" in r.get("value", "")
+              for r in elive["readings"]))
+    check("non-hybrid still falls through to ATF + generic",
+          lreal["ok"] is True and not any("Wheel speed" in r["name"] for r in lreal["readings"]))
+    check("sim live includes the E-Class hybrid values",
+          any(r["name"] == "HV battery state of charge" for r in lsim["readings"]))
+    check("E-Class set has no unverified HV-current (226053) reading wired",
+          not any("HV current" in r["name"] for r in elive["readings"]))
+
     # --- resets: ASSYST procedures + SBC safety warning ---------------------
     cat = mb_resets.list_resets()
     check("resets brand == mercedes", cat["brand"] == "mercedes")
@@ -472,7 +582,8 @@ def main() -> int:
         return 1
     print("SELF-TEST PASSED: Mercedes engine+TCM table, UDS mask ladder + session "
           "escalation, KWP2000-over-CAN fallback, engine OBD fallback + DoIP note, "
-          "ATF live extra, reset catalogue and brand routes all good.")
+          "E-Class hybrid live tier, ATF live extra, reset catalogue and brand "
+          "routes all good.")
     return 0
 
 

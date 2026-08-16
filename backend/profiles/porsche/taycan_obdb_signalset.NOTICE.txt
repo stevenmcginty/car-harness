@@ -1,0 +1,18 @@
+Taycan signalset — attribution
+================================
+
+The file `taycan_obdb_signalset.json` in this folder is the Porsche Taycan
+signal database from the OBDb project:
+
+    https://github.com/OBDb/Porsche-Taycan
+
+It is licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/).
+It is bundled here UNMODIFIED, as the provenance for the curated Taycan live
+values in `taycan.py` (each of which cites its OBDb signal id, DID and scaling)
+and as the reference for later Taycan work.
+
+Because the data is ShareAlike, this JSON file and any adaptation of it remain
+under CC-BY-SA-4.0. That licence applies to this data file only — not to the
+car-harness source code, which merely reads a curated subset of the values.
+
+Retrieved 2026-07-29 from signalsets/v3/default.json (653 signals, 168 commands).

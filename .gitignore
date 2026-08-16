@@ -32,3 +32,6 @@ server.log.err
 # Car captures -- real scan data (may carry VINs) and downloaded binaries,
 # local-only like the logs above
 captures/
+# Generated BMW live-data pack -- derived from the SGBD files on the local
+# machine (see backend/tools/bmw_live_extract.py). Regenerate, never commit.
+backend/profiles/bmw/live_pack.json

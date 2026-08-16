@@ -99,6 +99,8 @@
     brandPanel: document.getElementById("brand-panel"),
     brandTitle: document.getElementById("brand-title"),
     brandActions: document.getElementById("brand-actions"),
+    brandExtrasWorksheetWrap: document.getElementById("brand-extras-worksheet-wrap"),
+    brandExtrasWorksheet: document.getElementById("brand-extras-worksheet"),
     brandScanBtn: document.getElementById("brand-scan-btn"),
     brandClearAllBtn: document.getElementById("brand-clear-all-btn"),
     brandSimBanner: document.getElementById("brand-sim-banner"),
@@ -1651,10 +1653,16 @@
     el.brandActions.querySelectorAll(".brand-extra-btn").forEach(function (btn) {
       btn.remove();
     });
+    var actionFeature = {
+      live: "live",
+      snapshot: "snapshot",
+      discover: "discover",
+      software: "software",
+      gearbox: "gearbox",
+    };
     (panel.actions || []).forEach(function (a) {
-      if (a.id !== "live" && a.id !== "snapshot") return;
-      if (a.id === "live" && !f.live) return;
-      if (a.id === "snapshot" && !f.snapshot) return;
+      var feat = actionFeature[a.id];
+      if (!feat || !f[feat]) return;
       var btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn btn-secondary brand-extra-btn";
@@ -1692,6 +1700,20 @@
         openBrandJobs();
       });
       el.brandActions.insertBefore(jobsBtn, el.brandClearAllBtn);
+    }
+
+    // Service functions that CHANGE the car -- CBS reset, battery
+    // registration -- and the gateway's own list of what is fitted. Their own
+    // page, because each one needs its own confirmation and read-back.
+    if (f.cbs || f.battery) {
+      var sfBtn = document.createElement("button");
+      sfBtn.type = "button";
+      sfBtn.className = "btn btn-secondary brand-extra-btn";
+      sfBtn.textContent = "Service functions (CBS, battery)";
+      sfBtn.addEventListener("click", function () {
+        window.open("/service-functions.html", "_blank");
+      });
+      el.brandActions.insertBefore(sfBtn, el.brandClearAllBtn);
     }
 
     // The car's own service book (iDrive). A dedicated page builds the entry
@@ -1803,20 +1825,31 @@
 
       var code = document.createElement("span");
       code.className = "dtc-code";
-      code.textContent = d.hex;
+      code.textContent = d.display || d.code || d.hex;
       cardHead.appendChild(code);
 
       var status = document.createElement("span");
       status.className = "tag dtc-tag is-stored";
-      status.textContent = d.code;
+      status.textContent = (d.flags || []).join(", ") || ("status 0x" + (d.status || ""));
       cardHead.appendChild(status);
 
       card.appendChild(cardHead);
 
       var desc = document.createElement("p");
       desc.className = "dtc-desc";
-      desc.textContent = (d.flags || []).join(", ") || "status 0x" + d.status;
+      var bits = [];
+      if (d.description) bits.push(d.description);
+      if (d.failureTypeName) bits.push(d.failureTypeName);
+      if (d.part) bits.push(d.part);
+      if (!bits.length) bits.push((d.flags || []).join(", ") || "status 0x" + (d.status || ""));
+      desc.textContent = bits.join(" — ");
       card.appendChild(desc);
+      if (d.meaning || d.next) {
+        var extra = document.createElement("p");
+        extra.className = "dtc-desc";
+        extra.textContent = [d.meaning, d.next].filter(Boolean).join(" ");
+        card.appendChild(extra);
+      }
 
       row.appendChild(card);
     });
@@ -2052,6 +2085,8 @@
     el.brandExtrasHint.hidden = !action.hint;
     el.brandExtrasHint.textContent = action.hint || "";
     el.brandExtrasChips.innerHTML = "";
+    el.brandExtrasWorksheetWrap.hidden = true;
+    el.brandExtrasWorksheet.textContent = "";
     el.brandExtrasMessage.textContent = action.busy || "Reading…";
 
     apiFetch(obdUrl("/api/" + encodeURIComponent(p.id) + "/" + action.id))
@@ -2062,6 +2097,12 @@
           var value = r.unit ? r.value + " " + r.unit : r.value;
           el.brandExtrasChips.appendChild(chip(r.name, value));
         });
+        // A read that produces a copy-out text block (the Vauxhall software
+        // worksheet) shows it under the chips; every other action just doesn't
+        // send one and the block stays hidden.
+        var sheet = (data && data.worksheet) || "";
+        el.brandExtrasWorksheet.textContent = sheet;
+        el.brandExtrasWorksheetWrap.hidden = !sheet;
       })
       .catch(function () {
         el.brandExtrasMessage.textContent = "Couldn't reach the backend.";

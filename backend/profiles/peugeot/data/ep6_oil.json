@@ -1,0 +1,132 @@
+{
+  "title": "EP6 / THP oil-pressure catalog and reference captures",
+  "engine_family": "EP6CDT 5FV THP 156 (RCZ / 308 CC) and MED17.4 cousins",
+  "confidence": {
+    "d429_on_thp_med17": "high — 208 GTi THP telemetry + VLud (ludwig-v)",
+    "d429_on_5fv_specifically": "medium — same generation, not yet read on a 5FV",
+    "scale_bar": "high — u16 * 0.00016 bar; 0xFFFF = 10.49 bar matches the FAP 10500 mbar rail",
+    "solenoid_did": "missing — still sweep"
+  },
+  "sources": [
+    "https://www.208gti.fr/showthread.php?4044-Diagbox-telemetry (208 GTi THP: 6A8 22 D429 pressure, 22 D47D oil temp)",
+    "https://www.forum-peugeot.com/Forum/threads/pids-torque-pro.137818/ (VLud: D429 * 0.00016 bar, D4D6 * 0.25 C, D47D * 0.25 C, D41D * 0.2 mV)",
+    "https://www.forumpassionepeugeot.it/viewtopic.php?t=125022 (same PIDs named for 208 I, not 208 II Puretech)",
+    "https://frenchcarforum.co.uk/forum/viewtopic.php?p=693449 (official EP6 / EP6C spec tables)",
+    "https://www.peugeotforums.com/attachments/308-5fv-general-pdf.123599/ (Autodata 308 5FV)",
+    "https://www.peugeotforums.com/attachments/508-1-6-thp-engine-pdf.101005/ (Autodata 508 5FV)",
+    "https://www.drive2.ru/l/564703675541356856/ (healthy NA EP6 FAP curve)",
+    "https://www.drive2.ru/l/684250001416662427/ (UltraDed EP6CDT OilPress / OilPressInstr / OilPumpValve rules)",
+    "https://www.peugeotrczforum.com/threads/p15a6-and-p0948-codes.16476/page-2 (RCZ / 308 CC THP fault captures)"
+  ],
+  "dids": [
+    {
+      "did": "D429",
+      "name": "oil_pressure_bar",
+      "unit": "bar",
+      "scale": 0.00016,
+      "signed": false,
+      "header": "0x6A8",
+      "notes": "Measured oil pressure. Unsigned: 0xFFFF is the 5 V sensor rail (~10.49 bar), not real oil."
+    },
+    {
+      "did": "D47D",
+      "name": "oil_temp_c",
+      "unit": "°C",
+      "scale": 0.25,
+      "signed": true,
+      "header": "0x6A8",
+      "notes": "Oil temperature on 208 GTi THP."
+    },
+    {
+      "did": "D4D6",
+      "name": "oil_temp_estimated_c",
+      "unit": "°C",
+      "scale": 0.25,
+      "signed": true,
+      "header": "0x6A8",
+      "notes": "Estimated oil temperature. May be absent if D47D exists."
+    },
+    {
+      "did": "D41D",
+      "name": "oil_pressure_sensor_mV",
+      "unit": "mV",
+      "scale": 0.2,
+      "signed": false,
+      "header": "0x6A8",
+      "notes": "Sensor voltage. Bench: ~500 mV at 0 bar, ~2000 mV at 4 bar (5.0 V ref). Not on every calibration."
+    }
+  ],
+  "workshop_spec_hot_gauge_bar": {
+    "ep6cdt_5fv_308": [
+      {"rpm": [700, 800], "bar": [1.4, 2.0], "source": "Autodata 308 5FV 1.7 ± 0.3"}
+    ],
+    "ep6cdt_5fv_308_1000": [
+      {"rpm": [1000, 1000], "bar": [1.5, 2.1], "source": "Autodata 308 5FV 1.8 ± 0.3"}
+    ],
+    "ep6cdt_5fv_508": [
+      {"rpm": [1000, 1000], "bar": [1.5, 2.1], "source": "Autodata 508 5FV"},
+      {"rpm": [2000, 2000], "bar": [1.7, 2.3], "source": "Autodata 508 5FV"}
+    ]
+  },
+  "field_captures": [
+    {
+      "id": "healthy_na_ep6_fap",
+      "car": "308 EP6 NA, FAP, oil ~85 C",
+      "unit_note": "author reported absolute; gauge = abs - 1.0 bar",
+      "points_gauge_bar": [
+        {"rpm": 700, "bar": 1.7},
+        {"rpm": 1550, "bar": 1.9},
+        {"rpm": 1850, "bar": 2.0},
+        {"rpm": 2500, "bar": 2.2},
+        {"rpm": 2900, "bar": 2.4},
+        {"rpm": 3350, "bar": 2.8},
+        {"rpm": 3700, "bar": 3.2}
+      ]
+    },
+    {
+      "id": "thp_solenoid_dead",
+      "car": "308 CC 2010 THP, FAP, before solenoid replace",
+      "codes": ["P0945", "P0948", "P15A0", "P15A6"],
+      "points_mbar": [
+        {"state": "cold_idle", "mbar": 6200},
+        {"state": "hot_idle", "mbar": 3500},
+        {"state": "2000_rpm", "mbar": 7000}
+      ],
+      "valve": "stuck 0% or hunting 0-99%"
+    },
+    {
+      "id": "thp_solenoid_replaced",
+      "car": "308 CC 2010 THP, FAP, after new sump solenoid",
+      "points_mbar": [
+        {"state": "running", "mbar_lo": 2900, "mbar_hi": 3500}
+      ],
+      "valve": "50-72%"
+    }
+  ],
+  "measured_baselines": {
+    "note": "Read on Steve's own known-good RCZs on 2026-08-14 with this harness, block C2 offset 7. These are the comparison the 308 CC is judged against; everything above is published or third-party.",
+    "rcz_1_warm": {
+      "coolant_c": 71,
+      "idle_bar": [1.41, 1.48],
+      "rpm_2500_bar": [2.89, 3.04],
+      "rpm_3000_bar": [3.36, 3.46]
+    },
+    "rcz_2_cold_start": {
+      "start_coolant_c": 25,
+      "cold_idle_rpm": 1091,
+      "curve_t_s_bar": [[6, 3.96], [15, 4.61], [25, 4.67], [34, 3.73], [44, 2.29],
+                        [63, 2.04], [82, 2.01], [121, 2.06], [178, 1.93]],
+      "shape": "Pressure is HIGH from the first reading (3.96 bar 6 s after start), peaks near 4.7 bar around 25 s while the oil is still cold and thick, then decays as it warms and settles flat at about 2.0 bar by 60 s.",
+      "warm_point": {"rpm": 2436, "bar": 3.38, "coolant_c": 81}
+    },
+    "mirror_agreement": "The offset-47 copy tracked the offset-7 value within +/-0.25 bar on every sample of both healthy cars, usually within 0.1. A car where those two separate is doing something these two do not."
+  },
+  "bands_gauge_bar": {
+    "idle_hot_ok": [1.3, 2.4],
+    "idle_hot_high_mechanical_mode": [2.8, 8.0],
+    "rev_2000_ok": [1.5, 3.0],
+    "rev_2000_high": [4.5, 10.0],
+    "sensor_rail": [10.2, 10.6],
+    "too_low_running": [0.0, 1.0]
+  }
+}

@@ -22,7 +22,10 @@ from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
 from backend.core import brands, interfaces, registry  # noqa: E402
+from backend.obd import raw as obd_raw  # noqa: E402
 from backend.profiles.bmw import ediabas as bmw_ediabas  # noqa: E402
+from backend.profiles.bmw import battery as bmw_battery  # noqa: E402
+from backend.profiles.bmw import cbs as bmw_cbs  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.fiat import pids as fiat_pids  # noqa: E402
 from backend.profiles.fiat import scan as fiat_scan  # noqa: E402
@@ -36,8 +39,14 @@ from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
 from backend.profiles.mercedes import pids as mercedes_pids  # noqa: E402
 from backend.profiles.mercedes import scan as mercedes_scan  # noqa: E402
+from backend.profiles.peugeot import oil as peugeot_oil  # noqa: E402
 from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
 from backend.profiles.peugeot import scan as peugeot_scan  # noqa: E402
+from backend.profiles.vauxhall import pids as vauxhall_pids  # noqa: E402
+from backend.profiles.vauxhall import scan as vauxhall_scan  # noqa: E402
+from backend.profiles.vauxhall import software as vauxhall_software  # noqa: E402
+from backend.profiles.vauxhall import tcm as vauxhall_tcm  # noqa: E402
+from backend.profiles.vauxhall import gearbox as vauxhall_gearbox  # noqa: E402
 from backend.profiles.vw import pids as vw_pids  # noqa: E402
 from backend.profiles.vw import scan as vw_scan  # noqa: E402
 
@@ -136,6 +145,85 @@ def bmw_ediabas_modules() -> dict:
     verify=true are mapped but not yet confirmed on a real car.
     """
     return bmw_ediabas.modules()
+
+
+@mcp.tool()
+def bmw_cbs_read(mode: str = "real") -> dict:
+    """Read a BMW/MINI's service-interval (CBS) counters over the ENET cable.
+
+    Returns every service item the car holds -- engine oil, brake pads, brake
+    fluid, MOT, emissions -- with remaining life in percent, remaining
+    distance and the service counter, plus which module carried each and which
+    CBS version it speaks. Read-only; ignition ON.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    return bmw_cbs.read(mode)
+
+
+@mcp.tool()
+def bmw_cbs_reset(item: str, confirm: bool = False, mode: str = "real") -> dict:
+    """Reset one BMW/MINI service item. CHANGES THE CAR -- confirm required.
+
+    item: "Oel" (engine oil), "Br_v"/"Br_h" (front/rear brake pads), "Brfl"
+        (brake fluid), "TUV" (MOT), "AU" (emissions) -- or the English label.
+    Aims at the module that owns the item (engine for oil, ABS for pads,
+    cluster otherwise) and asks that module its CBS version first, because the
+    argument list differs between versions on the same car.
+    Resets the counter ONLY -- the iDrive service history is separate, see
+    the service-history tools.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    try:
+        return bmw_cbs.reset(item, mode, confirm)
+    except bmw_cbs.CbsError as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+def bmw_battery_status(mode: str = "real") -> dict:
+    """Read a BMW/MINI's battery condition from the engine's power management.
+
+    State of health, state of charge, rated capacity, live voltage/current/
+    temperature from the IBS sensor, and the mileage at the last two battery
+    changes. Read-only; ignition ON with the ENET cable connected.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    return bmw_battery.status(mode)
+
+
+@mcp.tool()
+def bmw_battery_register(confirm: bool = False, mode: str = "real") -> dict:
+    """Register a replacement battery on a BMW/MINI. CHANGES THE CAR.
+
+    Only after a new battery has actually been fitted: it resets the engine's
+    charge history so charging strategy and start/stop suit a new battery.
+    Does NOT change the coded battery type or capacity -- a different size or
+    AGM-for-lead-acid swap needs coding this harness doesn't do.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    return bmw_battery.register(mode, confirm)
+
+
+@mcp.tool()
+def bmw_ediabas_installed(mode: str = "real") -> dict:
+    """Ask a BMW/MINI's gateway which control units the car actually has.
+
+    Runs STATUS_VCM_GET_ECU_LIST_ALL on the ZGW over the ENET cable and maps
+    each reported diagnostic address back to a harness module key, so the
+    answer comes from the car's own stored list instead of probing addresses
+    and guessing from silence. Ignition ON, cable connected; mode="sim"
+    returns a clearly-labelled fake.
+    """
+    if mode not in ("real", "sim"):
+        return {"error": "mode must be 'real' or 'sim'."}
+    try:
+        return bmw_ediabas.installed_modules(mode)
+    except bmw_ediabas.EdiabasJobError as exc:
+        return {"error": str(exc)}
 
 
 @mcp.tool()
@@ -327,6 +415,140 @@ def peugeot_clear_module(
     return peugeot_scan.clear(instance, mode, address)
 
 
+@mcp.tool()
+def peugeot_engine_probe(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Map a PSA petrol engine ECU's diagnostic surface (read-only, EP6/THP work).
+
+    Reports, for both the PSA pair (0x6A8/0x688) and the standard OBD slot
+    (0x7E0): does the engine answer, does service 0x22 work, do the 10 C0 /
+    10 03 sessions open. Adds VIN + calibration id (tells a THP 156 "5FV" from
+    a THP 200 "5FF"), the live generic PIDs (incl. whether oil temp 0x5C is
+    implemented), and any 0xF4xx mirror DIDs. Run this FIRST on a car, then
+    aim peugeot_engine_sweep / peugeot_oil_capture at the address that
+    answered. Ignition ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.probe(instance, mode)
+
+
+@mcp.tool()
+def peugeot_oil_coldstart(
+    adapter_id: str | None = None, seconds: float = 180.0,
+    blocks: list[str] | None = None, mode: str = "real",
+) -> dict:
+    """Capture a PSA petrol engine's whole cold start (read-only, EP6/THP).
+
+    For the oil-pressure-warning-at-startup complaint. Takes a generic-OBD
+    baseline (rpm, coolant, voltage, fuel trims) BEFORE opening the diagnostic
+    session -- on these ECUs the two are mutually exclusive -- then logs every
+    KWP measurement block raw for the whole run, decoding oil pressure live
+    from block C2 (u16 at offset 7, hundredths of a bar, identified on a known
+    good RCZ).
+
+    Procedure: ignition ON, engine OFF and cold, start this, then crank and let
+    it idle untouched. No throttle -- the idle curve is the evidence.
+
+    blocks: hex block ids; omit for all ten that a THP answers.
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.coldstart(instance, seconds, blocks, mode)
+
+
+@mcp.tool()
+def peugeot_engine_blocks(
+    adapter_id: str | None = None, seconds: float = 90.0,
+    blocks: list[str] | None = None, mode: str = "real",
+) -> dict:
+    """Log PSA KWP measurement blocks against a rev change (read-only).
+
+    The discovery counterpart to peugeot_oil_coldstart, for engine ECUs that
+    refuse UDS service 0x22 so the published oil DIDs are unreachable. Logs
+    blocks raw while the engine is revved; a signal is then identified by which
+    bytes move with rpm. Block C2's oil pressure is decoded live.
+
+    blocks: hex block ids like ["C2","CB"]; omit for all ten. Fewer blocks
+        means a faster sample rate, which matters when chasing a transient.
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.block_capture(instance, seconds, blocks, mode)
+
+
+@mcp.tool()
+def peugeot_engine_sweep(
+    first: str, last: str, adapter_id: str | None = None, address: str = "psa",
+    extended: bool = False, mode: str = "real",
+) -> dict:
+    """Walk a mode-22 DID range on a PSA engine ECU and keep every answer (read-only).
+
+    Walk a mode-22 DID range and keep every raw answer (read-only).
+
+    Catalog already has oil pressure at D429 (and D47D / D41D). Sweep is for
+    the two still-missing signals -- OilPressInstr and OilPumpValve -- plus
+    a 5FV that stays silent on D429. Diff idle vs ~2500 rpm. NRC 0x31
+    refusals are counted, not listed (ECU listens, id not implemented).
+
+    first/last: hex DID bounds like "D400"/"D4FF"; max 4096 ids per call.
+        Start at D400-D4FF, then 0100-04FF, 1000-13FF, 2000-21FF, F400-F4FF.
+    address: "psa" (0x6A8 pair, what Diagbox uses) or "obd" (0x7E0) -- pick
+        whichever peugeot_engine_probe showed answering service 0x22.
+    extended: open the read-safe PSA session ladder first (some DIDs only
+        answer there).
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    try:
+        first_i, last_i = int(first, 16), int(last, 16)
+    except (TypeError, ValueError):
+        return {"ok": False, "message": "first/last must be hex like '1000'."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.sweep(instance, first_i, last_i, address, extended, mode=mode)
+
+
+@mcp.tool()
+def peugeot_oil_capture(
+    adapter_id: str | None = None, seconds: float = 120.0,
+    dids: list[str] | None = None, address: str = "psa",
+    extended: bool = False, mode: str = "real",
+) -> dict:
+    """Timestamped cold-start capture on a PSA petrol engine (read-only, crank-proof).
+
+    Built for the EP6/THP oil-pressure-at-startup complaint: connect with
+    ignition ON engine OFF, start the capture, wait ~5 s, crank, idle, and near
+    the end rev slowly to ~3000 rpm (pump stage switch). Every tick logs engine
+    rpm plus each DID in ``dids`` raw; every fifth tick adds coolant, oil temp
+    and module voltage (the voltage dip timestamps the crank). Survives the
+    ECU dropping off the bus during cranking -- gaps are recorded, not fatal.
+    Same capture on the known-good RCZ and the problem 308, then compare.
+
+    dids: omit to use the imported catalog (D429 pressure, D47D oil temp,
+        D41D sensor mV). Pass [] for the rpm/coolant/voltage baseline only.
+        Result includes decoded bar/C plus an assessment vs the 5FV bands.
+    address: "psa" (0x6A8) or "obd" (0x7E0), per peugeot_engine_probe.
+    extended: open the read-safe PSA session first for DIDs that need it.
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return peugeot_oil.capture(instance, seconds, dids, address, extended, mode=mode)
+
+
 # --------------------------------------------------------------------------- #
 # VW / Audi (VAG) module scan over a generic OBD dongle (pure UDS)
 # --------------------------------------------------------------------------- #
@@ -461,6 +683,238 @@ def mercedes_clear_module(
     if error is not None:
         return error
     return mercedes_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Vauxhall / Opel (GM Global A) over a generic OBD dongle
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def vauxhall_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a Vauxhall / Opel car's modules over a generic OBD-II dongle (read-only).
+
+    Built for the GM Global A era (Astra K, Insignia B, Mokka X, Zafira C --
+    roughly 2010-2019). Global A does NOT speak plain UDS: fault codes are
+    GMW3110 ReadDiagnosticInformation (0xA9), clear is 0x04 and identification
+    is 0x1A. Every module is tried UDS-first then GMLAN, and the result records
+    which dialect answered. Two address blocks are walked: powertrain
+    0x7E0-0x7E3 (reply +8) and GM's body/chassis block 0x241-0x258 (reply
+    +0x400). Faults come back GM-style as code + failure type ("P0716-71").
+    Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+
+    Two honest limits. Low Speed GMLAN (single-wire, 33.3k) carries much of the
+    comfort/body traffic and NO standard dongle reaches it. And 2019+ Corsa,
+    Mokka and Astra L are PSA/Stellantis cars, not GM -- use peugeot_scan_modules
+    for those. The shipped address table is generic to GM Global A rather than
+    confirmed per model, so run vauxhall_discover_modules on an unfamiliar car.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_discover_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Sweep a Vauxhall's GMLAN diagnostic addresses and report what answers (read-only).
+
+    No public source maps any specific Vauxhall model's module list -- the
+    shipped table is generic to GM Global A. This probes every address in the
+    powertrain block (0x7E0-0x7E7, reply +8) and GM's body/chassis block
+    (0x240-0x25F, reply +0x400) in both dialects and reports which answered,
+    what proved it, and any identification they give. Use it to build a
+    verified module map before trusting the scan's "not present" answers.
+    Presence probes and identification reads only -- no fault services, no
+    writes. Ignition must be ON. Takes noticeably longer than a scan (~40
+    addresses).
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_scan.discover(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_software_versions(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read the software / calibration part numbers flashed into each Vauxhall module (read-only).
+
+    This is how you find out whether a manufacturer software update is relevant
+    to a given car -- including a gearbox recalibration, which is the common
+    reason to ask. Every module that answers is asked for its GMW3110
+    identification block: End Model Part Number ($CB), Base Model Part Number
+    ($CC), Boot Software Part Number ($C0), Software Module Identifiers 01-10
+    ($C1-$CA) with their two-character alpha codes, the date it was last
+    programmed ($99) and the tester/shop code that programmed it ($98). Modules
+    that answer plain UDS instead are read over the ISO 14229-1 F18x block.
+    Part numbers are decoded from GMW3110's 4-byte big-endian form into the
+    decimal number a parts catalogue quotes.
+
+    The result includes a plain-text ``worksheet`` listing every module's
+    numbers, meant to be compared line by line against what the manufacturer's
+    own programming system offers for the VIN.
+
+    Reading is all this does. The harness does not and will not write a
+    calibration: an ELM327 cannot hold a programming session, the calibration
+    binaries are not publicly available, and programming is gated behind a
+    proprietary SecurityAccess algorithm. See backend/profiles/vauxhall/
+    software.py for the full reasoning.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_software.versions(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_gearbox_analyze(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Analyse the Astra K / GM 6T35 gearbox over a Veepeak / ELM327 (read-only).
+
+    Finds the TCM (0x7E2 on the verified 2017 Astra K, 0x7E1 fallback), reads
+    its calibration part numbers, reads its fault memory with GM 6T35/6T40
+    names (P2723 is the 1-2-3-4 clutch, not SAE 'Shift Solenoid E'), reads the
+    19xx live block (fluid temp, selector, range switch, shaft speeds) and
+    writes a worksheet that maps codes onto clutches. Same job ScanMyOpelCAN
+    calls 'AT' and GDS2 calls Transmission Controls -- the half a V-Peak can
+    do. Does not Fast Learn and does not flash.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a labelled 6T35 flare case.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_gearbox.analyze(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read Vauxhall gearbox + engine live values over a generic OBD dongle (read-only).
+
+    On the Astra K the TCM is at 0x7E2 and the live block is 0x19xx -- fluid
+    temperature (22 1940, same PID Torque ships as Pontiac/GM/Opel/Vauxhall
+    header 7E2), selector (194F), range switch (1951), shaft speeds (1941/1942).
+    Cars that actually implement the OBDb 0x7E1 set (04FE / 5503 / 5504) still
+    get current vs commanded gear from there. Fluid temperature also tells you
+    when the box is near the Service Fast Learn window. Plus a curated Mode-01
+    set on the engine. Ignition ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+
+    GENUINE GAP: no public DID exposes the TCM's clutch adaptive cells, line
+    pressure or clutch slip. Those are GDS2-only, and nothing is invented for
+    them.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_pids.live(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_tcm_capture(
+    adapter_id: str | None = None, seconds: float = 120.0, mode: str = "real",
+    fast: bool = False,
+) -> dict:
+    """Log the Astra K transmission controller through a drive (read-only).
+
+    A shift flare is a shape over time, not a value: the gearbox failing to
+    deliver a ratio while engine rpm climbs into the gap. A single reading
+    cannot show one. This polls the TCM's answering parameter block at 0x7E2
+    together with engine rpm, road speed and throttle, timestamps every sample,
+    and returns the series.
+
+    It also finishes a discovery job the standstill tests could not. No gear
+    register has been identified on this calibration -- every candidate reads
+    zero at a standstill, which is exactly what a gear register does when the
+    car is not moving. Drive with this running and the gear register identifies
+    itself: it is the parameter that steps 1-2-3-4-5-6 in time with road speed.
+    Every parameter is therefore logged RAW, not decoded.
+
+    Expect roughly one sample per second over a Bluetooth dongle. That resolves
+    a flare lasting a second or more -- which is what a complained-about flare
+    does -- and does NOT resolve the internals of a clean 200 ms shift. The
+    result reports its own achieved sample rate so the rate is never mistaken
+    for precision.
+
+    fast=True trims each tick to the three reads a flare needs (input shaft
+    speed, output shaft speed, engine rpm), roughly tripling the sample rate
+    over Bluetooth, and adds derived per-sample values: gear ratio, turbine
+    rpm (ISS/8, scaling proven on this car 2026-08-13) and converter slip.
+    Fluid temp and throttle still land every fifth tick. Use fast=True when
+    hunting the flare itself; use the default full set when the goal is
+    discovering what an unknown parameter does.
+
+    seconds: how long to log for. Drive the shift that flares during it.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_tcm.capture(instance, seconds, mode, fast)
+
+
+@mcp.tool()
+def vauxhall_tcm_sweep(
+    adapter_id: str | None = None, first: str = "1900", last: str = "19FF",
+    mode: str = "real",
+) -> dict:
+    """Sweep a parameter-id range on the Astra K TCM at 0x7E2 (read-only).
+
+    This is the tool that found the transmission block in the first place. The
+    OBDb DIDs (04FE/5503/5504) return NRC 31 on this car at every address --
+    the module speaks service 0x22 fine, those parameter ids just do not exist
+    in this calibration. Sweeping found a live block at 0x1940-0x1951 instead.
+
+    An id that answers NRC 31 is reported as absent-by-refusal, which is a more
+    useful fact than silence: it proves the module is listening and the
+    parameter is simply not implemented. Use it to widen the map beyond the
+    range already verified.
+
+    first / last: hex parameter ids as strings, e.g. "1900" and "19FF".
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    try:
+        lo, hi = int(first, 16), int(last, 16)
+    except ValueError:
+        return {"ok": False, "message": f"first/last must be hex, got {first!r}/{last!r}."}
+    return vauxhall_tcm.sweep(instance, lo, hi, mode)
+
+
+@mcp.tool()
+def vauxhall_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on Vauxhall modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    address: hex request id like "0x7E1" (the gearbox) or "0x241" (the BCM);
+        omit to clear every module that answers. Tries UDS 14 FF FF FF then
+        GMLAN 04. Note the GMLAN clear takes NO group argument -- on a GMW3110
+        module it wipes that module's entire fault memory, with no
+        emissions-only option. Faults return if the underlying problem is still
+        present, and clearing destroys the freeze-frame evidence a diagnosis may
+        still need.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_scan.clear(instance, mode, address)
 
 
 # --------------------------------------------------------------------------- #
@@ -715,6 +1169,79 @@ def jlr_adblue_drive_log(
     if error is not None:
         return error
     return jlr_adblue.drive_log(instance, mode, seconds)
+
+
+# --------------------------------------------------------------------------- #
+# Raw diagnostic channel -- the escape hatch beyond the curated brand packs
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def read_dids(
+    target: str,
+    dids: list[str],
+    addressing: str = "11bit",
+    adapter_id: str | None = None,
+    resp_id: str | None = None,
+    extended_session: bool = False,
+    mode: str = "real",
+) -> dict:
+    """Read arbitrary mode-22 (ReadDataByIdentifier) DIDs from any module -- the
+    read-only escape hatch for values no curated brand pack carries (soot mass,
+    odd body DIDs, anything researched on the fly).
+
+    target: the module's hex id. addressing="11bit" (default): a standard CAN
+        request id like "7E0" (engine), "7E1" (gearbox), "720"...; the answer is
+        expected on target+8 unless resp_id overrides it (VAG body modules
+        answer at +0x6A, e.g. target "714" cluster -> resp_id "77E").
+        addressing="29bit" (UDS-era Fiat/Alfa/Jeep): the ONE-BYTE ECU address
+        like "10" (engine), "18" (TCM), "28" (ABS); pairing is fixed
+        (18DAxxF1/18DAF1xx). 0xC7 (FCA TPMS) is refused -- immobilizer trap.
+    dids: hex DID strings, e.g. ["1310", "F190"]; max 24 per call.
+    extended_session: open UDS 10 03 first for modules that refuse reads in the
+        default session (best-effort, never fatal).
+    adapter_id: a configured ELM327 adapter (from list_adapters); required for
+        real mode. mode="sim" returns a clearly-labelled fake.
+    Returns per-DID raw reply hex + payload, printable ASCII and big-endian int
+    where they apply, and named NRCs for negatives. Decode/scale the payload
+    yourself against researched formulas -- the raw bytes are the truth here.
+    Read-only: only services 0x22 (and 10 03 when asked) are ever sent.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return obd_raw.read_dids(
+        instance, mode, target, dids, addressing, resp_id, extended_session
+    )
+
+
+@mcp.tool()
+def elm_commands(
+    commands: list[str],
+    confirm: bool = False,
+    adapter_id: str | None = None,
+    timeout: float = 3.0,
+    mode: str = "real",
+) -> dict:
+    """Run a raw ELM327 command sequence -- AT setup + arbitrary hex requests --
+    for anything read_dids can't express. CAN WRITE TO THE CAR, so confirm-gated.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    commands: executed in order in one session, e.g. ["ATSH7E0", "ATCRA7E8",
+        "ATFCSD300000", "ATFCSM1", "221310"]; max 32. Monitor (ATMA -- use the
+        brand snapshot feature), reset (ATZ/ATWS), defaults (ATD), low-power and
+        baud-rate commands are refused: they'd strand the dongle session.
+    timeout: per-command seconds (0.5-10).
+    adapter_id: a configured ELM327 adapter (required for real mode);
+        mode="sim" returns a clearly-labelled fake.
+    The ELM is ALWAYS restored to generic-OBD defaults afterwards (headers,
+    filters, flow control, timing, and the protocol if the sequence switched
+    it), so a stray state can never leak into the next scan.
+    """
+    if confirm is not True:
+        return {"error": "Refused: raw ELM commands can write to the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return obd_raw.elm_commands(instance, mode, commands, timeout)
 
 
 # --------------------------------------------------------------------------- #

@@ -48,7 +48,24 @@ class FakePsaCar:
         self.kwp = {ABS}         # modules speaking PSA's KWP dialect
 
     def handle(self, tx, req):
-        if tx not in PRESENT or not req:
+        if not req:
+            return None
+        # Generic OBD. Like the real RCZ, this car answers the FUNCTIONAL
+        # broadcast 0x7DF as well as the physical engine slot 0x7E0.
+        if tx in (0x7E0, 0x7DF):
+            if req[0] == 0x01 and len(req) >= 2:
+                pid_data = {
+                    0x0C: bytes([0x1A, 0xF8]),   # 1726.0 rpm
+                    0x05: bytes([0x5A]),          # 50 C coolant
+                    0x42: bytes([0x37, 0x9E]),    # 14.238 V
+                }
+                if req[1] in pid_data:
+                    return bytes([0x41, req[1]]) + pid_data[req[1]]
+                return None                       # unsupported PID: silence
+            if req[0] == 0x09 and len(req) >= 2 and req[1] == 0x04:
+                return bytes([0x49, 0x04, 0x01]) + b"5FV0123456"  # calibration id
+            return None
+        if tx not in PRESENT:
             return None
         svc = req[0]
         if svc == 0x3E:                                   # TesterPresent
@@ -85,6 +102,15 @@ class FakePsaCar:
                 return bytes([0x62, 0xF1, 0x90]) + FAKE_VIN.encode()
             if tx == ENGINE and did == 0xF188:
                 return bytes([0x62, 0xF1, 0x88]) + b"1037564321"
+            if tx == ENGINE and did == 0x1E20:   # stand-in oil-pressure DID
+                return bytes([0x62, 0x1E, 0x20, 0x01, 0x90])
+            # Imported THP catalog (208 GTi / VLud). 1.70 bar, 80 C, ~1135 mV.
+            if tx == ENGINE and did == 0xD429:
+                return bytes([0x62, 0xD4, 0x29, 0x29, 0x81])
+            if tx == ENGINE and did == 0xD47D:
+                return bytes([0x62, 0xD4, 0x7D, 0x01, 0x40])
+            if tx == ENGINE and did == 0xD41D:
+                return bytes([0x62, 0xD4, 0x1D, 0x16, 0x2B])
             # EV HV battery (BMS) health-check DIDs.
             if tx == BMS:
                 ev = {
@@ -282,6 +308,151 @@ def main() -> int:
     hsim = peugeot_pids.live(None, "sim")
     check("sim health check ok+simulated", hsim["ok"] and hsim["simulated"])
     check("sim health check labelled SIMULATED", "SIMULATED" in hsim["message"])
+
+    # --- integration: the EP6 oil tooling's transport layer ------------------
+    from backend.profiles.peugeot import oil as peugeot_oil
+
+    rpm_body = peugeot_oil._read_pid(client, 0x0C)
+    check("oil: generic rpm read on 0x7E0", rpm_body is not None)
+    check("oil: rpm decodes to 1726.0",
+          rpm_body is not None and peugeot_oil._decode_pid(0x0C, rpm_body) == 1726.0,
+          str(peugeot_oil._decode_pid(0x0C, rpm_body) if rpm_body else None))
+    volt_body = peugeot_oil._read_pid(client, 0x42)
+    check("oil: module voltage decodes to 14.24 V",
+          volt_body is not None and peugeot_oil._decode_pid(0x42, volt_body) == 14.24,
+          str(peugeot_oil._decode_pid(0x42, volt_body) if volt_body else None))
+    check("oil: unsupported PID (0x5C) reads as None",
+          peugeot_oil._read_pid(client, 0x5C) is None)
+    oil_body = peugeot_oil._read_did_raw(client, ENGINE, 0x1E20)
+    check("oil: engine DID 1E20 raw payload 0190",
+          oil_body is not None and oil_body.hex().upper() == "0190",
+          oil_body.hex().upper() if oil_body else "None")
+    d429 = peugeot_oil._read_did_raw(client, ENGINE, 0xD429)
+    check("oil: D429 raw 2981 (1.70 bar)",
+          d429 is not None and d429.hex().upper() == "2981",
+          d429.hex().upper() if d429 else "None")
+    dec = peugeot_oil.decode_oil_did(0xD429, d429) if d429 else None
+    check("oil: D429 decodes to 1.7 bar",
+          dec == ("oil_pressure_bar", 1.7, "bar"), str(dec))
+    rail = peugeot_oil.decode_oil_did(0xD429, bytes([0xFF, 0xFF]))
+    check("oil: D429 0xFFFF is sensor rail ~10.49 bar",
+          rail is not None and rail[1] == 10.486, str(rail))
+    d47d = peugeot_oil._read_did_raw(client, ENGINE, 0xD47D)
+    dec_t = peugeot_oil.decode_oil_did(0xD47D, d47d) if d47d else None
+    check("oil: D47D decodes to 80.0 C",
+          dec_t == ("oil_temp_c", 80.0, "°C"), str(dec_t))
+    check("oil: unimplemented DID (NRC 31) reads as None",
+          peugeot_oil._read_did_raw(client, ENGINE, 0x1E21) is None)
+    healthy = peugeot_oil.assess([
+        {"engine_rpm": 800.0, "oil_pressure_bar": 1.7, "did_D429": "2981"},
+        {"engine_rpm": 2000.0, "oil_pressure_bar": 2.0, "did_D429": "30D4"},
+    ])
+    check("oil: assess healthy idle is in_spec",
+          healthy["verdict"] == "in_spec", healthy["verdict"])
+    dead = peugeot_oil.assess([
+        {"engine_rpm": 800.0, "oil_pressure_bar": 3.5, "did_D429": "55F0"},
+    ])
+    check("oil: assess 3.5 bar idle is high_mechanical_mode",
+          dead["verdict"] == "high_mechanical_mode", dead["verdict"])
+    check("oil: catalog json loaded",
+          bool(peugeot_oil.REFERENCE.get("dids")))
+
+    # Block C2 decode, against the real bytes captured on RCZ #1: idle sample
+    # (1.43 bar) and the 3000 rpm sample (3.46 bar).
+    idle_c2 = bytes.fromhex(
+        "8F4C1B1C045423009030310606004E01A4012301220601FF01FFFFFFFFFFFF"
+        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF008AFFFFFFFFFFFFFFFFFFFFFF07006B1AFF")
+    c2 = peugeot_oil.decode_c2(idle_c2)
+    check("oil: C2 decodes idle oil pressure 1.44 bar",
+          c2.get("oil_pressure_bar") == 1.44, str(c2.get("oil_pressure_bar")))
+    check("oil: C2 reports the mirror copy and their difference",
+          c2.get("oil_pressure_mirror_bar") == 1.38
+          and c2.get("oil_pressure_delta_bar") == 0.06, str(c2))
+    check("oil: C2 decode of a short block returns nothing rather than guessing",
+          peugeot_oil.decode_c2(bytes(4)) == {})
+    check("oil: trim decode -100%/0%/+99.2% at 0/128/255",
+          (peugeot_oil._trim_pct(bytes([0])), peugeot_oil._trim_pct(bytes([128])),
+           peugeot_oil._trim_pct(bytes([255]))) == (-100.0, 0.0, 99.2))
+    check("oil: generic reads are sent functionally on 0x7DF",
+          peugeot_oil.OIL_ID_MAP.get(0x7DF) == 0x7E8)
+
+    # Cold-start verdicts, against the healthy RCZ #2 shape and the failure
+    # shapes it has to separate from it.
+    healthy = [{"t": 6.0, "oil_pressure_bar": 3.96, "oil_pressure_delta_bar": 0.0},
+               {"t": 25.0, "oil_pressure_bar": 4.67, "oil_pressure_delta_bar": 0.25},
+               {"t": 44.0, "oil_pressure_bar": 2.29, "oil_pressure_delta_bar": 0.01},
+               {"t": 120.0, "oil_pressure_bar": 2.06, "oil_pressure_delta_bar": 0.03},
+               {"t": 178.0, "oil_pressure_bar": 1.93, "oil_pressure_delta_bar": 0.02}]
+    for label, samples, want in (
+        ("healthy cold start is in_spec", healthy, "in_spec"),
+        ("never decaying is stuck_high",
+         [{"t": i * 10.0, "oil_pressure_bar": 5.2} for i in range(15)], "stuck_high"),
+        ("pinned at the sensor rail is sensor_rail",
+         [{"t": i * 10.0, "oil_pressure_bar": 10.4} for i in range(15)], "sensor_rail"),
+        ("no pressure at all is low_not_delivering",
+         [{"t": i * 10.0, "oil_pressure_bar": 0.4} for i in range(15)],
+         "low_not_delivering"),
+        ("the two copies parting company is split",
+         [{"t": i * 10.0, "oil_pressure_bar": 4.0 if i < 4 else 2.0,
+           "oil_pressure_delta_bar": 0.9} for i in range(15)], "split"),
+    ):
+        got = peugeot_oil.assess_coldstart(samples)["verdict"]
+        check(f"oil: {label}", got == want, got)
+    check("oil: assess_coldstart flags a start that was not actually cold",
+          any("NOT a cold start" in n for n in
+              peugeot_oil.assess_coldstart(healthy, {"coolant_c": 85.0})["notes"]))
+    check("oil: assess_coldstart with no pressure says so",
+          peugeot_oil.assess_coldstart([{"t": 1.0}])["verdict"] == "no_pressure_data")
+    check("oil: sim spot is labelled",
+          peugeot_oil.spot(None, mode="sim")["simulated"] is True)
+
+    # Pump command: the healthy cars step ~240 cold down to ~35 warm. A command
+    # that never moves is the failure this has to name.
+    warm_cold = [
+        {"t": 6.0, "oil_pressure_bar": 3.96, "pump_command": 240},
+        {"t": 25.0, "oil_pressure_bar": 4.67, "pump_command": 240},
+        {"t": 44.0, "oil_pressure_bar": 2.29, "pump_command": 27},
+        {"t": 120.0, "oil_pressure_bar": 2.06, "pump_command": 35},
+        {"t": 178.0, "oil_pressure_bar": 1.93, "pump_command": 35},
+    ]
+    got = peugeot_oil.assess_coldstart(warm_cold)
+    check("oil: healthy pump command is reported as stepping down",
+          got["pumpCommand"]["steppedDown"] is True and got["verdict"] == "in_spec",
+          str(got["pumpCommand"]))
+    stuck = [{"t": i * 10.0, "oil_pressure_bar": 2.0, "pump_command": 0}
+             for i in range(15)]
+    stuck_result = peugeot_oil.assess_coldstart(stuck)
+    check("oil: a pump command that never moves gets its own verdict",
+          stuck_result["pumpVerdict"] == "stuck", str(stuck_result["pumpVerdict"]))
+    check("oil: pressure and pump verdicts are reported independently",
+          stuck_result["verdict"] == "low_cold",
+          f"{stuck_result['verdict']} / {stuck_result['pumpVerdict']}")
+    check("oil: healthy pump command verdict is ok",
+          peugeot_oil.assess_coldstart(warm_cold)["pumpVerdict"] == "ok")
+    c2_cold = bytearray(60)
+    c2_cold[7:9] = (0x01, 0x8C)      # 3.96 bar
+    c2_cold[18] = 240
+    c2_cold[20] = 240
+    decoded = peugeot_oil.decode_c2(bytes(c2_cold))
+    check("oil: C2 decodes the pump command and its percentage",
+          decoded.get("pump_command") == 240
+          and decoded.get("pump_command_pct") == 94.1
+          and decoded.get("pump_command_mirror") == 240, str(decoded))
+
+    for name, result in (("probe", peugeot_oil.probe(None, "sim")),
+                         ("coldstart", peugeot_oil.coldstart(None, mode="sim")),
+                         ("blocks", peugeot_oil.block_capture(None, mode="sim")),
+                         ("sweep", peugeot_oil.sweep(None, 0, 1, mode="sim")),
+                         ("capture", peugeot_oil.capture(None, mode="sim"))):
+        check(f"oil: sim {name} ok+simulated+labelled",
+              result["ok"] and result["simulated"] and "SIMULATED" in result["message"])
+    bad = peugeot_oil.sweep(None, 0x1000, 0x2FFF)
+    check("oil: sweep refuses ranges over 4096 ids",
+          bad["ok"] is False and "Range too wide" in bad["message"])
+    bad = peugeot_oil.sweep(None, 0x1000, 0x10FF, address="nope")
+    check("oil: sweep refuses unknown address", bad["ok"] is False)
+    bad = peugeot_oil.capture(None, dids=["xyz"])
+    check("oil: capture refuses non-hex dids", bad["ok"] is False)
 
     client.restore()
     check("restore hands ELM back to generic stack (ATSH7DF)", "ATSH7DF" in session.at_log)

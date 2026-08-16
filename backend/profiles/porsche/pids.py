@@ -36,6 +36,8 @@ from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.uds_elm327 import Elm327UdsClient
 
+from . import taycan
+
 ENGINE = 0x7E0
 
 
@@ -161,9 +163,27 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
             }
 
         readings = []
-        client = Elm327UdsClient(session)
+        client = Elm327UdsClient(session, id_map=taycan.ID_MAP)
         client.begin()
         try:
+            # TIER 0: a Taycan (J1) answers the large OBDb DID library over the
+            # dongle (research §4/§5, Phase 0.1). One cheap gate read decides it;
+            # a non-Taycan Porsche returns nothing and falls straight through to
+            # the CAN-era tiers below, paying one short timeout, not fifteen.
+            taycan_readings = taycan.read_live(client)
+            if taycan_readings:
+                return {
+                    "ok": True, "simulated": False, "readings": taycan_readings,
+                    "message": (
+                        f"{len(taycan_readings) - 1} Taycan value(s) answered over the dongle "
+                        "(OBDb Porsche-Taycan signalset, CC-BY-SA-4.0): state of charge, pack "
+                        "voltage, usable energy, power, range, the 12 V DC-DC rail and "
+                        "drive-unit/cabin temperatures. The deep per-cell battery-health report "
+                        "is the ENET path. Read-only pass; nothing was changed on the car."
+                    ),
+                    "timestamp": _now(),
+                }
+
             # TIER 1: the single published Porsche KWP 0x21 value (997/987 DME).
             for addr, lid, name, unit, decode in KWP21_LIDS:
                 body = _read_kwp_lid(client, addr, lid)

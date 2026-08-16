@@ -1,0 +1,35 @@
+Distilled diagnostic tables for the Vauxhall / Opel (GM Global A) profile.
+
+Nothing here is a GDS2 or ScanMyOpel binary. Each table is copied from an
+open implementation of GMW3110, then trimmed to what Car Harness actually
+asks the car.
+
+  gmlan_catalog.json
+    services, $1A identifiers, $A9 sub-functions, $AA DPID sub-functions,
+    $A2 programmed states, $27 security levels, GMLAN-specific DTC status
+    bits, negative-response codes.
+
+    Identifiers / services / NRCs:
+      scapy.contrib.automotive.gm.gmlan  (GPL-2.0-only)
+      https://github.com/secdev/scapy
+      Copyright (C) Nils Weiss, Enrico Pozzobon
+
+    $A9 UUDT stream on CAN 0x5E8, DTC status bit names, $1A vs $AA split:
+      github.com/roffe/gocan  pkg/gmlan  (see docs/private/vauxhall-data/gocan-gmlan/)
+      Comments quote GMW3110-2010 section numbers.
+
+  19xx live PIDs (Torque / on-car):
+    Torque Pro predefined set "Pontiac / GM / Opel / Vauxhall":
+      Mode 22 PID 1940, header 7E2, equation A-40.
+    Verified on VIN W0LPF2EC8HG072884 (tcm.py).
+
+  OBDb VauxhallOpel signalset (CC-BY-SA-4.0):
+    docs/private/vauxhall-data/OBDb-VauxhallOpel/
+    The three GM-native TCM commands (7E1 / 04FE, 5503, 5504) live there.
+    They return NRC 31 on the verified Astra K.
+
+  6T clutch / solenoid names:
+    GM PI1131, NHTSA MC-10200174, Sonnax 6T40 application chart.
+    Held in gearbox.py, not this file.
+
+Do not vendor scapy or gocan themselves. This folder is the distilled extract.

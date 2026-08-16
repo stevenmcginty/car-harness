@@ -25,6 +25,7 @@ import com.carharness.app.obd.Elm327Session
 import com.carharness.app.obd.LiveReading
 import com.carharness.app.obd.ObdController
 import com.carharness.app.obd.ObdTransport
+import com.carharness.app.obd.Pids
 import com.carharness.app.obd.ResetOutcome
 import com.carharness.app.obd.ServiceReset
 import com.carharness.app.obd.ServiceResets
@@ -307,6 +308,8 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
         scanResult = null
         faultError = ""
         liveError = ""
+        liveSupported = null
+        liveCatalogBusy = false
         modReport = null
         modError = ""
         modProgress = ""
@@ -324,6 +327,47 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     var liveError by mutableStateOf("")
     private var liveJob: Job? = null
 
+    /** Which values the dashboard polls — persisted, defaulting to the classic
+     * Torque-style ten. Kept small on purpose: over a BLE dongle every extra
+     * value slows the whole refresh. */
+    var liveSelected by mutableStateOf(
+        prefs.getStringSet("live_keys", null)?.toSet() ?: Pids.dashboardKeys.toSet()
+    )
+        private set
+
+    /** What this car reports supporting (null until asked). */
+    var liveSupported by mutableStateOf<Set<String>?>(null)
+    var liveCatalogBusy by mutableStateOf(false)
+
+    fun toggleLiveKey(key: String) {
+        liveSelected = if (key in liveSelected) liveSelected - key else liveSelected + key
+        prefs.edit().putStringSet("live_keys", liveSelected).apply()
+    }
+
+    fun setLiveKeys(keys: Collection<String>, on: Boolean) {
+        liveSelected = if (on) liveSelected + keys else liveSelected - keys.toSet()
+        prefs.edit().putStringSet("live_keys", liveSelected).apply()
+    }
+
+    /** Ask the car which standard values it supports, so the picker can show
+     * this exact vehicle rather than the whole SAE table. */
+    fun loadLiveCatalog() {
+        val ctrl = controller ?: return
+        if (liveCatalogBusy || liveSupported != null) return
+        liveCatalogBusy = true
+        scope.launch(Dispatchers.IO) {
+            val keys = try {
+                ctrl.liveSupportedKeys()
+            } catch (_: Exception) {
+                null
+            }
+            withContext(Dispatchers.Main) {
+                if (controller === ctrl) liveSupported = keys
+                liveCatalogBusy = false
+            }
+        }
+    }
+
     fun setLive(on: Boolean) {
         liveOn = on
         liveJob?.cancel()
@@ -338,7 +382,11 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
         liveJob = scope.launch(Dispatchers.IO) {
             while (liveOn) {
                 try {
-                    val r = ctrl.live()
+                    // Catalogue order, so tiles keep a stable, sensible order
+                    // whatever order the values were ticked in.
+                    val wanted = Pids.all.filter { it.key in liveSelected }.map { it.key }
+                        .ifEmpty { Pids.dashboardKeys }
+                    val r = ctrl.live(wanted)
                     withContext(Dispatchers.Main) { readings = r }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {

@@ -26,6 +26,51 @@
     }
   ],
   "modules": {
+    "zgw": [
+      {
+        "name": "STATUS_VCM_GET_ECU_LIST_ALL",
+        "kind": "read",
+        "description": "Ask the gateway which control units this car actually has (its stored SVT list), instead of probing addresses blind. One result set per module: name + diagnostic address.",
+        "note": "Confirmed present in zgw_01.PRG on disk. Results: STAT_SG_ANZAHL, STAT_SG_NAME_TEXT, STAT_SG_DIAG_ADRESSE."
+      },
+      {
+        "name": "STATUS_VCM_I_STUFE_LESEN",
+        "kind": "read",
+        "verify": true,
+        "description": "Read the car's integration level (I-Stufe) -- the factory and current software build state of the whole vehicle."
+      }
+    ],
+    "dme": [
+      {
+        "name": "STEUERN_BATTERIETAUSCH_REGISTRIEREN",
+        "kind": "write",
+        "verify": true,
+        "description": "Register a battery replacement with the engine's power management. Run this AFTER fitting a new battery: charging strategy and start/stop behaviour stay wrong until the car is told the battery is new.",
+        "note": "UDS $31 01 F030 per the SGBD. Confirmed present in DME_BX8.prg (the F56's own engine ECU) and in the N55/N62/S55/S63/POW_E65 families. Takes no arguments.",
+        "confirm": "Tells the engine ECU a new battery has been fitted and resets its charge history. Only do this if the battery really has been replaced."
+      },
+      {
+        "name": "STATUS_MESSWERTE_IBS",
+        "kind": "read",
+        "verify": true,
+        "description": "Battery sensor (IBS) live measurements: battery temperature, voltage and current, straight from the sensor on the negative terminal.",
+        "note": "UDS $22 402B. The honest state-of-health picture that pairs with battery registration."
+      },
+      {
+        "name": "STATUS_SYSTEMCHECK_AEP_INFO_2",
+        "kind": "read",
+        "verify": true,
+        "description": "Battery condition as the car judges it: state of health in percent, rated capacity in Ah, state of charge and battery temperature.",
+        "note": "The power-management store. STAT_SOH_WERT is the number worth quoting on a used car."
+      },
+      {
+        "name": "STATUS_SYSTEMCHECK_AEP_INFO_1",
+        "kind": "read",
+        "verify": true,
+        "description": "Battery charge history: total charge and discharge in Ah, the running balance, and the mileage at the last two battery changes.",
+        "note": "STAT_BATTERIETAUSCH_LETZTER_WERT is the readback that proves a battery registration landed -- after registering it should read the car's current mileage."
+      }
+    ],
     "hu": [
       {
         "name": "STEUERN_SERVICEHISTORY_ADD",
@@ -48,21 +93,39 @@
         "name": "CBS_RESET",
         "kind": "write",
         "verify": true,
-        "description": "Reset a CBS service item after the work is done. Argument set verified for G-series clusters (KOMB_G11/J29 docs); F-series may differ -- confirm on car before relying on it.",
+        "description": "Reset one CBS service item after the work is done. Ten positional arguments; every one after the item name defaults to a 'no change' sentinel, so setting just the item is the normal use.",
+        "note": "Argument list read from the F56's own komb25.prg documentation (CBS version 5). The G-series clusters (KOMB_G11/J29) have an eleventh argument, CHOV_CBS_CBR_VIEW, and document a precondition of the car being driving-ready. Use the CBS page rather than this raw job unless you know exactly which cluster you are on.",
         "params": [
-          {"name": "CBS_KENNUNG", "hint": "Item: Oel, Brfl, Br_v, Br_h, TUV, AU, Sic, ...", "required": true},
-          {"name": "CBS_VERFUEGBARKEIT", "hint": "0-100 percent, or 255 for no change (150 allowed for brake fluid)", "required": false},
-          {"name": "CBS_ANZAHL_SERVICE", "hint": "31 = increment service counter by one", "required": false},
-          {"name": "ZIEL_MONAT", "hint": "Target month, or 63 for no change", "required": false},
-          {"name": "ZIEL_JAHR", "hint": "Target year 0-62 (=2000-2062), or 63 for no change", "required": false}
+          {"name": "CBS_KENNUNG", "hint": "Item: Oel, Br_v, Br_h, Brfl, Sic, Sic_v, TUV, AU, Ueb, Efk, NOx_a", "required": true},
+          {"name": "CBS_VERFUEGBARKEIT", "hint": "Remaining life 0-100 percent (150 allowed for brake fluid); 255 = no change", "required": false, "default": "100"},
+          {"name": "CBS_ANZAHL_SERVICE", "hint": "Services carried out 0-30; 31 = add one to the counter", "required": false, "default": "31"},
+          {"name": "CBS_ZIEL_MONAT", "hint": "Target month 1-12 for MOT/emissions; 15 = no change", "required": false, "default": "15"},
+          {"name": "CBS_ZIEL_JAHR", "hint": "Target year 0-239 (= 2000-2239); 63 = no change", "required": false, "default": "63"},
+          {"name": "RMM_CBS_WERT", "hint": "Remaining distance in km or %; 32768 (0x8000) = no change", "required": false, "default": "32768"},
+          {"name": "ST_UN_CBS_RSTG", "hint": "Unit of the above: 0 = %, 1 = km x10, 15 = don't care", "required": false, "default": "15"},
+          {"name": "FRC_INTM_WAY_CBS_MESS", "hint": "Forecast distance interval 1-254 (x1000 km); 0 = back to default, 255 = no change", "required": false, "default": "255"},
+          {"name": "FRC_INTM_T_CBS_MESS", "hint": "Forecast time interval 0-254 months; 255 = no change", "required": false, "default": "255"},
+          {"name": "RES_BYTE", "hint": "Reserved, always 0", "required": false, "default": "0"}
         ],
-        "confirm": "Resets the chosen service item's interval counter on the cluster."
+        "confirm": "Resets the chosen service item's counter on the instrument cluster. CBS lives in the cluster and is mirrored to the key; it is separate from the iDrive service history."
+      },
+      {
+        "name": "CBS_DATEN_LESEN",
+        "kind": "read",
+        "description": "Read every CBS item the cluster holds: remaining life in percent, remaining distance, and the service counter. Read-only -- run this before and after a reset.",
+        "note": "UDS $22. One result set per CBS item; the harness reads all sets, not just the last."
+      },
+      {
+        "name": "CBS_INFO",
+        "kind": "read",
+        "description": "Which CBS version this cluster speaks. Version 5 (F-series) and version 6 (G-series) take different reset arguments, so this is the check that says which is safe."
       },
       {
         "name": "CBS_RESET_DETAIL_LESEN",
         "kind": "read",
         "verify": true,
-        "description": "Read CBS reset details, including why a previous reset was refused (CBS_RUECK_GRUND). ON CAR 2026-07-29 (F56 KOMB25): job EXISTS in the SGBD but the module gave NO RESPONSE with plain ignition-on -- the documented precondition is the car being in a driving-ready state (Fahrbereitschaft), not just awake. Retry with the car in Ready mode."
+        "description": "Read why a CBS reset was refused (CBS_RUECK_GRUND). G-series clusters only.",
+        "note": "CORRECTED 2026-07-29: this job does NOT exist in komb25.prg -- the F56's cluster. The earlier 'no response, needs driving-ready state' finding was a missing job, not a missing precondition. Present in KOMB_G11/KOMB_J29; harmless to try elsewhere, it will simply not resolve."
       }
     ]
   }

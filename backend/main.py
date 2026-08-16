@@ -40,6 +40,7 @@ from backend.core import brands, interfaces, pairing, registry  # noqa: E402
 from backend.core import vin as vin_decode  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import freeze, livefeed  # noqa: E402
+from backend.obd import raw as obd_raw  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
@@ -422,6 +423,54 @@ def obd_freeze(adapter: str | None = None, mode: str = "real", frame: int = 0) -
 
 
 # --------------------------------------------------------------------------- #
+# Raw diagnostic channel (the Claude Code / MCP escape hatch).
+# --------------------------------------------------------------------------- #
+@app.post("/api/raw/did")
+async def raw_did(request: Request) -> dict:
+    """Read arbitrary mode-22 DIDs from one module (read-only)."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"adapter": "...", "target": "7E0", "dids": ["1310"], ...}.',
+        )
+    body = body or {}
+    mode = body.get("mode") or "real"
+    instance = _obd_adapter_or_400(body.get("adapter"), mode)
+    return await run_in_threadpool(
+        obd_raw.read_dids, instance, mode,
+        body.get("target") or "", body.get("dids") or [],
+        body.get("addressing") or "11bit", body.get("resp_id"),
+        bool(body.get("extended_session")),
+    )
+
+
+@app.post("/api/raw/elm")
+async def raw_elm(request: Request) -> dict:
+    """Run a raw ELM327 command sequence -- arbitrary, so confirm-gated."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"adapter": "...", "commands": ["..."], "confirm": true}.',
+        )
+    body = body or {}
+    if body.get("confirm") is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="Raw ELM commands can write to the car. Send confirm: true.",
+        )
+    mode = body.get("mode") or "real"
+    instance = _obd_adapter_or_400(body.get("adapter"), mode)
+    return await run_in_threadpool(
+        obd_raw.elm_commands, instance, mode,
+        body.get("commands") or [], float(body.get("timeout") or 3.0),
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Phone pairing.
 # --------------------------------------------------------------------------- #
 @app.post("/api/pair/start")
@@ -486,9 +535,13 @@ def _brand_capability_or_404(brand: str, name: str):
 def brand_discover(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
     """Find the car on a brand's native cable (BMW ENET), or -- for a dongle
     brand that ships a discover.py -- sweep its diagnostic address block and
-    report which modules answer (JLR PT-CAN walk). Read-only either way."""
+    report which modules answer (JLR PT-CAN walk, Vauxhall GM map). Read-only
+    either way."""
     scan_mod = brands.brand_module(brand, "scan")
     if scan_mod is not None and hasattr(scan_mod, "discover"):
+        if brands.needs_adapter(brand):
+            instance = _obd_adapter_or_400(adapter, mode)
+            return scan_mod.discover(instance, mode)
         return scan_mod.discover()
     module = brands.brand_module(brand, "discover")
     if module is None or not hasattr(module, "discover"):
@@ -546,6 +599,43 @@ def brand_scan(brand: str, adapter: str | None = None, mode: str = "real") -> di
     if mode not in ("real", "sim"):
         raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
     return module.scan(mode)
+
+
+@app.get("/api/{brand}/software")
+def brand_software(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """What software is flashed into each of the car's modules. Read-only.
+
+    The answer to "is there an update for my gearbox?" starts here: the module
+    reports its own calibration part numbers, and those are what a manufacturer
+    programming system matches against the VIN. The harness reads them and
+    stops there -- it does not write calibrations, and the profile module
+    records why not.
+    """
+    module = _brand_capability_or_404(brand, "software")
+    if brands.needs_adapter(brand):
+        instance = _obd_adapter_or_400(adapter, mode)
+        return module.versions(instance, mode)
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return module.versions(mode)
+
+
+@app.get("/api/{brand}/gearbox")
+def brand_gearbox(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """Gearbox-focused read: TCM identity, faults, live values, diagnosis.
+
+    Read-only. Brands that do not ship gearbox.py 404 the same way a missing
+    software.py does.
+    """
+    module = _brand_capability_or_404(brand, "gearbox")
+    if not hasattr(module, "analyze"):
+        raise HTTPException(status_code=404, detail=f"'{brand}' has no gearbox analyse step.")
+    if brands.needs_adapter(brand):
+        instance = _obd_adapter_or_400(adapter, mode)
+        return module.analyze(instance, mode)
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return module.analyze(mode)
 
 
 @app.get("/api/{brand}/live")
@@ -771,6 +861,102 @@ def get_ediabas_modules(brand: str) -> dict:
     """
     module = _brand_capability_or_404(brand, "ediabas")
     return module.modules()
+
+
+@app.get("/api/{brand}/cbs")
+def get_cbs_catalogue(brand: str) -> dict:
+    """Which service items can be reset, and on which modules. No car contact."""
+    module = _brand_capability_or_404(brand, "cbs")
+    return module.catalogue()
+
+
+@app.get("/api/{brand}/cbs/read")
+async def read_cbs(brand: str, mode: str = "real") -> dict:
+    """Read the car's service-interval counters. Read-only."""
+    module = _brand_capability_or_404(brand, "cbs")
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return await run_in_threadpool(module.read, mode)
+
+
+@app.post("/api/{brand}/cbs/reset")
+async def reset_cbs(brand: str, request: Request) -> dict:
+    """Reset one service item on the car. CHANGES THE CAR -- needs confirm.
+
+    Resets the counter only. The iDrive service history is a separate record
+    written through /api/{brand}/service-history/write.
+    """
+    module = _brand_capability_or_404(brand, "cbs")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"item": "Oel", "confirm": true, "mode": "real"|"sim"}.',
+        )
+    body = body or {}
+    if not body.get("item"):
+        raise HTTPException(status_code=400, detail='JSON body must include "item".')
+    mode = body.get("mode") or "real"
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    try:
+        return await run_in_threadpool(
+            module.reset,
+            str(body["item"]),
+            mode,
+            bool(body.get("confirm")),
+            body.get("percent"),
+            body.get("target_month"),
+            body.get("target_year"),
+            body.get("module"),
+        )
+    except module.CbsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Bad reset request: {exc}")
+
+
+@app.get("/api/{brand}/battery")
+async def get_battery(brand: str, mode: str = "real") -> dict:
+    """Battery condition from the car's own power management. Read-only."""
+    module = _brand_capability_or_404(brand, "battery")
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return await run_in_threadpool(module.status, mode)
+
+
+@app.post("/api/{brand}/battery/register")
+async def register_battery(brand: str, request: Request) -> dict:
+    """Register a battery replacement. CHANGES THE CAR -- needs confirm."""
+    module = _brand_capability_or_404(brand, "battery")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body or {}
+    mode = body.get("mode") or "real"
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return await run_in_threadpool(module.register, mode, bool(body.get("confirm")))
+
+
+@app.get("/api/{brand}/ediabas/installed")
+async def get_ediabas_installed(brand: str, mode: str = "real") -> dict:
+    """Ask the car's gateway which modules are actually fitted.
+
+    Talks to the car (read-only): the module scan's fixed address list can
+    only infer "not fitted" from silence, the gateway knows.
+    """
+    module = _brand_capability_or_404(brand, "ediabas")
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    if not hasattr(module, "installed_modules"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{brand}' has no gateway installed-ECU list.",
+        )
+    return await run_in_threadpool(module.installed_modules, mode)
 
 
 @app.post("/api/{brand}/ediabas/run")

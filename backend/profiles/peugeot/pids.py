@@ -1,6 +1,6 @@
 """Peugeot / PSA (Citroen, DS) mode-22 health-check values over a plain ELM327
 on the diagnostic CAN -- the dealer data generic OBD-II doesn't carry: DPF
-state, AdBlue, battery, and odometer readings from more than one module,
+state, AdBlue, battery, EP6/THP oil pressure, and odometer readings from more than one module,
 cross-checked against each other (a mismatch is the classic clocking flag).
 
 Compiled from community sources (OBDb PSA signalsets, ludwig-v's
@@ -113,6 +113,17 @@ DIDS: List[Tuple[int, int, str, str, Callable[[bytes], Optional[str]]]] = [
     (0x6B4, 0xD865, "HV energy stored", "kWh", _u16_at(0, 1 / 64, dp=2, lo=0, hi=200)),
     (0x6B4, 0xD86F, "HV min cell voltage", "mV", _u16_at(0, lo=0, hi=5000)),
     (0x6B4, 0xD870, "HV max cell voltage", "mV", _u16_at(0, lo=0, hi=5000)),
+    # EP6/THP oil circuit on the engine (0x6A8). VLud + 208 GTi Diagbox
+    # telemetry. A diesel/non-THP simply NAKs. 0xFFFF on D429 is the sensor
+    # rail (~10.49 bar), kept inside the sanity cap so health-check shows it.
+    (0x6A8, 0xD429, "Engine oil pressure", "bar",
+     _scaled(0.00016, dp=2, lo=0, hi=10.6)),
+    (0x6A8, 0xD47D, "Engine oil temperature", "°C",
+     _scaled(0.25, dp=1, lo=-40, hi=200, signed=True)),
+    (0x6A8, 0xD4D6, "Engine oil temperature (estimated)", "°C",
+     _scaled(0.25, dp=1, lo=-40, hi=200, signed=True)),
+    (0x6A8, 0xD41D, "Oil pressure sensor voltage", "mV",
+     _scaled(0.2, dp=0, lo=0, hi=6000)),
 ]
 
 # KWP service-0x21 measurement blocks (HDi diesels, Delphi DCM3.5 / DW10CD from a

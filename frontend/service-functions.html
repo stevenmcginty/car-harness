@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service functions — Car Harness</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Page-specific only. Tokens and primitives come from styles.css. */
+  .sf-wrap { max-width: 1120px; margin: 0 auto; padding: 24px 20px 64px; }
+  .sf-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+             margin-bottom: 6px; }
+  .sf-head h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+  .sf-head .sf-back { margin-left: auto; color: var(--text-muted);
+                      text-decoration: none; font-size: 13px; }
+  .sf-head .sf-back:hover { color: var(--accent); }
+  .sf-sub { color: var(--text-muted); margin: 0 0 20px; max-width: 76ch;
+            line-height: 1.55; }
+
+  .sf-card { background: var(--panel); border: 1px solid var(--line);
+             border-radius: 12px; padding: 18px 20px; margin-bottom: 18px;
+             position: relative; overflow: hidden; }
+  .sf-card::before { content: ""; position: absolute; inset: 0 0 auto 0;
+                     height: 1px; background: var(--panel-top); }
+  .sf-card h2 { margin: 0 0 4px; font-size: 15px; letter-spacing: 0.04em;
+                text-transform: uppercase; color: var(--text); }
+  .sf-note { color: var(--text-muted); font-size: 13px; margin: 0 0 14px;
+             line-height: 1.55; max-width: 80ch; }
+
+  .sf-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .sf-btn { background: var(--accent); color: var(--accent-ink); border: 0;
+            border-bottom: 3px solid var(--accent-dim); border-radius: 9px;
+            padding: 11px 20px; font: inherit; font-weight: 700; font-size: 14px;
+            letter-spacing: 0.02em; cursor: pointer; }
+  .sf-btn:active { transform: translateY(1px); border-bottom-width: 2px; }
+  .sf-btn.ghost { background: transparent; color: var(--text);
+                  border: 1px solid var(--line); border-bottom-width: 1px; }
+  .sf-btn.danger { background: var(--bad); color: var(--ink);
+                   border-bottom-color: rgba(0,0,0,.35); }
+  .sf-btn.small { padding: 7px 13px; font-size: 13px; border-bottom-width: 2px; }
+  .sf-btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+  .sf-mode { display: flex; align-items: center; gap: 8px; margin-left: auto;
+             font-size: 13px; color: var(--text-muted); }
+  .sf-mode input { accent-color: var(--accent); width: 15px; height: 15px; }
+
+  table.sf-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.sf-table th { text-align: left; font-size: 11px; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--text-faint); padding: 0 12px 8px 0;
+    border-bottom: 1px solid var(--line); font-weight: 600; }
+  table.sf-table td { padding: 10px 12px 10px 0;
+    border-bottom: 1px solid var(--line-soft); color: var(--text-muted);
+    vertical-align: middle; }
+  table.sf-table td.name { color: var(--text); white-space: nowrap; }
+  table.sf-table td.mono { font-family: var(--mono, ui-monospace, monospace);
+    color: var(--accent); white-space: nowrap; }
+  .sf-scroll { overflow-x: auto; }
+
+  /* inline-block: a bare span is inline, and width/height are ignored on it --
+     which renders the meter as nothing at all. */
+  .sf-bar { display: inline-block; vertical-align: middle; position: relative;
+            height: 8px; width: 90px; border-radius: 999px;
+            background: var(--ink-raised); overflow: hidden; }
+  .sf-bar i { position: absolute; inset: 0 auto 0 0; display: block;
+              background: var(--ok, #86c34a); border-radius: 999px; }
+  .sf-bar.low i { background: var(--warn); }
+  .sf-bar.out i { background: var(--bad); }
+
+  .sf-readings { display: grid; gap: 10px;
+                 grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .sf-reading { background: var(--ink-raised); border: 1px solid var(--line);
+                border-radius: 9px; padding: 11px 13px; }
+  .sf-reading .k { display: block; font-size: 11px; letter-spacing: 0.05em;
+                   text-transform: uppercase; color: var(--text-faint);
+                   margin-bottom: 5px; }
+  .sf-reading .v { font-family: var(--mono, ui-monospace, monospace);
+                   font-size: 19px; color: var(--text); }
+  .sf-reading .u { font-size: 12px; color: var(--text-muted); margin-left: 3px; }
+
+  .sf-chip { font-size: 12px; padding: 5px 10px; border-radius: 999px;
+             background: var(--ink-raised); border: 1px solid var(--line);
+             color: var(--text-muted); }
+  .sf-chip b { color: var(--text); font-weight: 600; }
+  .sf-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
+  .sf-msg { margin-top: 14px; padding: 12px 14px; border-radius: 8px;
+            font-size: 13px; line-height: 1.6; display: none;
+            background: var(--ink-raised); border: 1px solid var(--line);
+            border-left: 3px solid var(--line); color: var(--text-muted); }
+  .sf-msg.show { display: block; }
+  .sf-msg.ok { background: var(--ok-wash, rgba(134,195,74,.12));
+               border-left-color: var(--ok, #86c34a); }
+  .sf-msg.bad { background: var(--bad-wash); border-left-color: var(--bad); }
+  .sf-msg.warn { background: var(--warn-wash); border-left-color: var(--warn); }
+  .sf-msg b { color: var(--text); }
+
+  .sf-sim { display: none; margin-bottom: 14px; }
+  .sf-sim.show { display: block; }
+
+  .sf-field { display: inline-flex; flex-direction: column; gap: 5px; }
+  .sf-field label { font-size: 11px; letter-spacing: 0.05em;
+                    text-transform: uppercase; color: var(--text-faint); }
+  .sf-field input { background: var(--ink-raised); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+    font: inherit; font-size: 14px; width: 92px; }
+  .sf-field input:focus { outline: none; border-color: var(--accent); }
+  code { font-family: var(--mono, ui-monospace, monospace); font-size: 13px;
+         background: var(--ink); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="sf-wrap">
+
+  <div class="sf-head">
+    <h1>Service functions</h1>
+    <span class="sf-chip">BMW &amp; MINI · ENET cable</span>
+    <a class="sf-back" href="/">&larr; back to Car Harness</a>
+  </div>
+  <p class="sf-sub">
+    The jobs a forecourt actually needs after work on a car: reset the service
+    counters, register a new battery, and ask the gateway what the car is
+    really made of. These run BMW's own diagnostic jobs over the ENET cable —
+    the car has to be awake, ignition on.
+  </p>
+
+  <div class="sf-msg warn sf-sim" id="sf-simbanner">
+    <b>Simulation mode.</b> Nothing below touches a real car — every value is
+    made up and clearly marked.
+  </div>
+
+  <!-- ---------------------------------------------------------- CBS --- -->
+  <div class="sf-card">
+    <h2>Service intervals (CBS)</h2>
+    <p class="sf-note">
+      Condition Based Service is what the driver sees as "service due". It lives
+      in the cluster, the engine and the ABS unit — each item is owned by one of
+      them — and it is <b>not</b> the same record as the iDrive service history.
+      A full service usually wants both:
+      <a href="/service-history.html">write the history entry here</a>.
+    </p>
+    <div class="sf-actions">
+      <button type="button" class="sf-btn" id="sf-cbs-read">Read the car's service data</button>
+      <label class="sf-mode">
+        <input type="checkbox" id="sf-sim"> Simulate (no car)
+      </label>
+    </div>
+    <div class="sf-msg" id="sf-cbs-msg"></div>
+    <div class="sf-scroll" id="sf-cbs-wrap" hidden>
+      <table class="sf-table" id="sf-cbs-table">
+        <thead>
+          <tr><th>Item</th><th>Code</th><th>Life left</th><th>Distance</th>
+              <th>Services</th><th>Module</th><th></th></tr>
+        </thead>
+        <tbody id="sf-cbs-body"></tbody>
+      </table>
+    </div>
+    <div class="sf-chips" id="sf-cbs-modules"></div>
+  </div>
+
+  <!-- ------------------------------------------------------ battery --- -->
+  <div class="sf-card">
+    <h2>Battery</h2>
+    <p class="sf-note">
+      Condition comes from the engine's own power management and the sensor on
+      the battery's negative terminal. <b>Register a replacement only after a new
+      battery has actually been fitted</b> — it resets the charge history so the
+      car charges a new battery properly and lets start/stop work again. It does
+      not change the coded battery type or capacity; a different size, or AGM in
+      place of lead-acid, needs coding this harness doesn't do.
+    </p>
+    <div class="sf-actions">
+      <button type="button" class="sf-btn" id="sf-batt-read">Read battery condition</button>
+      <button type="button" class="sf-btn danger" id="sf-batt-register">Register a new battery…</button>
+    </div>
+    <div class="sf-msg" id="sf-batt-msg"></div>
+    <div class="sf-readings" id="sf-batt-readings"></div>
+  </div>
+
+  <!-- ------------------------------------------------------ gateway --- -->
+  <div class="sf-card">
+    <h2>What's actually fitted</h2>
+    <p class="sf-note">
+      The module scan probes a fixed list of addresses and calls silence "not
+      fitted" — which can't tell a missing module from a sleeping one. The
+      gateway holds the car's own list of control units, so this is the car's
+      answer rather than ours.
+    </p>
+    <div class="sf-actions">
+      <button type="button" class="sf-btn ghost" id="sf-ecu-read">Ask the gateway</button>
+    </div>
+    <div class="sf-msg" id="sf-ecu-msg"></div>
+    <div class="sf-scroll" id="sf-ecu-wrap" hidden>
+      <table class="sf-table">
+        <thead>
+          <tr><th>Control unit</th><th>Address</th><th>What we call it</th><th>SGBD</th></tr>
+        </thead>
+        <tbody id="sf-ecu-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+<script src="service-functions.js"></script>
+</body>
+</html>

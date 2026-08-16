@@ -1,0 +1,41 @@
+{ "commands": [
+{ "hdr": "7E2", "rax": "7EA", "cmd": {"22": "2001"}, "source": "tests/test_cases/{2018,2021}/commands/7E2.7EA.222001.yaml",
+  "signals": [
+    {"id": "MERCEDES_FL_VSS", "name": "Wheel speed, front-left",   "fmt": {           "len": 16, "mul": 9, "div": 160, "max": 120, "unit": "metersPerSecond" }},
+    {"id": "MERCEDES_FR_VSS", "name": "Wheel speed, front-right",  "fmt": {"bix": 16, "len": 16, "mul": 9, "div": 160, "max": 120, "unit": "metersPerSecond" }},
+    {"id": "MERCEDES_RL_VSS", "name": "Wheel speed, rear-left",    "fmt": {"bix": 32, "len": 16, "mul": 9, "div": 160, "max": 120, "unit": "metersPerSecond" }},
+    {"id": "MERCEDES_RR_VSS", "name": "Wheel speed, rear-right",   "fmt": {"bix": 48, "len": 16, "mul": 9, "div": 160, "max": 120, "unit": "metersPerSecond" }},
+    {"id": "MERCEDES_TIRE_FL_VSS", "name": "Wheel speed corner twin, front-left",  "fmt": {"bix": 0,  "len": 16, "mul": 9, "div": 160, "max": 120, "unit": "metersPerSecond" }},
+    {"id": "MERCEDES_TIRE_FR_VSS", "name": "Wheel speed corner twin, front-right", "fmt": {"bix": 16, "len": 16, "mul": 9, "div": 160, "max": 120, "unit": "metersPerSecond" }},
+    {"id": "MERCEDES_TIRE_RL_VSS", "name": "Wheel speed corner twin, rear-left",   "fmt": {"bix": 32, "len": 16, "mul": 9, "div": 160, "max": 120, "unit": "metersPerSecond" }},
+    {"id": "MERCEDES_TIRE_RR_VSS", "name": "Wheel speed corner twin, rear-right",  "fmt": {"bix": 48, "len": 16, "mul": 9, "div": 160, "max": 120, "unit": "metersPerSecond" }}
+  ]},
+{ "hdr": "7E2", "rax": "7EA", "cmd": {"22": "2002"}, "source": "tests/test_cases/{2018,2021}/commands/7E2.7EA.222002.yaml",
+  "signals": [
+    {"id": "MERCEDES_LON_ACC",                        "name": "Longitudinal acceleration",       "fmt": {"bix": 8,  "len": 8,  "sign": true, "mul": 16, "div": 1250, "min": -20, "max": 20, "unit": "metersPerSecondSquared"}},
+    {"id": "MERCEDES_LNG_G",                          "name": "Longitudinal acceleration (g)",   "fmt": {"bix": 8,  "len": 8,  "sign": true, "mul": 16, "div": 1250, "min": -20, "max": 20, "unit": "gravity"}},
+    {"id": "MERCEDES_LAT_ACC",                        "name": "Lateral acceleration",            "fmt": {"bix": 32, "len": 8,  "sign": true, "mul": 1,  "div": 64,   "min": -20, "max": 20, "unit": "metersPerSecondSquared"}},
+    {"id": "MERCEDES_LAT_G",                          "name": "Lateral acceleration (g)",        "fmt": {"bix": 32, "len": 8,  "sign": true, "mul": 1,  "div": 64,   "min": -20, "max": 20, "unit": "gravity"}},
+    {"id": "MERCEDES_YAW_RATE",                       "name": "Yaw rate",                       "fmt": {"bix": 48, "len": 16, "sign": true, "mul": 2,  "div": 32768, "min": -1, "max": 1, "unit": "radiansPerSecond"}},
+    {"id": "MERCEDES_STEER_ANGLE",                    "name": "Steering angle",                 "fmt": {"bix": 72, "len": 16, "sign": true, "mul": 1,  "div": 10,    "min": -720, "max": 720, "unit": "degrees"}},
+    {"id": "MERCEDES_MASTER_BREAK_CYLINDER_PRESSURE", "name": "Brake master-cylinder pressure",  "fmt": {"bix": 96, "len": 16, "sign": true, "mul": 153, "div": 10000, "min": -10, "max": 300, "unit": "bar"}},
+    {"id": "MERCEDES_MCYL_BREAK",                     "name": "Brake master-cylinder pressure (twin)", "fmt": {"bix": 96, "len": 16, "sign": true, "mul": 153, "div": 10000, "min": -10, "max": 300, "unit": "bar"}},
+    {"id": "MERCEDES_VACC_BREAK",                     "name": "Brake vacuum-brake pressure",     "fmt": {"bix": 148, "len": 12, "mul": 1, "div": 1000, "min": 0, "max": 10, "unit": "bar"}},
+    {"id": "MERCEDES_VACUUM_BREAK_PRESSURE",          "name": "Brake vacuum-brake pressure (twin)", "fmt": {"bix": 148, "len": 12, "mul": 1, "div": 1000, "min": 0, "max": 10, "unit": "bar"}}
+  ]},
+{ "hdr": "7E5", "rax": "7ED", "cmd": {"22": "2005"}, "source": "tests/test_cases/{2018,2021}/commands/7E5.222005.yaml",
+  "signals": [
+    {"id": "MERCEDES_AUX_V", "name": "Auxiliary battery voltage", "fmt": { "len": 8, "mul": 1015686, "div": 10000000, "max": 20, "unit": "volts" }}
+  ]},
+{ "hdr": "7E5", "rax": "7ED", "cmd": {"22": "6050"}, "source": "tests/test_cases/{2018,2021}/commands/7E5.226050.yaml",
+  "signals": [
+    {"id": "MERCEDES_HV_SOC", "name": "HV battery state of charge", "fmt": { "len": 16, "mul": 1, "div": 100, "max": 100, "unit": "percent" }}
+  ]},
+{ "hdr": "7E5", "rax": "7ED", "cmd": {"22": "6071"}, "source": "tests/test_cases/{2018,2021}/commands/7E5.226071.yaml",
+  "signals": [
+    {"id": "MERCEDES_CNVRTR_REQ_V", "name": "HV converter requested voltage", "fmt": { "len": 16, "mul": 25, "div": 1000, "max": 60, "unit": "volts" }}
+  ]},
+{ "hdr": "7E5", "rax": "7ED", "cmd": {"22": "6053"}, "source": "tests/test_cases/{2018,2021}/commands/7E5.226053.yaml", "verified": false,
+  "note": "NOT WIRED - the only OBDb vector for MERCEDES_HV_A is all-zero; scale unproven, deliberately not decoded.",
+  "signals": []}
+] }
