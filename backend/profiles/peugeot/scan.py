@@ -115,12 +115,28 @@ IDENT_DIDS = [
 ]
 
 # KWP ident zones read with service 0x21 when the 0x22 DIDs all refuse.
-KWP_ZONES = [(0x80, "Ident (zone 80)"), (0x90, "Ident (zone 90)")]
+# Zone 0x80 is the classic PSA "ZA" ident block (part number + supplier +
+# software versions); 0xB0 is the PSA-dialect VIN zone (ludwig-v's KWP zone
+# table, documented on PSA head units: FE=ZI, 80=ZA, 82=serial, B0=VIN, the
+# KWP counterpart of UDS F190).
+KWP_ZONES = [(0x80, "Ident (zone 80)"), (0xB0, "VIN (zone B0)")]
 
-# KWP zones that can carry the VIN, tried in order by read_vin() below. Zone
-# 0x80 is the classic PSA identification block; 0x90 answers on some MED17 /
-# DiagOnCAN-era ECUs. A zone this ECU doesn't implement simply stays silent.
-KWP_VIN_ZONES = (0x80, 0x90)
+# Where a KWP-flavour engine might hide its VIN, tried in order by read_vin()
+# below. Nothing here is MED17-verified on-car yet (nobody publishes it -- the
+# DDT2000 database, ludwig-v's zone tables and the KWP2000 spec all disagree,
+# see docs/private/peugeot-t7-special-functions-research.md), so we ladder:
+#   0xB0  PSA KWP VIN zone (ludwig-v arduino-psa-diag zones/TELEMAT.md)
+#   0x81  DDT2000 "Lecture VIN" zone (Bosch ME7.4.6 precedent, Renault stack)
+#   0x80  the ZA ident block -- carries part number + serial, never a VIN on
+#         the RCZ field car, but kept last in case a calibration embeds one
+# A zone this ECU doesn't implement simply NAKs or stays silent. Zone 0x90 is
+# deliberately NOT probed: DDT2000 maps it to generic live data, not a VIN.
+KWP_VIN_ZONES = (0xB0, 0x81, 0x80)
+
+# Standard KWP2000 ReadECUIdentification (0x1A) VIN option ids, tried after
+# the PSA zones: 0x90 = VIN (current), 0x88 = VIN (original) -- DaimlerChrysler
+# KWP2000 Requirements Definition v2.2. Not a PSA-documented path; read-only.
+KWP_VIN_IDENTS = (0x90, 0x88)
 
 # UDS NRCs that mean "I might answer in a different session" -- when a plain
 # ReadDTC returns one of these we open the PSA session ladder and retry once.
@@ -169,7 +185,8 @@ def read_vin(session, trace: Optional[List[str]] = None) -> Optional[str]:
     1. Mode 09 PID 02 broadcast (0x7DF) -- any ~2010+ car.
     2. Mode 09 PID 2 physical (0x7E0) -- some ECUs ignore functional addressing.
     3. UDS 22 F1 90 on the engine's PSA pair (0x6A8 -> 0x688).
-    4. PSA KWP session (10 03 / 10 C0 / 81) then the ident zones 0x21 reads.
+    4. PSA KWP session (10 03 / 10 C0 / 81), the VIN zones (21 B0/81/80),
+       then the KWP2000 1A ident ids (90 current / 88 original).
 
     Every rung is read-only and failure-tolerant: the first VIN found wins and
     a silent car just returns None. Run BEFORE any per-module aiming narrows
@@ -209,7 +226,8 @@ def read_vin(session, trace: Optional[List[str]] = None) -> Optional[str]:
         except (ObdError, TransportError):
             pass
 
-        # Rung 4: KWP ident zones after the PSA session ladder.
+        # Rung 4: KWP VIN zones after the PSA session ladder, then the
+        # standard KWP2000 ReadECUIdentification ids.
         if client.open_session(ENGINE, trace):
             for zone in KWP_VIN_ZONES:
                 try:
@@ -223,6 +241,19 @@ def read_vin(session, trace: Optional[List[str]] = None) -> Optional[str]:
                 vin = _vin_in(reply, 2)      # 61 <zone> then the ident text
                 if vin:
                     trace.append(f"21 {zone:02X} -> VIN")
+                    return vin
+            for ident in KWP_VIN_IDENTS:
+                try:
+                    reply = client.request(
+                        ENGINE, bytes([0x1A, ident]), timeout=2.5
+                    )
+                except (ObdError, TransportError):
+                    continue
+                if not reply or reply[0] != 0x5A:
+                    continue
+                vin = _vin_in(reply, 2)      # 5A <ident> then the VIN
+                if vin:
+                    trace.append(f"1A {ident:02X} -> VIN")
                     return vin
         return None
     finally:

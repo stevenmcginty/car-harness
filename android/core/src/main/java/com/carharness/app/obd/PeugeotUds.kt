@@ -91,14 +91,25 @@ object PeugeotUds {
     )
 
     // KWP ident zones read with service 0x21 when the 0x22 DIDs all refuse.
+    // Zone 0x80 = the classic PSA "ZA" block (part number + serial — that is
+    // what the RCZ field car returned); 0xB0 = the PSA-dialect VIN zone
+    // (ludwig-v's KWP zone table, the counterpart of UDS F190).
     private val KWP_ZONES = listOf(
         0x80 to "Ident (zone 80)",
-        0x90 to "Ident (zone 90)",
+        0xB0 to "VIN (zone B0)",
     )
 
-    // KWP zones that can carry the VIN, tried in order by vinFromCar(). A
-    // zone this ECU doesn't implement simply stays silent.
-    private val KWP_VIN_ZONES = listOf(0x80, 0x90)
+    // Where a KWP-flavour engine might hide its VIN, tried in order by
+    // vinFromCar(). Nothing here is MED17-verified on-car yet (nobody
+    // publishes it — DDT2000, ludwig-v's zone tables and the KWP2000 spec
+    // all disagree), so we ladder. Zone 0x90 is deliberately NOT probed:
+    // DDT2000 maps it to generic live data, not a VIN.
+    private val KWP_VIN_ZONES = listOf(0xB0, 0x81, 0x80)
+
+    // Standard KWP2000 ReadECUIdentification (0x1A) VIN option ids, tried
+    // after the PSA zones: 0x90 = VIN (current), 0x88 = VIN (original) —
+    // DaimlerChrysler KWP2000 Requirements Definition v2.2.
+    private val KWP_VIN_IDENTS = listOf(0x90, 0x88)
 
     // UDS NRCs that mean "I might answer in a different session" — escalate once.
     private val SESSION_NRCS = setOf(0x11, 0x22, 0x7E, 0x7F)
@@ -326,7 +337,8 @@ object PeugeotUds {
      *  1. Mode 09 PID 02 broadcast (0x7DF) — any ~2010+ car.
      *  2. Mode 09 PID 02 physical (0x7E0) — some ECUs ignore functional ids.
      *  3. UDS 22 F1 90 on the engine's PSA pair (0x6A8 -> 0x688).
-     *  4. PSA KWP session (10 03 / 10 C0 / 81) then 0x21 ident zones.
+     *  4. PSA KWP session (10 03 / 10 C0 / 81), the VIN zones (21 B0/81/80),
+     *     then the KWP2000 1A ident ids (90 current / 88 original).
      *
      * Must run with the ELM receive filter still open for rung 1 (aim()
      * narrows it for the rungs after). Returns null when every rung is silent.
@@ -350,6 +362,13 @@ object PeugeotUds {
                     try {
                         val reply = request(session, ENGINE, 0x21, "%02X".format(zone), 2500)
                         vinIn(reply, 2)?.let { return it }  // 61 <zone> …
+                    } catch (_: Exception) {
+                    }
+                }
+                for (ident in KWP_VIN_IDENTS) {
+                    try {
+                        val reply = request(session, ENGINE, 0x1A, "%02X".format(ident), 2500)
+                        vinIn(reply, 2)?.let { return it }  // 5A <ident> …
                     } catch (_: Exception) {
                     }
                 }
