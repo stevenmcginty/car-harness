@@ -46,6 +46,7 @@ class FakePsaCar:
         self.cleared = []        # tx ids that got a ClearDiagnosticInformation
         self.ext_started = []    # tx ids that got a session escalation
         self.kwp = {ABS}         # modules speaking PSA's KWP dialect
+        self.kwp81_only = set()  # modules where even 10 C0 is silent: 81 or nothing
 
     def handle(self, tx, req):
         if not req:
@@ -71,6 +72,8 @@ class FakePsaCar:
         if svc == 0x3E:                                   # TesterPresent
             return bytes([0x7E, 0x00])
         if svc == 0x10 and len(req) >= 2:                 # session control
+            if tx in self.kwp81_only:                     # 308 CC field shape:
+                return None                               # both 10s stay silent
             if tx in self.kwp:
                 if req[1] == 0xC0:                        # PSA/KWP session only
                     self.sessions[tx] = True
@@ -82,6 +85,10 @@ class FakePsaCar:
                 self.ext_started.append(tx)
                 return bytes([0x50, 0x03, 0x00, 0x32, 0x01, 0xF4])
             return bytes([0x7F, 0x10, 0x12])
+        if svc == 0x81:                                   # KWP StartCommunication
+            if tx in self.kwp:
+                self.sessions[tx] = True
+                return bytes([0xC1, 0xEA, 0x8F])
         if svc == 0x17:                                   # KWP ReadStatusOfDTC
             if tx in self.kwp and self.sessions.get(tx):
                 return bytes([0x57, 0x01, 0x53, 0x35, 0x60])   # C1335
@@ -89,6 +96,11 @@ class FakePsaCar:
         if svc == 0x21 and len(req) == 2:                 # KWP zone read
             if tx == ABS and req[1] == 0x80 and self.sessions.get(tx):
                 return bytes([0x61, 0x80]) + b"ABS8.1 9665344180"
+            # MED17-style KWP engine (like the 308 CC field car): ident zone
+            # 80 carries the ECU label and the VIN.
+            if (tx == ENGINE and tx in self.kwp and req[1] == 0x80
+                    and self.sessions.get(tx)):
+                return bytes([0x61, 0x80]) + b"MED17.4 " + FAKE_VIN.encode()
             return bytes([0x7F, 0x21, 0x11])
         if svc == 0x21 and len(req) >= 4:                 # KWP block read (HDi)
             if tx == ENGINE and req[1:4] == bytes([0xCB, 0x80, 0x01]):
@@ -456,6 +468,61 @@ def main() -> int:
 
     client.restore()
     check("restore hands ELM back to generic stack (ATSH7DF)", "ATSH7DF" in session.at_log)
+
+    # --- integration: the VIN ladder -----------------------------------------
+    # A KWP-era engine (the 308 CC shape): no Mode 09, UDS refused, only the
+    # PSA KWP session + ident zone 80 answers. The ladder must still land a
+    # VIN -- that is the whole reason it exists.
+    kwp_car = FakePsaCar()
+    kwp_car.kwp = {ABS, ENGINE}
+    kwp_session = FakeElmSession(kwp_car)
+    vin_trace = []
+    kwp_vin = peugeot_scan.read_vin(kwp_session, vin_trace)
+    check("VIN ladder: KWP engine VIN via PSA session + 21 80",
+          kwp_vin == FAKE_VIN, str(kwp_vin))
+    check("VIN ladder: trace names the winning rung",
+          any("21 80" in line and "VIN" in line for line in vin_trace),
+          " | ".join(vin_trace))
+    check("VIN ladder: 10 C0 was the session that opened (not 10 03)",
+          kwp_car.ext_started == [ENGINE] and kwp_session.at_log.count("ATSH6A8") >= 1,
+          str(kwp_car.ext_started))
+
+    # The plain fake car answers no VIN rung at all (no 0902, F190 NAKs,
+    # engine not KWP) -- the ladder must say None, not invent one.
+    silent_session = FakeElmSession(FakePsaCar())
+    check("VIN ladder: silent car returns None",
+          peugeot_scan.read_vin(silent_session) is None)
+
+    # The exact 308 CC field shape: 10 03 silent, 10 C0 silent, ONLY the bare
+    # KWP StartCommunication 81 opens -- then zone 80 carries the VIN.
+    cc_car = FakePsaCar()
+    cc_car.kwp = {ENGINE}
+    cc_car.kwp81_only = {ENGINE}
+    cc_trace = []
+    cc_vin = peugeot_scan.read_vin(FakeElmSession(cc_car), cc_trace)
+    check("VIN ladder: 81-only engine (308 CC shape) still lands the VIN",
+          cc_vin == FAKE_VIN, str(cc_vin))
+    check("VIN ladder: trace shows 10 03 and 10 C0 going silent first",
+          any("10 03" in l and "no answer" in l for l in cc_trace)
+          and any("10 C0" in l and "no answer" in l for l in cc_trace)
+          and any("KWP start 81" in l and "OK" in l for l in cc_trace),
+          " | ".join(cc_trace))
+
+    # A binary payload must never false-match the VIN pattern (its hex dump
+    # is itself valid VIN characters).
+    check("VIN ladder: binary payload never false-matches",
+          peugeot_scan._vin_in(bytes(range(0x00, 0x30)), 0) is None)
+    check("VIN ladder: real zone payload matches",
+          peugeot_scan._vin_in(
+              bytes([0x61, 0x80]) + b"MED17.4 " + FAKE_VIN.encode(), 2) == FAKE_VIN)
+    # The RCZ field regression: zone 80's part number + serial ran to 17
+    # digits and the old pattern called it a VIN (plus a false mismatch
+    # warning). A real WMI carries letters; all digits must refuse.
+    check("VIN regex: RCZ part-number string is not a VIN",
+          peugeot_scan._VIN_RE.search("96637115800003966") is None
+          and peugeot_scan._VIN_RE.search("96761847800003967") is None)
+    check("VIN regex: real EU VIN still matches",
+          peugeot_scan._VIN_RE.search("MED17.4 VF3R9FHZC9S123456 END") is not None)
 
     print()
     if failures:

@@ -45,8 +45,13 @@ def _make_j2534_link(config: Optional[dict]):
 # Curated PSA diagnostic address table for the modules a dealer actually cares
 # about on a pre-sale check. Each row is (request_id, response_id, code, name,
 # description). These are 11-bit CAN ids taken from the community PSA diagnostic
-# databases (ludwig-v/arduino-psa-diag, prototux/PSA-RE). "(if fitted)" modules
-# simply time out and are marked not present on cars without them -- harmless.
+# databases (ludwig-v/arduino-psa-diag ECU_LIST.md, prototux/PSA-RE
+# nodes/AEE2004.full.yml, Barracuda09/PyPSADiag) -- the T7-era ids (308 / 308 CC
+# / RCZ, 2007-2013) follow PSA's node arithmetic: request 0x6A0+node /
+# response 0x680+node on the 500k IS bus wired to OBD pins 6/14, and
+# request 0x740+node / response 0x640+node on the 125k body buses behind the
+# BSI (OBD pins 3/8). "(if fitted)" modules simply time out and are marked not
+# present on cars without them -- harmless.
 PEUGEOT_ECU_TABLE = [
     (0x752, 0x652, "BSI", "Body Systems Interface", "Central body computer / gateway"),
     (0x6A8, 0x688, "CMM", "Engine control", "Engine / injection (petrol or diesel)"),
@@ -54,17 +59,36 @@ PEUGEOT_ECU_TABLE = [
     (0x6AD, 0x68D, "ABS/ESP", "Braking / stability", "ABS anti-lock + ESP stability"),
     (0x744, 0x644, "AIRBAG", "Airbags / SRS", "Restraint / airbag control"),
     (0x75F, 0x65F, "COMBINE", "Instrument cluster", "Dashboard cluster"),
+    (0x767, 0x667, "BTE", "Folding roof (308 CC)", "Convertible roof controller -- CC-only, also runs the windows"),
     (0x75D, 0x65D, "AAS", "Parking aid", "Park distance sensors (if fitted)"),
     (0x6B5, 0x695, "DIRECTION", "Power steering", "Electric power steering"),
+    (0x6A5, 0x685, "CAV", "Steering angle sensor", "ESP steering-angle sensor (id derived from the PSA-RE node map)"),
+    (0x6B7, 0x697, "CORPRO", "Headlamp correction", "Headlamp levelling / directional beams (if fitted)"),
     (0x6B3, 0x693, "FSE", "Electric parking brake", "Electric parking brake (if fitted)"),
     (0x76D, 0x66D, "CLIM", "Climate control", "Air conditioning / heating"),
+    (0x778, 0x678, "TDCAR", "Rear climate", "Rear climate control (if fitted)"),
     (0x6AF, 0x68F, "DSG", "Tyre pressure (TPMS)", "Tyre pressure monitoring (if fitted)"),
     (0x760, 0x660, "AUTORADIO", "Radio / audio", "Audio head unit"),
+    (0x771, 0x671, "CDCHG", "CD changer", "CD changer (if fitted)"),
     (0x765, 0x665, "AFFICHEUR", "Central display", "Central screen (if fitted)"),
     (0x764, 0x664, "TELEMAT", "Telematics", "Telematics / emergency call (if fitted)"),
+    (0x773, 0x673, "KML", "Hands-free kit", "Bluetooth hands-free unit (if fitted)"),
     (0x6A1, 0x681, "SCR", "AdBlue / SCR", "Diesel selective catalytic reduction"),
-    (0x6C1, 0x601, "ADDITIF", "DPF additive", "Diesel particulate additive pump"),
-    (0x730, 0x710, "CPL", "Rain / light sensor", "Rain & light sensor (if fitted)"),
+    (0x6C1, 0x601, "ADDITIF", "DPF additive", "Diesel particulate additive pump (newer cars)"),
+    (0x775, 0x675, "ADDGO3", "DPF additive (older)", "Diesel additive dosing, pre-PADDGO cars (if fitted)"),
+    (0x730, 0x710, "CPL", "Rain / light sensor", "Rain & light sensor, newer Hella UDS variant (if fitted)"),
+    (0x74A, 0x64A, "CDPL", "Rain / light sensor (T7)", "Rain & light sensor, T7-era id"),
+    (0x742, 0x642, "COM2000", "Steering column", "COM2000 steering-wheel controls unit"),
+    (0x746, 0x646, "RHF", "RF receiver", "Radio-frequency receiver for the remote key"),
+    (0x741, 0x641, "ADML", "Keyless start", "Keyless entry / start (if fitted)"),
+    (0x75C, 0x65C, "ALARME", "Alarm", "Factory alarm (if fitted)"),
+    (0x74B, 0x64B, "PDPC", "Driver door", "Driver door electronics / window module"),
+    (0x76E, 0x66E, "BDMC", "Driver seat memory", "Driver seat memory (if fitted)"),
+    (0x76F, 0x66F, "BDMP", "Passenger seat memory", "Passenger seat memory (if fitted)"),
+    (0x768, 0x668, "TOUVRANT", "Sunroof", "Opening sunroof, fixed-glass cars (if fitted)"),
+    (0x748, 0x648, "BSC", "Boot servo", "Boot lid servo control (if fitted)"),
+    (0x76C, 0x66C, "BSR", "Trailer module", "Towbar / trailer module (if fitted)"),
+    (0x731, 0x711, "BECH", "Aux heater", "Additional heater, diesel (if fitted)"),
     (0x6B4, 0x694, "BMS", "HV battery", "High-voltage battery management (EV/PHEV, if fitted)"),
 ]
 
@@ -72,8 +96,9 @@ PEUGEOT_ECU_TABLE = [
 # right receive filter per module (PSA response != request+8).
 PEUGEOT_ID_MAP = {tx: rx for tx, rx, _, _, _ in PEUGEOT_ECU_TABLE}
 
-# Powertrain-bus modules: the set a standard dongle CAN reach on pins 6/14.
-ENGINE_BUS = {0x6A8, 0x6A9, 0x6AD, 0x6B5, 0x6A1}
+# Powertrain-bus modules: the set a standard dongle CAN reach on pins 6/14
+# (the 500k IS bus). Everything else lives on the body buses behind the BSI.
+ENGINE_BUS = {0x6A8, 0x6A9, 0x6AD, 0x6B5, 0x6A1, 0x6A5, 0x6B7}
 
 # The engine also owns the standard OBD slot; 01 00 there is the one request an
 # emissions ECU must answer with the ignition on.
@@ -90,7 +115,12 @@ IDENT_DIDS = [
 ]
 
 # KWP ident zones read with service 0x21 when the 0x22 DIDs all refuse.
-KWP_ZONES = [(0x80, "Ident (zone 80)")]
+KWP_ZONES = [(0x80, "Ident (zone 80)"), (0x90, "Ident (zone 90)")]
+
+# KWP zones that can carry the VIN, tried in order by read_vin() below. Zone
+# 0x80 is the classic PSA identification block; 0x90 answers on some MED17 /
+# DiagOnCAN-era ECUs. A zone this ECU doesn't implement simply stays silent.
+KWP_VIN_ZONES = (0x80, 0x90)
 
 # UDS NRCs that mean "I might answer in a different session" -- when a plain
 # ReadDTC returns one of these we open the PSA session ladder and retry once.
@@ -100,11 +130,103 @@ _SESSION_NRCS = (0x11, 0x22, 0x7E, 0x7F)
 # tooling asks for (arduino-psa-diag), then the OEM-style masks.
 _DTC_MASKS = (0x09, 0xAF, 0x0C, 0xFF)
 
-_VIN_RE = re.compile(r"[A-HJ-NPR-Z0-9]{17}")
+# A VIN is 17 chars WITHOUT I/O/Q -- and never all digits. A KWP ident zone's
+# text is "part number + serial" (the RCZ field car: 9663711580 003966 = 17
+# digits), which the bare pattern happily matched, producing a phantom VIN and
+# a false cross-module mismatch warning. A real WMI always carries letters
+# (S-Z for Europe), so require at least two.
+_VIN_RE = re.compile(r"(?=[A-HJ-NPR-Z0-9]{17})"
+                     r"(?=.{0,16}[A-HJ-NPR-Z].{0,15}[A-HJ-NPR-Z])[A-HJ-NPR-Z0-9]{17}")
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _vin_in(payload: bytes, skip: int) -> Optional[str]:
+    """A 17-char VIN hiding in a positive reply after ``skip`` echo bytes.
+
+    ASCII filter only, never the hex fallback of _printable(): a hex dump of
+    a binary payload is itself 0-9A-F characters and would false-match the
+    VIN pattern.
+    """
+    if not payload or len(payload) <= skip:
+        return None
+    text = "".join(chr(b) for b in payload[skip:] if 32 <= b < 127)
+    found = _VIN_RE.search(text.upper())
+    return found.group(0) if found else None
+
+
+def read_vin(session, trace: Optional[List[str]] = None) -> Optional[str]:
+    """The car's VIN, laddered across every PSA generation a dongle can meet.
+
+    Why a ladder: the generic Mode 09 PID 02 read is answered by ~2010+ UDS
+    cars, but the KWP-era engines (MED17-class petrol, DCM diesels, the
+    2009-2013 308 CC included) ignore it -- field-verified: that car answers
+    no Mode 09 at all, refuses UDS 22 F1 90 with NRC 11, and only wakes for
+    the KWP StartCommunication 81. So, in order, best-effort:
+
+    1. Mode 09 PID 02 broadcast (0x7DF) -- any ~2010+ car.
+    2. Mode 09 PID 2 physical (0x7E0) -- some ECUs ignore functional addressing.
+    3. UDS 22 F1 90 on the engine's PSA pair (0x6A8 -> 0x688).
+    4. PSA KWP session (10 03 / 10 C0 / 81) then the ident zones 0x21 reads.
+
+    Every rung is read-only and failure-tolerant: the first VIN found wins and
+    a silent car just returns None. Run BEFORE any per-module aiming narrows
+    the ELM's receive filter.
+    """
+    trace = trace if trace is not None else []
+
+    try:
+        vin = obd_service._read_vin(session)
+    except Exception:
+        vin = None  # a session without the generic query() stack (self-test)
+    if vin:
+        return vin
+
+    client = PsaElm327UdsClient(session, PEUGEOT_ID_MAP)
+    client.begin()
+    try:
+        # Rung 2: Mode 09 on the engine's physical OBD slot.
+        try:
+            reply = client.request(OBD_ENGINE, bytes([0x09, 0x02]), timeout=3.0)
+            if reply and reply[0] == 0x49:
+                vin = _vin_in(reply, 3)      # 49 02 <count> then the VIN
+                if vin:
+                    trace.append("0902 @7E0 -> VIN")
+                    return vin
+        except (ObdError, TransportError):
+            pass
+
+        # Rung 3: UDS VIN on the engine's own PSA id pair.
+        try:
+            reply = client.request(ENGINE, bytes([0x22, 0xF1, 0x90]), timeout=2.5)
+            if reply and reply[0] == 0x62:
+                vin = _vin_in(reply, 3)      # 62 F1 90 then the VIN
+                if vin:
+                    trace.append("22 F190 @6A8 -> VIN")
+                    return vin
+        except (ObdError, TransportError):
+            pass
+
+        # Rung 4: KWP ident zones after the PSA session ladder.
+        if client.open_session(ENGINE, trace):
+            for zone in KWP_VIN_ZONES:
+                try:
+                    reply = client.request(
+                        ENGINE, bytes([0x21, zone]), timeout=2.5
+                    )
+                except (ObdError, TransportError):
+                    continue
+                if not reply or reply[0] != 0x61:
+                    continue
+                vin = _vin_in(reply, 2)      # 61 <zone> then the ident text
+                if vin:
+                    trace.append(f"21 {zone:02X} -> VIN")
+                    return vin
+        return None
+    finally:
+        client.restore()
 
 
 def _nrc_text(exc: uds.UdsNegativeResponse) -> str:
@@ -477,8 +599,9 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
             }
 
         # The car's identity first, while the receive filter is still open:
-        # Mode 09 VIN works on any ~2001+ car no matter what PSA does next.
-        obd_vin = obd_service._read_vin(session)
+        # the read_vin ladder covers UDS-era cars (Mode 09) AND the KWP-era
+        # engines that ignore it (the 308 CC MED17 among them).
+        obd_vin = read_vin(session)
         client = PsaElm327UdsClient(session, PEUGEOT_ID_MAP)
         return _walk_and_report(
             client, obd_vin, (adapter or {}).get("name"),

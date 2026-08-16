@@ -53,15 +53,18 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
     /**
      * Read the car's identity once, right after connecting: the VIN over the
      * universal OBD Mode 09 read, decoded to make + year where the VIN format
-     * really encodes one. A null VIN
-     * means the car didn't answer (ignition off?) — the UI still shows the
-     * card so the user sees the app tried. Serialised on the same mutex, so it
-     * never races the live dashboard or a scan.
+     * really encodes one. When Mode 09 stays silent — normal on KWP-era cars
+     * (a 2009-2013 308 CC's MED17 ECU ignores it) — the PSA ladder is tried
+     * as a manufacturer fallback before giving up: Mode 09 physical, UDS
+     * 22 F1 90, then the KWP 81 + ident zones on the engine's PSA id pair.
+     * A null VIN means none of that answered (ignition off?) — the UI still
+     * shows the card so the user sees the app tried. Serialised on the same
+     * mutex, so it never races the live dashboard or a scan.
      */
     suspend fun identify(): VehicleIdentity = mutex.withLock {
         val vin = try {
             session.ensureProtocol()
-            readVin()
+            readVin() ?: PeugeotUds.vinFromCar(session)
         } catch (_: Exception) {
             null
         }
@@ -70,7 +73,12 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
 
     suspend fun scan(): ScanResult = mutex.withLock {
         session.ensureProtocol()
-        val vin = readVin()
+        // Generic emissions reads FIRST: the PSA VIN ladder's last rung opens
+        // a KWP session on the engine, and while that session is live the
+        // ECU stops answering generic Mode 01 (field-verified on the EP6 —
+        // the two stacks are mutually exclusive). The session lapses on its
+        // own after a few seconds of silence.
+        val vin0 = readVin()
 
         var milOn = false
         var dtcCount = 0
@@ -102,6 +110,9 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             }
 
         val nStored = stored?.size ?: 0
+        // PSA ladder last (see the comment up top): only fires when the
+        // generic Mode 09 read came back empty.
+        val vin = readVinFallback(vin0)
         val summary = when {
             nStored == 0 && dtcCount > 0 ->
                 "The car reports $dtcCount fault(s) but they are in modules this " +
@@ -124,9 +135,18 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             pending = records(pending, "pending"),
             permanent = records(permanent, "permanent"),
             message = simPrefix + summary +
-                if (vin == null) " (The car did not report a VIN over OBD.)" else "",
+                if (vin == null) " (The car did not report a VIN on any read — generic Mode 09 or the PSA ladder.)" else "",
         )
     }
+
+    /** Mode 09 came back empty -> try the PSA ladder (KWP-era cars). */
+    private fun readVinFallback(generic: String?): String? =
+        if (generic != null) generic
+        else try {
+            PeugeotUds.vinFromCar(session)
+        } catch (_: Exception) {
+            null
+        }
 
     suspend fun clear() {
         mutex.withLock {

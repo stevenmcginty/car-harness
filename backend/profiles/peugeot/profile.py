@@ -66,12 +66,16 @@ def _needs_adapter() -> ConnectionStatus:
 def _real_over_adapter(adapter: dict) -> ConnectionStatus:
     """Open the ELM327 over ``adapter`` and run a read-only connectivity probe."""
     from backend.obd import service as obd_service
+    from backend.profiles.peugeot.scan import read_vin as psa_read_vin
 
     name = (adapter or {}).get("name") or "adapter"
 
     def probe(session, entry):
         session.ensure_protocol()  # raises ObdError('link') if the car is silent
-        vin = obd_service._read_vin(session)
+        # The PSA VIN ladder, not just generic Mode 09: KWP-era engines
+        # (MED17 petrol / DCM diesel, ~2004-2013) never answer Mode 09, and
+        # reporting "no VIN" for a healthy 308 CC of that era was wrong.
+        vin = psa_read_vin(session)
         return {
             "firmware": session.firmware,
             "protocol": session.protocol,
@@ -113,7 +117,8 @@ def _real_over_adapter(adapter: dict) -> ConnectionStatus:
             key="vin", label="Vehicle identified",
             state="ok" if info["vin"] else "pending",
             detail=(f"VIN {info['vin']}." if info["vin"]
-                    else "Connected, but the car did not report a VIN over generic OBD."),
+                    else "Connected, but the car did not report a VIN on any "
+                         "rung (Mode 09, UDS F190, KWP ident zones)."),
         ),
     ]
     overall = "connected" if on_can else "partial"

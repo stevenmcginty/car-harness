@@ -28,7 +28,13 @@ object PeugeotUds {
     data class Ecu(val req: Int, val resp: Int, val code: String, val name: String)
 
     // Curated PSA diagnostic table for the modules a dealer checks pre-sale.
-    // Ids from the community PSA databases (ludwig-v/arduino-psa-diag, PSA-RE).
+    // Ids from the community PSA databases (ludwig-v/arduino-psa-diag
+    // ECU_LIST.md, prototux/PSA-RE nodes/AEE2004.full.yml, PyPSADiag). The
+    // T7-era ids (308 / 308 CC / RCZ, 2007-2013) follow PSA's node arithmetic:
+    // request 0x6A0+node / response 0x680+node on the 500k IS bus (OBD pins
+    // 6/14), request 0x740+node / response 0x640+node on the 125k body buses
+    // behind the BSI (OBD pins 3/8). Mirror of the backend's
+    // PEUGEOT_ECU_TABLE — KEEP BOTH IN SYNC.
     val ECUS = listOf(
         Ecu(0x752, 0x652, "BSI", "Body Systems Interface (gateway)"),
         Ecu(0x6A8, 0x688, "CMM", "Engine / injection"),
@@ -36,26 +42,46 @@ object PeugeotUds {
         Ecu(0x6AD, 0x68D, "ABS/ESP", "Braking / stability"),
         Ecu(0x744, 0x644, "AIRBAG", "Airbags / SRS"),
         Ecu(0x75F, 0x65F, "COMBINE", "Instrument cluster"),
+        Ecu(0x767, 0x667, "BTE", "Folding roof (308 CC) — also runs the windows"),
         Ecu(0x75D, 0x65D, "AAS", "Parking aid"),
         Ecu(0x6B5, 0x695, "DIRECTION", "Power steering"),
+        Ecu(0x6A5, 0x685, "CAV", "Steering angle sensor (id derived from PSA-RE node map)"),
+        Ecu(0x6B7, 0x697, "CORPRO", "Headlamp levelling / directional beams"),
         Ecu(0x6B3, 0x693, "FSE", "Electric parking brake"),
         Ecu(0x76D, 0x66D, "CLIM", "Climate control"),
+        Ecu(0x778, 0x678, "TDCAR", "Rear climate control"),
         Ecu(0x6AF, 0x68F, "DSG", "Tyre pressure (TPMS)"),
         Ecu(0x760, 0x660, "AUTORADIO", "Radio / audio"),
+        Ecu(0x771, 0x671, "CDCHG", "CD changer"),
         Ecu(0x765, 0x665, "AFFICHEUR", "Central display"),
         Ecu(0x764, 0x664, "TELEMAT", "Telematics"),
+        Ecu(0x773, 0x673, "KML", "Bluetooth hands-free kit"),
         Ecu(0x6A1, 0x681, "SCR", "AdBlue / SCR (diesel)"),
-        Ecu(0x6C1, 0x601, "ADDITIF", "DPF additive (diesel)"),
-        Ecu(0x730, 0x710, "CPL", "Rain / light sensor"),
+        Ecu(0x6C1, 0x601, "ADDITIF", "DPF additive (diesel, newer)"),
+        Ecu(0x775, 0x675, "ADDGO3", "DPF additive (diesel, older)"),
+        Ecu(0x730, 0x710, "CPL", "Rain / light sensor (newer Hella UDS variant)"),
+        Ecu(0x74A, 0x64A, "CDPL", "Rain / light sensor (T7-era id)"),
+        Ecu(0x742, 0x642, "COM2000", "Steering-wheel controls unit"),
+        Ecu(0x746, 0x646, "RHF", "RF receiver (remote key)"),
+        Ecu(0x741, 0x641, "ADML", "Keyless entry / start"),
+        Ecu(0x75C, 0x65C, "ALARME", "Factory alarm"),
+        Ecu(0x74B, 0x64B, "PDPC", "Driver door electronics / window module"),
+        Ecu(0x76E, 0x66E, "BDMC", "Driver seat memory"),
+        Ecu(0x76F, 0x66F, "BDMP", "Passenger seat memory"),
+        Ecu(0x768, 0x668, "TOUVRANT", "Opening sunroof"),
+        Ecu(0x748, 0x648, "BSC", "Boot lid servo"),
+        Ecu(0x76C, 0x66C, "BSR", "Towbar / trailer module"),
+        Ecu(0x731, 0x711, "BECH", "Additional heater (diesel)"),
         Ecu(0x6B4, 0x694, "BMS", "HV battery (EV / PHEV)"),
     )
 
     private val RESP_FOR: Map<Int, Int> = ECUS.associate { it.req to it.resp }
 
     // Powertrain-bus modules: the set a standard dongle CAN reach on pins
-    // 6/14. If nothing outside this set answers (and the always-fitted BSI is
-    // silent), the car keeps its body modules on the pins-3/8 diag CAN.
-    private val ENGINE_BUS = setOf(0x6A8, 0x6A9, 0x6AD, 0x6B5, 0x6A1)
+    // 6/14 (the 500k IS bus). If nothing outside this set answers (and the
+    // always-fitted BSI is silent), the car keeps its body modules on the
+    // pins-3/8 diag CAN. Mirror of the backend's ENGINE_BUS — KEEP IN SYNC.
+    private val ENGINE_BUS = setOf(0x6A8, 0x6A9, 0x6AD, 0x6B5, 0x6A1, 0x6A5, 0x6B7)
 
     private val IDENT_DIDS = listOf(
         0xF190 to "VIN",
@@ -65,7 +91,14 @@ object PeugeotUds {
     )
 
     // KWP ident zones read with service 0x21 when the 0x22 DIDs all refuse.
-    private val KWP_ZONES = listOf(0x80 to "Ident (zone 80)")
+    private val KWP_ZONES = listOf(
+        0x80 to "Ident (zone 80)",
+        0x90 to "Ident (zone 90)",
+    )
+
+    // KWP zones that can carry the VIN, tried in order by vinFromCar(). A
+    // zone this ECU doesn't implement simply stays silent.
+    private val KWP_VIN_ZONES = listOf(0x80, 0x90)
 
     // UDS NRCs that mean "I might answer in a different session" — escalate once.
     private val SESSION_NRCS = setOf(0x11, 0x22, 0x7E, 0x7F)
@@ -253,9 +286,78 @@ object PeugeotUds {
                     .joinToString("")
             }
             .maxByOrNull { it.length } ?: ""
-        Regex("[A-HJ-NPR-Z0-9]{17}").find(text.uppercase())?.value
+        vinOf(text)
     } catch (_: Exception) {
         null
+    }
+
+    /**
+     * A 17-char VIN hiding in a positive reply after [skip] echo bytes.
+     * ASCII filter only, never the hex fallback of printable(): a hex dump of
+     * a binary payload is itself 0-9A-F characters and would false-match.
+     * And never all digits: a KWP ident zone carries "part number + serial"
+     * (the RCZ field car: 9663711580 003966 = 17 digits), which the bare
+     * pattern happily matched. A real WMI always carries letters.
+     */
+    private val VIN_RE = Regex("[A-HJ-NPR-Z0-9]{17}")
+
+    private fun vinOf(text: String): String? =
+        VIN_RE.findAll(text.uppercase())
+            .firstOrNull { m -> m.value.count { it.isLetter() } >= 2 }?.value
+
+    private fun vinIn(reply: ByteArray, skip: Int): String? {
+        if (reply.size <= skip) return null
+        val text = reply.drop(skip)
+            .map { it.toInt() and 0xFF }
+            .filter { it in 32..126 }
+            .map { it.toChar() }
+            .joinToString("")
+        return vinOf(text)
+    }
+
+    /**
+     * The car's VIN, laddered across every PSA generation a dongle can meet —
+     * the phone-side twin of the backend's read_vin(). Generic Mode 09 is
+     * answered by ~2010+ UDS cars; the KWP-era engines (MED17-class petrol,
+     * DCM diesels — the 2009-2013 308 CC among them) ignore it and only wake
+     * for the KWP StartCommunication 81. Rungs, in order, all read-only and
+     * failure-tolerant:
+     *
+     *  1. Mode 09 PID 02 broadcast (0x7DF) — any ~2010+ car.
+     *  2. Mode 09 PID 02 physical (0x7E0) — some ECUs ignore functional ids.
+     *  3. UDS 22 F1 90 on the engine's PSA pair (0x6A8 -> 0x688).
+     *  4. PSA KWP session (10 03 / 10 C0 / 81) then 0x21 ident zones.
+     *
+     * Must run with the ELM receive filter still open for rung 1 (aim()
+     * narrows it for the rungs after). Returns null when every rung is silent.
+     */
+    fun vinFromCar(session: Elm327Session): String? {
+        vinFromObd(session)?.let { return it }
+        begin(session)
+        try {
+            try {
+                val reply = request(session, OBD_ENGINE, 0x09, "02", 3000)
+                vinIn(reply, 3)?.let { return it }      // 49 02 <count> …
+            } catch (_: Exception) {
+            }
+            try {
+                val reply = request(session, ENGINE, 0x22, "F190", 2500)
+                vinIn(reply, 3)?.let { return it }      // 62 F1 90 …
+            } catch (_: Exception) {
+            }
+            if (openSession(session, ENGINE, Trace())) {
+                for (zone in KWP_VIN_ZONES) {
+                    try {
+                        val reply = request(session, ENGINE, 0x21, "%02X".format(zone), 2500)
+                        vinIn(reply, 2)?.let { return it }  // 61 <zone> …
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+            return null
+        } finally {
+            restore(session)
+        }
     }
 
     private fun readIdent(
@@ -290,10 +392,9 @@ object PeugeotUds {
                     if (value.isNotEmpty()) {
                         out.add(label to value)
                         trace.add("21 %02X → OK".format(zone))
-                        // A 17-char VIN hiding in the zone text still counts.
-                        Regex("[A-HJ-NPR-Z0-9]{17}").find(value.uppercase())?.let {
-                            out.add("VIN" to it.value)
-                        }
+                        // A 17-char VIN hiding in the zone text still counts
+                        // (never all digits: that's a part number + serial).
+                        vinOf(value)?.let { out.add("VIN" to it) }
                     }
                 } catch (e: UdsNegativeResponse) {
                     trace.add("21 %02X → ${e.shortText()}".format(zone))
@@ -446,9 +547,10 @@ object PeugeotUds {
         }
 
         // The car's identity first, while the receive filter is still open:
-        // Mode 09 VIN works on any ~2001+ car no matter what PSA does next.
+        // the vinFromCar ladder covers UDS-era cars AND the KWP-era engines
+        // (the 308 CC MED17 among them) that never answer plain Mode 09.
         onProgress("Reading VIN…")
-        val obdVin = if (simulated) null else vinFromObd(session)
+        val obdVin = if (simulated) null else vinFromCar(session)
 
         val modules = mutableListOf<UdsModuleResult>()
         begin(session)
