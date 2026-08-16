@@ -1724,6 +1724,32 @@ a.btn {
   max-width: 320px;
 }
 
+/* Text inputs + their inline labels inside a jobs-form (the JLR sweep range
+   and drive-log length). Same surface as .jobs-select so both read as one
+   control family. */
+.jobs-input {
+  background: var(--panel-hi);
+  color: var(--text);
+  border: 1px solid var(--panel-top);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-family: var(--mono, monospace);
+}
+
+.jobs-label {
+  color: var(--muted, #888);
+  font-size: 13px;
+}
+
+.jobs-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+}
+
 .jobs-params {
   display: flex;
   flex-direction: column;

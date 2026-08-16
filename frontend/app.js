@@ -115,6 +115,18 @@
     brandExtrasHint: document.getElementById("brand-extras-hint"),
     brandExtrasMessage: document.getElementById("brand-extras-message"),
     brandExtrasChips: document.getElementById("brand-extras-chips"),
+    brandExtrasForm: document.getElementById("brand-extras-form"),
+    brandSweepFields: document.getElementById("brand-sweep-fields"),
+    brandSweepFirst: document.getElementById("brand-sweep-first"),
+    brandSweepLast: document.getElementById("brand-sweep-last"),
+    brandSweepTarget: document.getElementById("brand-sweep-target"),
+    brandSweepExtended: document.getElementById("brand-sweep-extended"),
+    brandLogFields: document.getElementById("brand-log-fields"),
+    brandLogSeconds: document.getElementById("brand-log-seconds"),
+    brandLogDids: document.getElementById("brand-log-dids"),
+    brandExtrasActions: document.getElementById("brand-extras-actions"),
+    brandExtrasCopy: document.getElementById("brand-extras-copy"),
+    brandExtrasDownload: document.getElementById("brand-extras-download"),
     brandJobs: document.getElementById("brand-jobs"),
     brandJobsHint: document.getElementById("brand-jobs-hint"),
     brandJobsModule: document.getElementById("brand-jobs-module"),
@@ -1659,6 +1671,9 @@
       discover: "discover",
       software: "software",
       gearbox: "gearbox",
+      sweep: "sweep",
+      "adblue-health": "adblue",
+      "adblue-drive-log": "adblue",
     };
     (panel.actions || []).forEach(function (a) {
       var feat = actionFeature[a.id];
@@ -2061,9 +2076,47 @@
       });
   }
 
+  // A client-side CSV download, the same shape live.js builds for its Record
+  // button: quote cells that need it, CRLF rows, object URL revoked after.
+  function downloadTextCsv(filename, rows) {
+    var cell = function (v) {
+      var s = v === undefined || v === null ? "" : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    var lines = rows.map(function (r) { return r.map(cell).join(","); });
+    var blob = new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  }
+
+  // The drive log's samples -> CSV rows: fixed columns then every DID column
+  // that appeared. Blanks (not zeros) where a tick didn't read a value -- the
+  // every-fifth-tick baseline leaves ragged columns and blanks are the honest
+  // representation. Mirrors backend/core/captures.drive_log_csv.
+  function driveLogRows(samples) {
+    var fixed = ["t", "engine_rpm", "coolant_c", "module_voltage"];
+    var keys = {};
+    samples.forEach(function (s) {
+      Object.keys(s).forEach(function (k) {
+        if (k.indexOf("did_") === 0) keys[k] = true;
+      });
+    });
+    var cols = fixed.concat(Object.keys(keys).sort());
+    return [cols].concat(samples.map(function (s) {
+      return cols.map(function (c) { return s[c]; });
+    }));
+  }
+
   // One extras read (Mazda live extras / snapshot, Peugeot health check, …).
   // ``action`` is the profile's panel.actions entry; its id doubles as the
-  // endpoint: /api/{brand}/live or /api/{brand}/snapshot.
+  // endpoint: /api/{brand}/live or /api/{brand}/snapshot. The two parametered
+  // JLR reads build their query from the #brand-extras-form inputs; the drive
+  // log also runs a countdown because its fetch can sit there for minutes.
   function runBrandExtras(action, btn) {
     var p = currentProfile();
     if (!p || brand.extrasInFlight) return;
@@ -2087,24 +2140,89 @@
     el.brandExtrasChips.innerHTML = "";
     el.brandExtrasWorksheetWrap.hidden = true;
     el.brandExtrasWorksheet.textContent = "";
-    el.brandExtrasMessage.textContent = action.busy || "Reading…";
+    el.brandExtrasActions.hidden = true;
+    el.brandExtrasCopy.hidden = true;
+    el.brandExtrasDownload.hidden = true;
 
-    apiFetch(obdUrl("/api/" + encodeURIComponent(p.id) + "/" + action.id))
+    // Parameter form: only the sweep and the drive log have one.
+    var isSweep = action.id === "sweep";
+    var isDriveLog = action.id === "adblue-drive-log";
+    el.brandExtrasForm.hidden = !(isSweep || isDriveLog);
+    el.brandSweepFields.hidden = !isSweep;
+    el.brandLogFields.hidden = !isDriveLog;
+
+    var url = obdUrl("/api/" + encodeURIComponent(p.id) + "/" + action.id);
+    var seconds = 300;
+    if (isSweep) {
+      var q = [];
+      [["first", el.brandSweepFirst], ["last", el.brandSweepLast],
+       ["target", el.brandSweepTarget]].forEach(function (pair) {
+        var v = pair[1].value.trim();
+        if (v) q.push(pair[0] + "=" + encodeURIComponent(v));
+      });
+      if (el.brandSweepExtended.checked) q.push("extended=true");
+      if (q.length) url += "&" + q.join("&");
+    } else if (isDriveLog) {
+      var parsed = parseInt(el.brandLogSeconds.value, 10);
+      if (isFinite(parsed) && parsed >= 5) seconds = Math.min(parsed, 3600);
+      url += "&seconds=" + seconds;
+      var dids = el.brandLogDids.value.trim();
+      if (dids) url += "&dids=" + encodeURIComponent(dids);
+    }
+
+    // The drive log's fetch can legitimately run 5-20 minutes (a regen is
+    // ~20 min). The countdown keeps the readout alive; the backend saves the
+    // run server-side (captures/<brand>/) either way, so even a closed tab
+    // doesn't lose the data.
+    var countdown = null;
+    var remaining = seconds;
+    if (isDriveLog) {
+      el.brandExtrasMessage.textContent =
+        (action.busy || "Logging…") + " — " + remaining + "s to go. " +
+        "The backend saves every run to captures/" + p.id + "/";
+      countdown = setInterval(function () {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(countdown);
+          el.brandExtrasMessage.textContent =
+            (action.busy || "Logging…") + " — finishing up…";
+          return;
+        }
+        el.brandExtrasMessage.textContent =
+          (action.busy || "Logging…") + " — " + remaining + "s to go. " +
+          "The backend saves every run to captures/" + p.id + "/";
+      }, 1000);
+    } else {
+      el.brandExtrasMessage.textContent = action.busy || "Reading…";
+    }
+
+    apiFetch(url)
       .then(function (data) {
+        if (countdown) clearInterval(countdown);
         el.brandExtrasMessage.textContent = (data && data.message) || "";
         el.brandExtrasChips.innerHTML = "";
         ((data && data.readings) || []).forEach(function (r) {
           var value = r.unit ? r.value + " " + r.unit : r.value;
           el.brandExtrasChips.appendChild(chip(r.name, value));
         });
+        if (data && data.savedTo) {
+          el.brandExtrasMessage.textContent +=
+            " Saved to " + data.savedTo + (data.savedCsv ? " (+ CSV)" : "") + ".";
+        }
         // A read that produces a copy-out text block (the Vauxhall software
-        // worksheet) shows it under the chips; every other action just doesn't
-        // send one and the block stays hidden.
+        // worksheet, the JLR sweep/health worksheet) shows it under the chips;
+        // every other action just doesn't send one and the block stays hidden.
         var sheet = (data && data.worksheet) || "";
         el.brandExtrasWorksheet.textContent = sheet;
         el.brandExtrasWorksheetWrap.hidden = !sheet;
+        var hasSamples = data && Array.isArray(data.samples) && data.samples.length;
+        el.brandExtrasDownload._samples = hasSamples ? data.samples : null;
+        if (sheet || hasSamples) el.brandExtrasActions.hidden = false;
+        el.brandExtrasCopy.hidden = !sheet;
+        el.brandExtrasDownload.hidden = !hasSamples;
       })
       .catch(function () {
+        if (countdown) clearInterval(countdown);
         el.brandExtrasMessage.textContent = "Couldn't reach the backend.";
       })
       .then(function () {
@@ -2112,6 +2230,37 @@
         btn.disabled = false;
         btn.textContent = original;
       });
+
+    el.brandExtrasCopy.onclick = function () {
+      var text = el.brandExtrasWorksheet.textContent || "";
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          el.brandExtrasCopy.textContent = "Copied";
+          setTimeout(function () {
+            el.brandExtrasCopy.textContent = "Copy detail";
+          }, 1500);
+        });
+        return;
+      }
+      // Legacy fallback: select the block and let the browser copy it.
+      var range = document.createRange();
+      range.selectNodeContents(el.brandExtrasWorksheet);
+      var selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.execCommand("copy");
+      selection.removeAllRanges();
+    };
+    el.brandExtrasDownload.onclick = function () {
+      var samples = (el.brandExtrasDownload._samples || []);
+      if (!samples.length) return;
+      var stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      downloadTextCsv("drive-log-" + (p.id || "obd") + "-" + stamp + ".csv",
+        driveLogRows(samples));
+    };
+    // Remember the samples for the download click: the fetch's closure dies
+    // with its promise, the button lives on until the next read.
+    el.brandExtrasDownload._samples = null;
   }
 
   // ---------- Module jobs (manufacturer's own EDIABAS library; BMW/MINI) ----------

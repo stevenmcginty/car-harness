@@ -185,8 +185,33 @@
       <div id="brand-extras" hidden>
         <div class="obd-live-header"><h3 id="brand-extras-title">Extras</h3></div>
         <p id="brand-extras-hint" class="obd-hint" hidden></p>
+        <!-- Parametered reads. Most extras are a bare one-shot GET, but the
+             JLR DID sweep wants a range + target and the drive log wants a
+             length (and optionally the sweep-captured DIDs to poll). Shown
+             only for the actions that use them; empty fields mean "use the
+             backend's default". -->
+        <div id="brand-extras-form" class="jobs-form" hidden>
+          <label id="brand-sweep-fields" hidden>
+            <span class="jobs-label">DID range</span>
+            <input id="brand-sweep-first" class="jobs-input" placeholder="0300" size="5" maxlength="4" aria-label="First DID (hex)">
+            <span class="jobs-label">to</span>
+            <input id="brand-sweep-last" class="jobs-input" placeholder="05FF" size="5" maxlength="4" aria-label="Last DID (hex)">
+            <span class="jobs-label">at</span>
+            <input id="brand-sweep-target" class="jobs-input" placeholder="7E0" size="4" maxlength="3" aria-label="Target module (hex)">
+            <label class="jobs-check"><input type="checkbox" id="brand-sweep-extended"> extended session</label>
+          </label>
+          <label id="brand-log-fields" hidden>
+            <span class="jobs-label">Log length (s)</span>
+            <input id="brand-log-seconds" class="jobs-input" type="number" min="5" max="3600" value="300" aria-label="Seconds to log">
+            <input id="brand-log-dids" class="jobs-input" placeholder="Optional DIDs, e.g. 042C,F40C" size="26" aria-label="DIDs to log (comma-separated hex)">
+          </label>
+        </div>
         <p id="brand-extras-message" class="status-message"></p>
         <div id="brand-extras-chips" class="obd-chips"></div>
+        <div id="brand-extras-actions" class="jobs-form" hidden>
+          <button id="brand-extras-copy" class="btn btn-secondary btn-small" type="button" hidden>Copy detail</button>
+          <button id="brand-extras-download" class="btn btn-secondary btn-small" type="button" hidden>Download CSV</button>
+        </div>
         <!-- Some reads produce a plain-text block meant to be copied out and
              compared against something else (the Vauxhall software-version
              worksheet against a manufacturer calibration lookup). Any brand
