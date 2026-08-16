@@ -1,0 +1,124 @@
+{
+  "title": "JLR 306DT external PID/DID candidates (pre-first-contact research)",
+  "engine_family": "306DT / AJ-V6D Lion 3.0 V6 diesel (X260 XF, EU6 SCR)",
+  "confidence": {
+    "22042c_soot": "medium — two independent JLR-diesel provenances (XF 2.2d forum capture, Car Scanner's own JLR PID via ELM327-emulator log on an L322 4.4 TDV8); NOT yet read on the 3.0 V6; units label g/m^3 reads more like a percent soot load",
+    "mode01_aftertreatment": "standard-defined formulas (SAE J1979DA via DashLogic) — legislated, not JLR-invented; per-car support on this ECU unknown until asked",
+    "dead_on_2_2d": "220417 / 220434 / 220598 / 22D922 all returned zero on the XF 2.2d — Ford Duratorq family, unlikely on the Lion V6; listed so nobody re-chases them blind"
+  },
+  "sources": [
+    "https://torque-bhp.com/community/main-forum/dpf-active-regeneration/ (22042C on a 2014 XF Sportbrake 2.2d, raw response 7E80562042C3CE6)",
+    "https://www.fullfatrr.com/forum/post671897.html (Car Scanner's JLR soot PID = 22042C, captured via Ircama ELM327-emulator on an L322 4.4 TDV8)",
+    "https://www.jaginfo.org/threads/dpf-data-via-obd.8760/ (XF 2.2d soot readings 7-24 tracked over days)",
+    "https://www.jaguarforums.com/forum/general-tech-help-7/custom-pids-torque-app-oil-temp-oil-level-trans-temp-more-213503/ (OJG pack v1.1 PDF: adds 22D120 diff-lock state, diesel 'expected compatible' claim)",
+    "https://www.dropbox.com/s/kmdtvb80g53ybe8/x351_x150_pids.csv?dl=0 (OJG metric CSV, retrieved verbatim — matches the shipped JLR_DIDS table)",
+    "https://www.dashlogic.com/docs/technical/obdii_pids (J1979DA formulas for PIDs 78/7A/7C/83/85/8B)",
+    "https://www.discosportforums.co.uk/threads/obdii-parameter-ids-pids-to-detect-dpf-regeneration.14064/ (Car Scanner standard-sensor approach; the circulating 'PID 244' is a ChatGPT hallucination — disregard)"
+  ],
+  "mode01": [
+    {
+      "pid": "0x7A",
+      "name": "dpf_delta_pressure_kpa",
+      "unit": "kPa",
+      "formula": "((256*B)+C)/100, two's complement signed",
+      "provenance": "legislated J1979DA — support untested on 306DT"
+    },
+    {
+      "pid": "0x7C",
+      "name": "dpf_temps_c",
+      "unit": "°C",
+      "formula": "inlet (((256*B)+C)/10)-40; outlet (((256*D)+E)/10)-40",
+      "provenance": "legislated J1979DA — support untested on 306DT"
+    },
+    {
+      "pid": "0x83",
+      "name": "nox_ppm_b1s1_b1s2",
+      "unit": "ppm",
+      "formula": "(256*B)+C ; (256*D)+E",
+      "provenance": "legislated J1979DA — support untested on 306DT"
+    },
+    {
+      "pid": "0x85",
+      "name": "reagent_tank_level_pct",
+      "unit": "%",
+      "formula": "F/2.55 (bytes A-E are consumption/demand rates)",
+      "provenance": "legislated J1979DA — support untested on 306DT"
+    },
+    {
+      "pid": "0x8B",
+      "name": "dpf_regen_metrics",
+      "unit": "%, min, km",
+      "formula": "trigger C/2.55; time between regens (256*D)+E; distance (256*F)+G",
+      "provenance": "legislated J1979DA — support untested on 306DT"
+    },
+    {
+      "pid": "0x78",
+      "name": "egt_bank1_c",
+      "unit": "°C",
+      "formula": "(((256*B)+C)/10)-40, sensor pairs BC/DE/FG/HI",
+      "provenance": "legislated J1979DA — support untested on 306DT"
+    }
+  ],
+  "dids": [
+    {
+      "did": "042C",
+      "module": "0x7E0",
+      "name": "DPF soot concentration",
+      "unit": "g/m^3 (label; probably % soot load)",
+      "formula": "(A*256+B)*100/65535",
+      "provenance": "XF 2.2d forum capture + Car Scanner's JLR PID — unverified on 306DT",
+      "verified": false,
+      "notes": "The #1 aftertreatment candidate: two independent JLR-diesel provenances. Try this first on the car."
+    },
+    {
+      "did": "D120",
+      "module": "0x795",
+      "name": "Rear diff lock state",
+      "unit": "active / not active",
+      "formula": "{A:1}",
+      "provenance": "OJG PDF v1.1 only (not in the CSV) — unverified",
+      "verified": false,
+      "notes": "Screenshot-derived; PDF-only row."
+    },
+    {
+      "did": "0417",
+      "module": "0x7E0",
+      "name": "Ford-family DPF candidate (dead on 2.2d)",
+      "unit": "raw",
+      "formula": null,
+      "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
+      "verified": false,
+      "notes": "Dead list: kept so the sweep's silence on these is expected, not a surprise."
+    },
+    {
+      "did": "0434",
+      "module": "0x7E0",
+      "name": "Ford-family DPF candidate (dead on 2.2d)",
+      "unit": "raw",
+      "formula": null,
+      "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
+      "verified": false,
+      "notes": "Dead list."
+    },
+    {
+      "did": "0598",
+      "module": "0x7E0",
+      "name": "Ford-family DPF candidate (dead on 2.2d)",
+      "unit": "raw",
+      "formula": null,
+      "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
+      "verified": false,
+      "notes": "Dead list."
+    },
+    {
+      "did": "D922",
+      "module": "0x7E0",
+      "name": "Ford-family DPF candidate (dead on 2.2d)",
+      "unit": "raw",
+      "formula": null,
+      "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
+      "verified": false,
+      "notes": "Dead list. Sits OUTSIDE the shipped sweep ranges — sweep D900-D9FF if chasing it."
+    }
+  ]
+}

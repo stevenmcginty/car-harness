@@ -30,7 +30,7 @@
         "label": "DID sweep",
         "busy": "Walking the DID range, keeping every answer raw…",
         "title": "Map this module's DIDs",
-        "hint": "Walks a 0x22 DID range on one module (default the PCM at 7E0, research seed ranges 0300-05FF / 2100-21FF / 2200-22FF / F400-F4FF) one id at a time and keeps every raw answer. NRC 0x31 refusals are counted (the module is listening, the id isn't implemented); other NRCs are named; the rest are silent. Identify a value by sweeping at idle and again warm/loaded and seeing which payloads MOVE -- nothing is decoded until it has been captured on the car. The target must answer a presence probe or the sweep refuses. Read-only.",
+        "hint": "Walks a 0x22 DID range on one module -- set the range and target in the fields above (defaults 0300-05FF at 7E0; research seed ranges 2100-21FF / 2200-22FF / F400-F4FF) -- one id at a time, keeping every raw answer. NRC 0x31 refusals are counted (the module is listening, the id isn't implemented); other NRCs are named; the rest are silent. Identify a value by sweeping at idle and again warm/loaded and seeing which payloads MOVE -- nothing is decoded until it has been captured on the car. The target must answer a presence probe or the sweep refuses. Read-only.",
         "readOnly": true
       },
       {
@@ -46,7 +46,7 @@
         "label": "AdBlue drive log",
         "busy": "Logging rpm against the aftertreatment DIDs…",
         "title": "AdBlue / DPF drive log",
-        "hint": "A timed log pairing engine rpm with the AdBlue/DPF candidate DIDs -- every tick reads rpm plus each DID's RAW payload with a timestamp, every fifth tick adds coolant and module voltage, and the achieved sample rate is reported. Run it through warm-up or a regen (~20 min at 500 °C+, so give it the seconds). Payloads stay raw on purpose: a signal is identified by how it moves against rpm, then decoded against the car. Default DIDs are the known engine set; sweep-captured candidates join later. Read-only.",
+        "hint": "A timed log pairing engine rpm with the AdBlue/DPF candidate DIDs -- set the length above (a regen is ~20 min at 500 °C+, so give it the seconds; the backend saves every real run to captures/jlr/ and the CSV button appears after). Every tick reads rpm plus each DID's RAW payload with a timestamp, every fifth tick adds coolant and module voltage, and the achieved sample rate is reported. Payloads stay raw on purpose: a signal is identified by how it moves against rpm, then decoded against the car. Default DIDs are the known engine set; paste sweep-captured candidates (comma-separated hex) to log those instead. Read-only.",
         "readOnly": true
       }
     ]

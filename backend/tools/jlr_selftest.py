@@ -653,6 +653,14 @@ def main() -> int:
           and "capture pending" in hrep["candidates"]["status"]
           and "jlr_engine_sweep" in hrep["candidates"]["status"],
           str(hrep["candidates"]))
+    # External-research candidates ride along, provenance-flagged and never
+    # verified -- the honesty contract for pre-contact seed data.
+    ext = hrep["candidates"].get("external", [])
+    check("external candidates carry provenance + verified=false",
+          bool(ext)
+          and all(e.get("provenance") and e.get("verified") is False for e in ext)
+          and any(e["did"] == "042C" for e in ext),
+          str(ext)[:120])
     check("health assessment matched the aftertreatment codes it actually read",
           set(hrep["assessment"]["matchedCodes"]) == {"P249D", "P2463"},
           str(hrep["assessment"]["matchedCodes"]))
@@ -705,6 +713,19 @@ def main() -> int:
                        ("drive log", jlr_adblue.drive_log(None, "sim"))):
         check(f"sim {label} ok+simulated+labelled",
               res["ok"] and res["simulated"] and "SIMULATED" in res["message"])
+
+    # The desktop extras panel renders readings chips + a worksheet copy-out
+    # block; sweep and health now carry both (discover always did).
+    for label, res in (("sweep", jlr_sweep.sweep(None, "sim")),
+                       ("health", jlr_adblue.health(None, "sim"))):
+        check(f"sim {label} carries panel readings + worksheet",
+              isinstance(res.get("readings"), list) and bool(res["readings"])
+              and isinstance(res.get("worksheet"), str) and bool(res["worksheet"]),
+              f"{len(res.get('readings', []))} chips")
+    # The drive log's default DID set now includes the external candidate.
+    dsim = jlr_adblue.drive_log(None, "sim")
+    check("drive log default dids include external 042C",
+          "042C" in dsim.get("dids", []), str(dsim.get("dids")))
 
     # --- MCP layer: the four new tools + honest no-adapter errors -----------
     from backend import mcp_server
@@ -789,9 +810,22 @@ def main() -> int:
     rhlth = tc.get("/api/jlr/adblue-health?mode=sim").json()
     check("API sim adblue health route",
           rhlth.get("ok") and rhlth.get("simulated"), str(rhlth)[:120])
-    rlog = tc.get("/api/jlr/adblue-drive-log?mode=sim&seconds=1").json()
+    rlog = tc.get("/api/jlr/adblue-drive-log?mode=sim&seconds=5").json()
     check("API sim adblue drive-log route",
           rlog.get("ok") and rlog.get("simulated"), str(rlog)[:120])
+    # Sim runs must never be stamped as saved -- fake data stays out of
+    # captures/jlr/ (the dataset is real-car only).
+    check("sim drive log is NOT saved to captures",
+          "savedTo" not in rlog and "savedCsv" not in rlog, str(rlog)[:80])
+    rbadsec = tc.get("/api/jlr/adblue-drive-log?mode=sim&seconds=1")
+    check("API drive-log seconds below 5 is an honest 400",
+          rbadsec.status_code == 400, str(rbadsec.status_code))
+    rbaddid = tc.get("/api/jlr/adblue-drive-log?mode=sim&dids=042C,zz")
+    check("API drive-log non-hex dids is an honest 400",
+          rbaddid.status_code == 400, str(rbaddid.status_code))
+    rlogd = tc.get("/api/jlr/adblue-drive-log?mode=sim&seconds=5&dids=042C").json()
+    check("API drive-log dids param reaches the log",
+          rlogd.get("ok") and rlogd.get("dids") == ["042C"], str(rlogd.get("dids")))
     rbad = tc.get("/api/jlr/sweep?mode=real")
     check("API sweep without adapter in real mode is an honest 400",
           rbad.status_code == 400, str(rbad.status_code))

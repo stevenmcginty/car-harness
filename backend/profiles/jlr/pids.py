@@ -18,12 +18,21 @@ The research's biggest gaps are deliberately NOT here: air-suspension corner
 heights, DPF soot mass and battery SoC have no publicly-captured JLR DIDs
 (capture targets for a real car, research §5a) -- nothing is invented.
 
+One external seed now exists: data/external_pids.json (the 306DT pre-contact
+research, docs/private/jlr-306dt-external-pid-research.md) holds externally-
+sourced candidate DIDs -- 22042C DPF soot (two JLR-diesel provenances, still
+unverified on the 3.0 V6) and the confirmed-dead Ford-family ids. It is loaded
+as EXTERNAL_DIDS, separate from JLR_DIDS on purpose: nothing from it is
+promoted into the verified table until a real capture on the car confirms it.
+
 If the JLR-specific reads all fail (a DoIP-era or gateway-filtered car), live()
 falls back to a curated generic Mode-01 set on the 11-bit engine so the car
 still gets something honest, exactly like the Mercedes/Fiat profiles.
 """
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 from backend.obd import service as obd_service
@@ -91,6 +100,43 @@ OBD_PIDS: List[Tuple[int, str, str, Callable[[bytes], Optional[str]]]] = [
     (0x5C, "Engine oil temperature", "°C", _byte(1, -40, lo=-40, hi=215)),
     (0x42, "Battery voltage (control module)", "V", _u16_scaled(1 / 1000, dp=2, lo=0, hi=32)),
     (0x2F, "Fuel level", "%", _byte(100 / 255, dp=0, lo=0, hi=100)),
+]
+
+
+# ---- externally-researched candidates (data/external_pids.json) ------------
+# Loaded defensively like the Peugeot EP6 catalog: a missing or corrupt file
+# degrades to an empty candidate list, never a broken import. Every entry is
+# provenance-flagged and verified=false -- the drive log polls them RAW and
+# only a real capture on the car promotes anything into JLR_DIDS.
+_DATA_PATH = Path(__file__).resolve().parent / "data" / "external_pids.json"
+
+
+def _load_external_data() -> dict:
+    try:
+        with open(_DATA_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+_EXTERNAL_DATA = _load_external_data()
+EXTERNAL_DIDS: List[dict] = _EXTERNAL_DATA.get("dids", [])
+
+# The engine-module candidates worth polling raw (the dead-list rows carry no
+# formula and are excluded; their silence is documented, not chased).
+EXTERNAL_ENGINE_DIDS: List[Tuple[int, str, str]] = [
+    (int(row["did"], 16), row["name"], row.get("provenance", ""))
+    for row in EXTERNAL_DIDS
+    if row.get("module") == "0x7E0" and row.get("formula")
+]
+
+# The legislated Mode-01 aftertreatment set (SAE J1979DA formulas -- public
+# standard, not JLR-invented; per-car support unknown until asked). The drive
+# log adds these to its baseline tick; unsupported PIDs answer silence and are
+# skipped without comment.
+AFTERTREATMENT_PIDS: List[Tuple[int, str, str]] = [
+    (int(row["pid"], 16), row["name"], row.get("provenance", ""))
+    for row in _EXTERNAL_DATA.get("mode01", [])
 ]
 
 # The Old Jaguar Group values are a single on-car capture -- this caveat rides

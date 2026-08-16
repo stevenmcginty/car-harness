@@ -39,7 +39,11 @@ from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.uds_elm327 import Elm327UdsClient
-from backend.profiles.jlr.pids import JLR_DIDS
+from backend.profiles.jlr.pids import (
+    AFTERTREATMENT_PIDS,
+    EXTERNAL_ENGINE_DIDS,
+    JLR_DIDS,
+)
 from backend.profiles.jlr.scan import (
     JLR_ECU_TABLE,
     _probe,
@@ -58,15 +62,23 @@ _OJG_ENGINE_DIDS = [(did, name) for addr, did, name, _, _ in JLR_DIDS
 
 # The aftertreatment candidate set: research §7 seeds RANGES (0300-05FF,
 # 2100-21FF, 2200-22FF, F4xx mirrors on the PCM) but no specific ids -- those
-# arrive only when jlr_engine_sweep has captured them on the real car. Until
-# then this is the honest placeholder the health pass and drive log carry.
+# arrive only when jlr_engine_sweep has captured them on the real car. On top
+# of that, the external-research file carries unverified candidates (most
+# importantly 042C DPF soot, two JLR-diesel provenances) which the drive log
+# polls RAW from day one; verified stays false until the car confirms.
 _CAPTURE_PENDING = {
     "dids": [],
+    "external": [
+        {"did": f"{did:04X}", "name": name, "provenance": prov, "verified": False}
+        for did, name, prov in EXTERNAL_ENGINE_DIDS
+    ],
     "status": ("capture pending -- no public JLR DID exists for DPF soot mass, "
-               "regen status, DEF level/quality, NOx ppm or EGTs. Run "
-               "jlr_engine_sweep on 7E0 over the research §7 ranges (0300-05FF, "
-               "2100-21FF, 2200-22FF, F400-F4FF), identify a signal by how it "
-               "moves, then pass the found ids to jlr_adblue_drive_log."),
+               "regen status, DEF level/quality, NOx ppm or EGTs. External "
+               "research adds unverified candidates (042C DPF soot is the one "
+               "to try first). Run jlr_engine_sweep on 7E0 over the research "
+               "§7 ranges (0300-05FF, 2100-21FF, 2200-22FF, F400-F4FF), "
+               "identify a signal by how it moves, then pass the found ids to "
+               "jlr_adblue_drive_log."),
 }
 
 # Research §4: the AdBlue/SCR fault space on the XF 3.0d, ranked by community
@@ -128,6 +140,65 @@ def _decode_pid(pid: int, body: Optional[bytes]) -> Optional[float]:
     if pid == 0x42 and len(body) >= 2:
         return round(((body[0] << 8) | body[1]) / 1000.0, 2)
     return None
+
+
+# The legislated Mode-01 aftertreatment decoders -- SAE J1979DA formulas (as
+# published by DashLogic), a public standard rather than anything JLR-specific,
+# so decoding them is not invention. Per-car support on this ECU is unknown
+# until asked: an unsupported PID answers silence and its keys simply stay out
+# of that tick's sample. Byte letters are the payload after 41 <pid>.
+def _s16(hi: int, lo: int) -> int:
+    v = (hi << 8) | lo
+    return v - 0x10000 if v >= 0x8000 else v
+
+
+def _u16b(body: bytes, i: int = 0) -> Optional[int]:
+    return (body[i] << 8) | body[i + 1] if len(body) > i + 1 else None
+
+
+def _scaled(value: Optional[int], divisor: float) -> Optional[float]:
+    return round(value / divisor, 2) if value is not None else None
+
+
+def _temp10(value: Optional[int]) -> Optional[float]:
+    """J1979DA word/10 - 40 (the standard temperature encoding)."""
+    return round(value / 10.0 - 40, 1) if value is not None else None
+
+
+def _byte_at(body: bytes, i: int, divisor: float) -> Optional[float]:
+    return round(body[i] / divisor, 1) if len(body) > i else None
+
+
+_AFTERTREATMENT_DECODES = {
+    # pid -> [(sample key, decoder)] -- see docs/private/jlr-306dt-external-pid-research.md §a
+    0x7A: [("dpf_delta_pressure_kpa", lambda b: _scaled(_s16(b[0], b[1]), 100.0))],
+    0x7C: [("dpf_temp_inlet_c", lambda b: _temp10(_u16b(b, 0))),
+           ("dpf_temp_outlet_c", lambda b: _temp10(_u16b(b, 2)))],
+    0x83: [("nox_b1s1_ppm", lambda b: _u16b(b, 0)),
+           ("nox_b1s2_ppm", lambda b: _u16b(b, 2))],
+    0x85: [("reagent_tank_level_pct", lambda b: _byte_at(b, 5, 2.55))],
+    0x8B: [("dpf_regen_trigger_pct", lambda b: _byte_at(b, 2, 2.55))],
+    0x78: [("egt_b1s1_c", lambda b: _temp10(_u16b(b, 0)))],
+}
+
+
+def _read_aftertreatment(client) -> dict:
+    """One pass over the legislated aftertreatment PIDs -> the decoded values
+    that answered. Called on the every-fifth-tick baseline (six extra reads a
+    tick would halve the BLE sample rate for numbers that move slowly)."""
+    out: dict = {}
+    for pid, _name, _prov in AFTERTREATMENT_PIDS:
+        body = _read_pid(client, pid)
+        if body is None:
+            continue
+        for key, decode in _AFTERTREATMENT_DECODES.get(pid, []):
+            try:
+                value = decode(body)
+            except (IndexError, ValueError):
+                value = None
+            if value is not None:
+                out[key] = value
+    return out
 
 
 def _now() -> str:
@@ -203,9 +274,53 @@ def _assessment(modules: List[dict]) -> dict:
 
 
 def _default_drive_dids() -> List[str]:
-    """The OJG engine set by default; sweep-captured candidates join by passing
-    ``dids`` explicitly (none exist yet -- capture pending)."""
-    return [f"{did:04X}" for did, _ in _OJG_ENGINE_DIDS]
+    """The OJG engine set plus the external research candidates (042C DPF soot
+    first among them); sweep-captured candidates join by passing ``dids``
+    explicitly."""
+    dids = [f"{did:04X}" for did, _ in _OJG_ENGINE_DIDS]
+    dids += [f"{did:04X}" for did, _, _ in EXTERNAL_ENGINE_DIDS]
+    return dids
+
+
+def _panel(baseline: Optional[dict], modules: List[dict],
+           values: List[dict]) -> dict:
+    """The health pass as generic panel data: `readings` chips + a `worksheet`
+    copy-out block -- the shapes the desktop extras panel renders for any
+    brand action (same pattern as discover.py / sweep.py)."""
+    readings = []
+    if baseline:
+        for key, label, unit in (
+            ("engine_rpm", "Engine rpm (Mode 01)", "rpm"),
+            ("coolant_c", "Coolant", "°C"),
+            ("module_voltage", "Module voltage", "V"),
+        ):
+            if baseline.get(key) is not None:
+                readings.append({"name": label, "value": str(baseline[key]),
+                                 "unit": unit, "description": ""})
+    for mod in modules:
+        faults = len(mod.get("dtcs", []))
+        state = ("present" if mod.get("present") else "no answer") + (
+            f" · {faults} fault{'s' if faults != 1 else ''} stored"
+            if mod.get("present") else "")
+        readings.append({"name": f"{mod['code']} {mod['address']}", "value": state,
+                         "unit": "", "description": mod.get("name", "")})
+    for value in values:
+        readings.append({
+            "name": f"DID {value['did']} · {value['name']}",
+            "value": value["payload"], "unit": "raw",
+            "description": value.get("provenance", ""),
+        })
+
+    lines = ["JLR AdBlue/DPF health pass"]
+    for mod in modules:
+        lines.append(f"{mod['code']} {mod['address']}: "
+                     + ("present" if mod.get("present") else "no answer"))
+        for dtc in mod.get("dtcs", []):
+            lines.append(f"  {dtc.get('code')} {dtc.get('status', '')}".rstrip())
+    for value in values:
+        lines.append(f"DID {value['did']} {value['name']}: {value['payload']} "
+                     f"[{value.get('provenance', '')}]")
+    return {"readings": readings, "worksheet": "\n".join(lines)}
 
 
 def health(adapter: Optional[dict], mode: str = "real") -> dict:
@@ -256,6 +371,8 @@ def health(adapter: Optional[dict], mode: str = "real") -> dict:
             "modules": modules, "values": values,
             "candidates": dict(_CAPTURE_PENDING),
             "assessment": _assessment(modules),
+            **_panel({"engine_rpm": 820.0, "coolant_c": 74.0, "module_voltage": 14.1},
+                     modules, values),
             "message": "SIMULATED -- no real car connected. Shape of a real pass: "
                        "Mode-01 baseline, known-table faults via the scan ladder, "
                        "known engine DIDs raw with provenance, SCR/DPF set flagged "
@@ -315,8 +432,9 @@ def health(adapter: Optional[dict], mode: str = "real") -> dict:
                     mod["error"] = str(exc)
                 modules.append(mod)
 
-            # 3. Known engine DIDs, RAW, provenance marked. The SCR/DPF set has
-            #    nothing to read yet -- _CAPTURE_PENDING says so in the result.
+            # 3. Known engine DIDs, RAW, provenance marked -- then the external
+            #    research candidates the same way, so the first health pass on
+            #    the car already answers "does 042C speak on a 3.0 V6?".
             for did, name in _OJG_ENGINE_DIDS:
                 body = _read_did_raw(client, ENGINE, did)
                 if body is None:
@@ -326,6 +444,15 @@ def health(adapter: Optional[dict], mode: str = "real") -> dict:
                     "payload": body.hex().upper(),
                     "provenance": "old-jaguar-group (petrol capture -- unverified "
                                   "on diesel)",
+                })
+            for did, name, prov in EXTERNAL_ENGINE_DIDS:
+                body = _read_did_raw(client, ENGINE, did)
+                if body is None:
+                    continue
+                values.append({
+                    "did": f"{did:04X}", "name": name,
+                    "payload": body.hex().upper(),
+                    "provenance": f"external research, unverified -- {prov}",
                 })
         finally:
             client.restore()
@@ -346,6 +473,7 @@ def health(adapter: Optional[dict], mode: str = "real") -> dict:
             "modules": modules, "values": values,
             "candidates": dict(_CAPTURE_PENDING),
             "assessment": _assessment(modules),
+            **_panel(baseline, modules, values),
             "message": (
                 (f"VIN {vin}. " if vin else "")
                 + f"{present} known-table module(s) answered, {faults} fault"
@@ -378,30 +506,33 @@ def drive_log(adapter: Optional[dict], mode: str = "real", seconds: float = 300.
     Payloads are raw on purpose: a signal is identified by how it moves
     against rpm, then decoded against the car -- never guessed here.
 
-    dids: hex strings. None uses the known OJG engine set; add sweep-captured
-        candidates by passing them explicitly (none exist until the sweep has
-        run on the real car).
+    dids: hex strings. None uses the known OJG engine set plus the external
+        research candidates (042C soot first); sweep-captured candidates
+        replace the set when passed explicitly.
     """
     if mode == "sim":
         # Fake warm-up: rpm with raw DID payloads beside it, coolant + voltage
         # on the every-fifth-tick baseline, a non-answer recorded as a gap.
         samples = [
             {"t": 0.0, "engine_rpm": 810.0, "did_033E": "0064", "did_03E6": "34",
-             "did_03F2": "44", "did_03F3": "3C", "did_0520": "1E",
-             "coolant_c": 22.0, "module_voltage": 12.2},
+             "did_03F2": "44", "did_03F3": "3C", "did_0520": "1E", "did_042C": "1F40",
+             "coolant_c": 22.0, "module_voltage": 12.2,
+             "dpf_delta_pressure_kpa": 0.15, "nox_b1s1_ppm": 85,
+             "reagent_tank_level_pct": 62.4, "egt_b1s1_c": 118.0},
             {"t": 4.2, "engine_rpm": 1750.0, "did_033E": "00C4", "did_03E6": "35",
-             "did_03F2": "44", "did_03F3": "42", "did_0520": "28"},
+             "did_03F2": "44", "did_03F3": "42", "did_0520": "28", "did_042C": "2AF8"},
             {"t": 8.1, "engine_rpm": 1980.0, "did_033E": "00E1", "did_03E6": "35",
-             "did_03F2": "45", "did_03F3": "4B", "did_0520": "2C"},
+             "did_03F2": "45", "did_03F3": "4B", "did_0520": "2C", "did_042C": "30D4"},
             {"t": 12.4, "engine_rpm": 690.0, "did_033E": "005A", "did_03E6": None,
-             "did_03F2": "45", "did_03F3": "50", "did_0520": "30"},
+             "did_03F2": "45", "did_03F3": "50", "did_0520": "30", "did_042C": "2134"},
         ]
         return {
             "ok": True, "simulated": True, "samples": samples,
-            "dids": _default_drive_dids(), "sampleRate": 0.3,
+            "dids": dids if dids else _default_drive_dids(), "sampleRate": 0.3,
             "message": "SIMULATED -- no real car connected. Fake warm-up shape: "
-                       "rpm with raw DID payloads beside it, coolant + voltage on "
-                       "the every-fifth-tick baseline.",
+                       "rpm with raw DID payloads beside it (042C soot candidate "
+                       "included), coolant + voltage plus the decoded legislated "
+                       "aftertreatment PIDs on the every-fifth-tick baseline.",
             "timestamp": _now(),
         }
 
@@ -453,6 +584,10 @@ def drive_log(adapter: Optional[dict], mode: str = "real", seconds: float = 300.
                         body = _read_pid(client, pid, timeout=0.8)
                         sample[key] = _decode_pid(pid, body)
                         alive = alive or body is not None
+                    # The legislated aftertreatment PIDs ride the same
+                    # every-fifth-tick baseline: decoded (public J1979DA
+                    # formulas) rather than raw, but only the ones that answer.
+                    sample.update(_read_aftertreatment(client))
                 tick += 1
                 samples.append(sample)
                 if alive:
