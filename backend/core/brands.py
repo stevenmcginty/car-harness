@@ -11,6 +11,13 @@ light up its routes:
                  -- may also expose discover(): discover() on a native-cable
                     profile (it finds the car itself), discover(adapter, mode)
                     on a dongle profile (it sweeps diagnostic addresses)
+    discover.py  discover(adapter, mode)  the same dongle address sweep as a
+                 separate file when the profile keeps its scan lean (JLR);
+                 main.py's /discover dispatch accepts either home
+    sweep.py     sweep(adapter, mode, ...)  walk a 0x22 DID range on one module
+                 keeping every answer raw -- the DID-mapping instrument
+    adblue.py    health(...), drive_log(...)  aftertreatment-focused passes
+                 with their results kept raw until decoded against the car
     pids.py      live(adapter, mode)      brand-specific live values
                  -- "enet-doip" profiles use live(mode), like scan/clear
                  -- ALSO feeds the Live Data dashboard automatically; see the
@@ -91,8 +98,14 @@ def features(brand: str) -> dict:
     return {
         "scan": scan_mod is not None and hasattr(scan_mod, "scan"),
         "clear": scan_mod is not None and hasattr(scan_mod, "clear"),
-        "discover": scan_mod is not None and hasattr(scan_mod, "discover"),
+        "discover": (scan_mod is not None and hasattr(scan_mod, "discover"))
+        or brand_module(brand, "discover") is not None,
         "live": pids_mod is not None and hasattr(pids_mod, "live"),
+        # 0x22 DID-range walk on one module (the DID-mapping instrument).
+        "sweep": brand_module(brand, "sweep") is not None
+        and hasattr(brand_module(brand, "sweep"), "sweep"),
+        # AdBlue/SCR/DPF health + drive logging.
+        "adblue": brand_module(brand, "adblue") is not None,
         # A printable customer-facing PDF. Opt-in per brand: a profile only
         # advertises one once it has something worth putting a name to.
         "report": pids_mod is not None and hasattr(pids_mod, "report"),

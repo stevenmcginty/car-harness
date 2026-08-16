@@ -21,6 +21,7 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
+from backend.core import captures  # noqa: E402
 from backend.core import brands, interfaces, registry  # noqa: E402
 from backend.obd import raw as obd_raw  # noqa: E402
 from backend.profiles.bmw import ediabas as bmw_ediabas  # noqa: E402
@@ -995,6 +996,21 @@ def fiat_clear_module(
 # --------------------------------------------------------------------------- #
 # Jaguar / Land Rover module read over a generic OBD dongle
 # --------------------------------------------------------------------------- #
+def _jlr_capture(kind: str, result: dict, instance) -> dict:
+    """Persist a real JLR run to captures/jlr/ so a farm-day session driven
+    through Claude accumulates the same dataset the web UI does. Sim runs and
+    save failures leave the result untouched (backend/core/captures.py)."""
+    try:
+        saved = captures.save("jlr", kind, result, instance)
+    except OSError:
+        return result
+    if saved:
+        result["savedTo"] = saved["json"]
+        if saved.get("csv"):
+            result["savedCsv"] = saved["csv"]
+    return result
+
+
 @mcp.tool()
 def jlr_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
     """Read a Jaguar / Land Rover car's driveline modules over a generic OBD-II dongle (read-only).
@@ -1019,7 +1035,7 @@ def jlr_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
         return error
-    return jlr_scan.scan(instance, mode)
+    return _jlr_capture("scan", jlr_scan.scan(instance, mode), instance)
 
 
 @mcp.tool()
@@ -1085,7 +1101,7 @@ def jlr_discover_modules(adapter_id: str | None = None, mode: str = "real") -> d
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
         return error
-    return jlr_discover.discover(instance, mode)
+    return _jlr_capture("discover", jlr_discover.discover(instance, mode), instance)
 
 
 @mcp.tool()
@@ -1116,7 +1132,9 @@ def jlr_engine_sweep(
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
         return error
-    return jlr_sweep.sweep(instance, mode, first, last, target, extended)
+    return _jlr_capture(
+        "sweep", jlr_sweep.sweep(instance, mode, first, last, target, extended), instance
+    )
 
 
 @mcp.tool()
@@ -1142,12 +1160,15 @@ def jlr_adblue_health(adapter_id: str | None = None, mode: str = "real") -> dict
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
         return error
-    return jlr_adblue.health(instance, mode)
+    return _jlr_capture("adblue-health", jlr_adblue.health(instance, mode), instance)
 
 
 @mcp.tool()
 def jlr_adblue_drive_log(
-    adapter_id: str | None = None, mode: str = "real", seconds: float = 300,
+    adapter_id: str | None = None,
+    mode: str = "real",
+    seconds: float = 300,
+    dids: list[str] | None = None,
 ) -> dict:
     """Log a JLR diesel drive pairing rpm with the AdBlue/DPF candidate DIDs (read-only).
 
@@ -1157,18 +1178,21 @@ def jlr_adblue_drive_log(
     regen (a regen is ~20 min at 500 °C+ -- pass seconds=1500+ to span one).
     Payloads stay raw: a signal is identified by how it moves against rpm, then
     decoded against the car. Default DIDs are the known Old Jaguar Group engine
-    set; once jlr_engine_sweep has captured aftertreatment candidates on the real
-    car, the backend's drive_log(dids=...) takes them -- this tool logs the
-    default set.
+    set; once jlr_engine_sweep has captured aftertreatment candidates on the
+    real car, pass them as dids (hex strings like ["042C", "F40C"], max 24) --
+    they replace the default set for that run.
 
     seconds: how long to log for. Drive normally while it runs.
+    dids: hex DID strings to log instead of the default engine set.
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
         required for real mode. mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
         return error
-    return jlr_adblue.drive_log(instance, mode, seconds)
+    return _jlr_capture(
+        "drive-log", jlr_adblue.drive_log(instance, mode, seconds, dids), instance
+    )
 
 
 # --------------------------------------------------------------------------- #

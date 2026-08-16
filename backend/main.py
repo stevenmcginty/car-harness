@@ -18,6 +18,7 @@ connect must never freeze the whole API.
 """
 
 import mimetypes
+import re
 import shutil
 import sys
 import tempfile
@@ -36,7 +37,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
-from backend.core import brands, interfaces, pairing, registry  # noqa: E402
+from backend.core import brands, captures, interfaces, pairing, registry  # noqa: E402
 from backend.core import vin as vin_decode  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import freeze, livefeed  # noqa: E402
@@ -531,6 +532,22 @@ def _brand_capability_or_404(brand: str, name: str):
     return module
 
 
+def _stamp_capture(brand: str, kind: str, result: dict, instance) -> dict:
+    """Persist a real run to captures/<brand>/ and stamp the paths onto the
+    result. Sim runs and brands not opted in are left untouched (see
+    backend/core/captures.py for why simulated data is never saved)."""
+    try:
+        saved = captures.save(brand, kind, result, instance)
+    except OSError:
+        # A full disk or a locked file must never lose the diagnostic itself.
+        return result
+    if saved:
+        result["savedTo"] = saved["json"]
+        if saved.get("csv"):
+            result["savedCsv"] = saved["csv"]
+    return result
+
+
 @app.get("/api/{brand}/discover")
 def brand_discover(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
     """Find the car on a brand's native cable (BMW ENET), or -- for a dongle
@@ -541,13 +558,15 @@ def brand_discover(brand: str, adapter: str | None = None, mode: str = "real") -
     if scan_mod is not None and hasattr(scan_mod, "discover"):
         if brands.needs_adapter(brand):
             instance = _obd_adapter_or_400(adapter, mode)
-            return scan_mod.discover(instance, mode)
-        return scan_mod.discover()
+            return _stamp_capture(
+                brand, "discover", scan_mod.discover(instance, mode), instance
+            )
+        return _stamp_capture(brand, "discover", scan_mod.discover(), None)
     module = brands.brand_module(brand, "discover")
     if module is None or not hasattr(module, "discover"):
         raise HTTPException(status_code=404, detail=f"'{brand}' has no discover step.")
     instance = _obd_adapter_or_400(adapter, mode)
-    return module.discover(instance, mode)
+    return _stamp_capture(brand, "discover", module.discover(instance, mode), instance)
 
 
 @app.get("/api/{brand}/sweep")
@@ -565,7 +584,10 @@ def brand_sweep(
     today). Read-only."""
     module = _brand_capability_or_404(brand, "sweep")
     instance = _obd_adapter_or_400(adapter, mode)
-    return module.sweep(instance, mode, first, last, target, extended)
+    return _stamp_capture(
+        brand, "sweep", module.sweep(instance, mode, first, last, target, extended),
+        instance,
+    )
 
 
 @app.get("/api/{brand}/adblue-health")
@@ -575,18 +597,45 @@ def brand_adblue_health(brand: str, adapter: str | None = None, mode: str = "rea
     sourced assessment, SCR/DPF values honestly flagged capture-pending."""
     module = _brand_capability_or_404(brand, "adblue")
     instance = _obd_adapter_or_400(adapter, mode)
-    return module.health(instance, mode)
+    return _stamp_capture(brand, "adblue-health", module.health(instance, mode), instance)
 
 
 @app.get("/api/{brand}/adblue-drive-log")
 def brand_adblue_drive_log(
-    brand: str, adapter: str | None = None, mode: str = "real", seconds: float = 300,
+    brand: str,
+    adapter: str | None = None,
+    mode: str = "real",
+    seconds: float = 300,
+    dids: str | None = None,
 ) -> dict:
     """Timed read-only log pairing rpm with the AdBlue/DPF candidate DIDs,
-    payloads kept raw until decoded against the car."""
+    payloads kept raw until decoded against the car. dids is a comma-separated
+    hex list (sweep-captured candidates) replacing the default engine set."""
     module = _brand_capability_or_404(brand, "adblue")
     instance = _obd_adapter_or_400(adapter, mode)
-    return module.drive_log(instance, mode, seconds)
+    if not 5 <= seconds <= 3600:
+        raise HTTPException(
+            status_code=400,
+            detail="seconds must be between 5 and 3600 (a regen needs ~1500).",
+        )
+    did_list: list[str] = []
+    if dids:
+        parts = [d.strip().upper() for d in dids.split(",") if d.strip()]
+        if len(parts) > 24:
+            raise HTTPException(
+                status_code=400, detail="at most 24 dids per drive log."
+            )
+        for part in parts:
+            if not re.fullmatch(r"[0-9A-F]{1,4}", part):
+                raise HTTPException(
+                    status_code=400,
+                    detail="dids must be comma-separated hex like 042C,F40C.",
+                )
+        did_list = parts
+    return _stamp_capture(
+        brand, "drive-log", module.drive_log(instance, mode, seconds, did_list or None),
+        instance,
+    )
 
 
 @app.get("/api/{brand}/scan")
@@ -595,10 +644,10 @@ def brand_scan(brand: str, adapter: str | None = None, mode: str = "real") -> di
     module = _brand_capability_or_404(brand, "scan")
     if brands.needs_adapter(brand):
         instance = _obd_adapter_or_400(adapter, mode)
-        return module.scan(instance, mode)
+        return _stamp_capture(brand, "scan", module.scan(instance, mode), instance)
     if mode not in ("real", "sim"):
         raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
-    return module.scan(mode)
+    return _stamp_capture(brand, "scan", module.scan(mode), None)
 
 
 @app.get("/api/{brand}/software")

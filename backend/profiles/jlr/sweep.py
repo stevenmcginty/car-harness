@@ -53,6 +53,45 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _readings(answered: List[dict], refused31: int, nrc_other: List[dict],
+              silent: int) -> List[dict]:
+    """The sweep's shape as generic name/value chips -- the desktop panel
+    renders these for any brand action, so the sweep needs no front-end code
+    of its own (same pattern as discover.py's _readings)."""
+    readings = [
+        {"name": "Answered with data", "value": str(len(answered)), "unit": "",
+         "description": "DIDs whose payloads are listed below, raw hex."},
+        {"name": "NRC 31 refusals", "value": str(refused31), "unit": "",
+         "description": "Module listening, id not implemented -- counted, not listed."},
+        {"name": "Other NRC(s)", "value": str(len(nrc_other)), "unit": "",
+         "description": "Named negative responses, e.g. conditionsNotCorrect."},
+        {"name": "Silent", "value": str(silent), "unit": "",
+         "description": "No answer at this id."},
+    ]
+    for a in answered[:12]:
+        readings.append({
+            "name": f"DID {a['did']}", "value": a["payload"], "unit": "raw",
+            "description": "Raw payload -- identify the signal by how it moves.",
+        })
+    if len(answered) > 12:
+        readings.append({"name": "…", "value": f"+{len(answered) - 12} more",
+                         "unit": "", "description": "See the worksheet for every row."})
+    return readings
+
+
+def _worksheet(range_str: str, target: str, extended: bool,
+               answered: List[dict], nrc_other: List[dict]) -> str:
+    """Plain-text copy-out block: one line per answered DID, one per named
+    NRC -- the format to paste into notes or diff between two sweeps."""
+    lines = [f"JLR DID sweep {range_str} @ 0x{target}"
+             + (" [extended session]" if extended else "")]
+    for a in answered:
+        lines.append(f"{a['did']}: {a['payload']}")
+    for n in nrc_other:
+        lines.append(f"{n['did']}: NRC {n['nrc']} ({n['nrcName']})")
+    return "\n".join(lines)
+
+
 def sweep(adapter: Optional[dict], mode: str = "real", first: str = "0300",
           last: str = "05FF", target: str = "7E0", extended: bool = False) -> dict:
     """Walk a 0x22 DID range on one JLR module and keep everything that answers.
@@ -95,6 +134,9 @@ def sweep(adapter: Optional[dict], mode: str = "real", first: str = "0300",
             "silent": n_silent,
             "range": f"{first.upper()}-{last.upper()}",
             "target": target.upper(), "extendedSession": extended,
+            "readings": _readings(answered, refused, nrc_other, n_silent),
+            "worksheet": _worksheet(first.upper(), target.upper(), extended,
+                                    answered, nrc_other),
             "message": "SIMULATED -- no real car connected. This is the shape a real "
                        "sweep returns: raw payloads (no scaling invented), the 0x31 "
                        "refusals counted rather than listed, other NRCs named, the "
@@ -186,6 +228,9 @@ def sweep(adapter: Optional[dict], mode: str = "real", first: str = "0300",
             "silent": silent,
             "range": f"{first_did:04X}-{last_did:04X}",
             "target": f"{addr:03X}", "extendedSession": extended,
+            "readings": _readings(answered, refused31, nrc_other, silent),
+            "worksheet": _worksheet(f"{first_did:04X}-{last_did:04X}",
+                                    f"{addr:03X}", extended, answered, nrc_other),
             "message": (
                 f"Swept {last_did - first_did + 1} id(s) at 0x{addr:03X}"
                 + (" after a 10 03 extended session" if extended else "")
