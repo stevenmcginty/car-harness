@@ -749,6 +749,8 @@ def _simulated_scan() -> dict:
                          "status": "08", "flags": ["confirmed"]}]),
         mod("0x6AD", "0x68D", "ABS/ESP", "Braking / stability", "ABS anti-lock + ESP stability",
             True),
+        mod("0x767", "0x667", "BTE", "Folding roof (308 CC)", "Convertible roof controller -- CC-only, also runs the windows",
+            True),
         mod("0x6A1", "0x681", "SCR", "AdBlue / SCR", "Diesel selective catalytic reduction",
             True, dtcs=[{"code": "P20E8", "hex": "20E800", "failureType": "00",
                          "status": "08", "flags": ["confirmed"]}]),
@@ -761,7 +763,7 @@ def _simulated_scan() -> dict:
         "vehicle": {"vin": "SIMULATED00PEUGEOT", "protocol": "ISO 15765-4 (CAN 11/500)",
                     "adapter": "Simulated"},
         "modules": modules,
-        "message": "SIMULATED -- VIN SIMULATED00PEUGEOT. 5 modules answered, 4 faults stored. "
+        "message": "SIMULATED -- VIN SIMULATED00PEUGEOT. 6 modules answered, 4 faults stored. "
                    "No real car connected.",
         "timestamp": _now(),
     }
