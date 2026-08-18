@@ -25,6 +25,7 @@ import argparse
 import datetime
 import hashlib
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -495,8 +496,7 @@ class Builder(object):
                 continue
             it = v.item(item_off)
             path = self.item_paths.get(item_off, "")
-            parts = path.split(" / ")
-            vehicle = parts[1] if len(parts) > 1 else (parts[0] if parts else "")
+            vehicle = vehicle_of(path)
             self.rows.add("module_node", n_sql, (
                 self.did, item_off, it["name"], it["label"], path, vehicle,
                 states.get(STATE_CONNECTION), states.get(STATE_PIDSETS),
@@ -723,6 +723,32 @@ class Builder(object):
             else:
                 out.append("%g" % dv)
         return " | ".join(out)[:2000]
+
+
+YEAR_RE = re.compile(r"^(19|20)\d{2}$")
+
+
+def vehicle_of(path):
+    """The vehicle line a menu path belongs to.
+
+    Paths run `VAT Release / <release line> / Diagnostics / <year> / <brand> /
+    <vehicle> / ...` on both the Opel/Vauxhall and the GM Global deliverables, so
+    the vehicle is the second component after the model year. Taking a fixed
+    index instead gives "Global" for every GM Global module, which makes the
+    "which vehicles share this module" question useless on exactly the files that
+    have the most vehicles in them.
+    """
+    parts = [p.strip() for p in path.split(" / ")]
+    for i, p in enumerate(parts):
+        if YEAR_RE.match(p):
+            if i + 2 < len(parts):
+                return parts[i + 2]
+            if i + 1 < len(parts):
+                return parts[i + 1]
+            break
+    if len(parts) > 1:
+        return parts[1]
+    return parts[0] if parts else ""
 
 
 def request_bytes(pid_type, param_id, pattern):

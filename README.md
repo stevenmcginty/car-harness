@@ -276,6 +276,22 @@ run.py                 python run.py
 start.bat              double-click launcher (Windows)
 ```
 
+## Mined dealer-tool data
+
+`docs/dataset-registry.md` is the map of every dealer-tool corpus on this
+machine: where it is, what format, how it was opened, what has been mined out of
+it and what has not. The corpora themselves stay where they are; the queryable
+indexes built from them are described in `tools/dealer_index/README.md` and live
+outside this repository so they can never be committed.
+
+Ask them things with:
+
+```
+python tools/dealer_index/dealerdb.py status
+python tools/dealer_index/dealerdb.py modules Astra-K
+python tools/dealer_index/dealerdb.py did 05FC
+```
+
 ## Data sources
 
 The offline fault-code table (`backend/obd/dtc_db.json`, mirrored in the
