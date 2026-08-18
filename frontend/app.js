@@ -126,6 +126,9 @@
     brandLogDids: document.getElementById("brand-log-dids"),
     brandLogPresets: document.getElementById("brand-log-presets"),
     brandLogPresetNote: document.getElementById("brand-log-preset-note"),
+    brandProcedureFields: document.getElementById("brand-procedure-fields"),
+    brandProcedureScenario: document.getElementById("brand-procedure-scenario"),
+    brandProcedureAbort: document.getElementById("brand-procedure-abort"),
     brandExtrasActions: document.getElementById("brand-extras-actions"),
     brandExtrasCopy: document.getElementById("brand-extras-copy"),
     brandExtrasDownload: document.getElementById("brand-extras-download"),
@@ -1677,6 +1680,8 @@
       "adblue-health": "adblue",
       "adblue-drive-log": "adblue",
       "dealer-data": "dealerData",
+      "procedure-preflight": "procedures",
+      procedure: "procedures",
     };
     (panel.actions || []).forEach(function (a) {
       var feat = actionFeature[a.id];
@@ -1692,6 +1697,19 @@
       // last in the row (and last in the tab order).
       el.brandActions.insertBefore(btn, el.brandClearAllBtn);
     });
+
+    // Runnable manufacturer routines: load the scenario list up front so the
+    // Simulate-mode picker is populated before the first press rather than
+    // after it. Costs one request and touches no car.
+    if (f.procedures) {
+      apiFetch("/api/" + encodeURIComponent(p.id) + "/procedures")
+        .then(function (cat) {
+          var first = ((cat && cat.procedures) || [])[0] || {};
+          procedureState.scenarios = first.simulationScenarios || [];
+          fillScenarios(el.brandProcedureScenario, procedureState.scenarios);
+        })
+        .catch(function () { /* the picker just stays empty */ });
+    }
 
     // Printable customer report, for brands that publish one. The backend takes
     // its own fresh reading, so the document's timestamp belongs to a real
@@ -2152,6 +2170,13 @@
   function runBrandExtras(action, btn) {
     var p = currentProfile();
     if (!p || brand.extrasInFlight) return;
+    // A runnable manufacturer routine is not a read: it needs a preflight, two
+    // confirmations and a POST, so it has its own flow rather than being
+    // squeezed through the extras GET.
+    if (action.kind === "procedure") {
+      runBrandProcedure(action, btn);
+      return;
+    }
     // An action flagged noCar is a data view -- the manufacturer's dealer
     // tables, say. Demanding an adapter for it would be theatre, so the guard
     // is skipped rather than answered with a fake adapter.
@@ -2187,6 +2212,8 @@
     el.brandExtrasForm.hidden = !(isSweep || isDriveLog);
     el.brandSweepFields.hidden = !isSweep;
     el.brandLogFields.hidden = !isDriveLog;
+    el.brandProcedureFields.hidden = true;
+    el.brandProcedureAbort.hidden = true;
     renderLogPresets(isDriveLog ? action : null);
 
     var url = obdUrl("/api/" + encodeURIComponent(p.id) + "/" + action.id);
@@ -2299,6 +2326,207 @@
     // Remember the samples for the download click: the fetch's closure dies
     // with its promise, the button lives on until the next read.
     el.brandExtrasDownload._samples = null;
+  }
+
+  // ---------- Runnable manufacturer routines (/api/{brand}/procedure) ----------
+  //
+  // The Vauxhall adaptive values learn is the first of these and it sets the
+  // shape. Unlike every other action on this panel it CHANGES THE CAR, and
+  // unlike the fault clear it can leave the car worse than it arrived if it
+  // starts and does not finish. So the flow is deliberately three steps rather
+  // than one button:
+  //
+  //   1. preflight  -- read-only, prints the live values the gate is judged on
+  //   2. confirm    -- the routine's own warnings, verbatim from the backend,
+  //                    including that it has never been run on a car
+  //   3. acknowledge -- type back the fluid temperature that is on screen
+  //
+  // Steps 2 and 3 are per run. Nothing is remembered between presses, because
+  // a confirmation that persists is a confirmation nobody reads the second
+  // time.
+
+  var procedureState = { scenarios: null, inFlight: false };
+
+  function fillScenarios(select, scenarios) {
+    select.innerHTML = "";
+    (scenarios || []).forEach(function (s) {
+      var option = document.createElement("option");
+      option.value = s.id;
+      option.textContent = s.id + " — " + (s.what || "");
+      option.title = s.what || "";
+      select.appendChild(option);
+    });
+  }
+
+  function procedureIntro(action, sim) {
+    return (
+      (sim ? "SIMULATED — no car is contacted. " : "") +
+      (action.hint || "") + "\n\n"
+    );
+  }
+
+  function runBrandProcedure(action, btn) {
+    var p = currentProfile();
+    if (!p || procedureState.inFlight) return;
+    var sim = obdMode() === "sim";
+    if (!sim && !guardAdapterPicked(p, function (msg) {
+      el.brandExtras.hidden = false;
+      el.brandExtrasTitle.textContent = action.title || action.label;
+      el.brandExtrasMessage.textContent = msg;
+    })) {
+      return;
+    }
+
+    el.brandExtras.hidden = false;
+    el.brandExtrasTitle.textContent = action.title || action.label || "Procedure";
+    el.brandExtrasHint.hidden = !action.hint;
+    el.brandExtrasHint.textContent = action.hint || "";
+    el.brandExtrasChips.innerHTML = "";
+    el.brandExtrasWorksheetWrap.hidden = true;
+    el.brandExtrasWorksheet.textContent = "";
+    el.brandExtrasActions.hidden = true;
+    el.brandExtrasCopy.hidden = true;
+    el.brandExtrasDownload.hidden = true;
+    el.brandProcedureAbort.hidden = true;
+    el.brandExtrasForm.hidden = !sim;
+    el.brandSweepFields.hidden = true;
+    el.brandLogFields.hidden = true;
+    renderLogPresets(null);
+    // The scenario picker only means anything in Simulate mode: on a real car
+    // the outcome is whatever the gearbox does.
+    el.brandProcedureFields.hidden = !sim;
+
+    procedureState.inFlight = true;
+    btn.disabled = true;
+    var original = btn.textContent;
+    btn.textContent = "Checking…";
+    el.brandExtrasMessage.textContent =
+      "Reading the preconditions. Nothing has been sent to the car yet.";
+
+    var base = obdUrl("/api/" + encodeURIComponent(p.id) + "/procedure-preflight");
+    var chosen = (sim && el.brandProcedureScenario.value) || "complete";
+    var procedureId = action.procedureId || "";
+    var url = base +
+      (procedureId ? "&procedure=" + encodeURIComponent(procedureId) : "") +
+      "&scenario=" + encodeURIComponent(chosen);
+
+    function finish() {
+      procedureState.inFlight = false;
+      btn.disabled = false;
+      btn.textContent = original;
+      el.brandProcedureAbort.hidden = true;
+    }
+
+    function showResult(data) {
+      el.brandExtrasMessage.textContent = (data && data.message) || "";
+      el.brandExtrasChips.innerHTML = "";
+      ((data && data.readings) || []).forEach(function (r) {
+        var value = r.unit ? r.value + " " + r.unit : r.value;
+        el.brandExtrasChips.appendChild(chip(r.name, value));
+      });
+      if (data && data.savedTo) {
+        el.brandExtrasMessage.textContent +=
+          " Transcript saved to " + data.savedTo + ".";
+      }
+      var sheet = (data && data.worksheet) || "";
+      el.brandExtrasWorksheet.textContent = sheet;
+      el.brandExtrasWorksheetWrap.hidden = !sheet;
+      el.brandExtrasCopy.hidden = !sheet;
+      el.brandExtrasActions.hidden = !sheet;
+    }
+
+    apiFetch(url)
+      .then(function (pre) {
+        showResult(pre);
+        if (!pre || pre.ok !== true) {
+          finish();
+          return;
+        }
+        if (pre.readyToStart !== true) {
+          el.brandExtrasMessage.textContent =
+            (pre.message || "") +
+            " Nothing was sent. Fix what is listed and try again.";
+          finish();
+          return;
+        }
+
+        var warnings = (pre.warnings || []).join("\n\n");
+        var question =
+          procedureIntro(action, sim) + warnings +
+          "\n\nRun '" + (action.title || action.label) + "' now?";
+        if (!window.confirm(question)) {
+          el.brandExtrasMessage.textContent =
+            "Not run. Nothing was sent to the car.";
+          finish();
+          return;
+        }
+
+        var live = ((pre.temperature || {}).celsius);
+        var typed = window.prompt(
+          "The gearbox is reporting " + live + " °C.\n\n" +
+          "Type that temperature back to confirm you have read it. " +
+          "This is asked once per run because the threshold in the dealer " +
+          "data has two defensible readings and the harness will not pick " +
+          "one for you.",
+          String(live)
+        );
+        if (typed === null || typed.trim() === "") {
+          el.brandExtrasMessage.textContent =
+            "Not run — the temperature was not acknowledged. Nothing was sent.";
+          finish();
+          return;
+        }
+
+        btn.textContent = "Running…";
+        el.brandExtrasMessage.textContent =
+          (action.busy || "Running…") +
+          " The device control is released on every path out, including "
+          + "failures. Do not switch the ignition off.";
+        el.brandExtrasActions.hidden = false;
+        el.brandProcedureAbort.hidden = false;
+        el.brandProcedureAbort.onclick = function () {
+          el.brandProcedureAbort.disabled = true;
+          apiFetch(
+            obdUrl("/api/" + encodeURIComponent(p.id) + "/procedure/abort"),
+            { method: "POST", headers: { "Content-Type": "application/json" },
+              body: "{}" }
+          ).then(function (r) {
+            el.brandExtrasMessage.textContent = (r && r.message) || "Stopping…";
+          }).catch(function () {
+            el.brandExtrasMessage.textContent = "Couldn't reach the backend.";
+          }).then(function () {
+            el.brandProcedureAbort.disabled = false;
+          });
+        };
+
+        var body = {
+          procedure_id: procedureId,
+          mode: obdMode(),
+          confirm: true,
+          temperature_ack: parseFloat(typed),
+          scenario: chosen,
+        };
+        if (!state.simulate && state.currentAdapterId) {
+          body.adapter = state.currentAdapterId;
+        }
+        return apiFetch(
+          obdUrl("/api/" + encodeURIComponent(p.id) + "/procedure"),
+          { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body) }
+        ).then(function (run) {
+          showResult(run);
+          if (run && run.released === false) {
+            el.brandExtrasMessage.textContent +=
+              " THE CONTROL RELEASE DID NOT COMPLETE — switch the ignition " +
+              "off and let the module power down before driving the car.";
+          }
+          finish();
+        });
+      })
+      .catch(function () {
+        el.brandExtrasMessage.textContent = "Couldn't reach the backend.";
+        finish();
+      });
   }
 
   // ---------- Module jobs (manufacturer's own EDIABAS library; BMW/MINI) ----------

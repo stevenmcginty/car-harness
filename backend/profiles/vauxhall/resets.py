@@ -41,11 +41,24 @@ worse than no objection -- somebody will act on it.
      timeout for a routine that runs minutes.
 
 So the honest surface today is: the harness MEASURES (pids.py and tcm.py read
-fluid temperature, the shaft speeds, commanded gear and now the fast-learn
-status parameter over any dongle), DESCRIBES (procedures.py holds the full
-exchange as inert data behind three gates), and DOCUMENTS (this file). The
-write is still done on GDS2/MDI2 or an equivalent aftermarket tool with GM
-guided functions, and the harness still sends nothing.
+fluid temperature, the shaft speeds, commanded gear and the fast-learn status
+parameter over any dongle), DESCRIBES (procedures.py holds the full exchange
+with its provenance), DOCUMENTS (this file) -- and now, separately and
+deliberately, RUNS it. learn.py and gmlan_control.py implement the GMW3110
+DeviceControl transport that objection 4 above said did not exist, with the
+control release owned by a ``finally`` on every path out, live preconditions
+read before anything is sent, and a simulated module to rehearse every failure
+path against with no car attached.
+
+That is a different capability from this file, and the split is on purpose.
+The entry below stays a *procedure*: it is the walkthrough for the person
+standing in front of the car with GDS2, an Autel or a Launch, and that person
+still exists and still needs it. Running it from the harness is
+``/api/vauxhall/procedure`` and ``procedures.execute``, which is confirm-gated
+twice over and carries, on every surface, the fact that none of it has ever
+been seen on a wire. Do not merge the two: a documented procedure that always
+prints the same steps and an unverified routine that drives clutches deserve
+different words and different gates.
 
 Mirror of android/.../obd/BrandResetData.kt (Vauxhall section) -- keep in sync.
 """
@@ -109,9 +122,12 @@ RESETS: List[dict] = [
             "characteristics and write them into the adaptive cells it uses for "
             "shift control. This is the fix for a shift flare that survives a "
             "fluid service, and the mandatory follow-on after a TCM reflash, a "
-            "valve body or a gearbox rebuild. It is a scan-tool routine -- the "
-            "harness cannot run it over a dongle (see the module docstring) -- so "
-            "these are the steps to hand the person with the tool."
+            "valve body or a gearbox rebuild. These are the steps to hand the "
+            "person with the scan tool. The harness can now also run the "
+            "exchange itself over a dongle -- see procedures.py and "
+            "/api/vauxhall/procedure -- but that path has never been used on a "
+            "car, so this walkthrough remains the one to follow when a proper "
+            "tool is available."
         ),
         "method": "procedure",
         "confidence": "verified",
@@ -245,11 +261,11 @@ def perform(
     (0xAE), which uds_reset.execute() does not speak.
 
     ``confirm`` is accepted and ignored, and that is the point: there is no
-    value of it that makes this send anything. The recovered adaptive-learn
-    exchange lives in procedures.py as inert data behind its own gates, and
-    running it would need a GMLAN DeviceControl transport that this repository
-    does not have. Until that exists, refusing is the correct behaviour, and
-    refusing identically whether or not somebody ticked a box is part of it.
+    value of it that makes THIS send anything. The runnable adaptive-learn
+    exchange lives in procedures.py behind its own gates and its own route;
+    routing a write through the reset catalogue as well would give the same
+    dangerous routine two front doors with two different sets of warnings, and
+    the one that got clicked would be whichever was closer to hand.
     """
     reset = _BY_ID.get(reset_id)
     if reset is None:
@@ -258,12 +274,12 @@ def perform(
     return {
         "ok": False, "runnable": False, "reset": uds_reset.public_view(reset),
         "message": (
-            f"'{reset['name']}' is a documented procedure, not a dongle command -- "
-            "follow the steps. GM Global A write functions run over GMW3110 "
-            "DeviceControl (0xAE), which this harness has no transport for. The "
-            "adaptive-learn control bytes are now known and are recorded in "
-            "procedures.py, unverified on any car and deliberately inert; "
-            "whether the module also demands security access is still open."
+            f"'{reset['name']}' is a documented procedure, not a dongle "
+            "command -- follow the steps. The adaptive values learn can also be "
+            "run by the harness itself over GMW3110 DeviceControl, through "
+            "/api/vauxhall/procedure rather than through this catalogue; that "
+            "path has never been used on a car, and whether the module demands "
+            "security access is still open."
         ),
         "timestamp": _now(),
     }
