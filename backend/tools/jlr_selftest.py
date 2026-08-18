@@ -657,11 +657,19 @@ def main() -> int:
           set(vals) == {"033E", "03E6", "03F2", "03F3", "0520"}
           and vals["03F3"]["payload"] == "58"
           and "old-jaguar-group" in vals["03F3"]["provenance"], str(sorted(vals)))
-    check("health flags the SCR/DPF set capture-pending",
+    # SDD 169 named the urea/SCR cluster, so "no public DID exists for any of
+    # it" is no longer true and the status text no longer says so. What must
+    # still hold: no invented decode (the harness's own SCR/DPF dids list stays
+    # empty), the urea rows are listed as unverified, and what is genuinely
+    # still missing is named rather than glossed over.
+    check("health reports the SCR/DPF set honestly: urea named, soot/NOx still missing",
           hrep["candidates"]["dids"] == []
-          and "capture pending" in hrep["candidates"]["status"]
-          and "jlr_engine_sweep" in hrep["candidates"]["status"],
-          str(hrep["candidates"]))
+          and [r["did"] for r in hrep["candidates"]["ureaCluster"]]
+          == ["05FA", "05FB", "05FC", "05FD"]
+          and all(r["verified"] is False and r["scaling"] is None
+                  for r in hrep["candidates"]["ureaCluster"])
+          and "Still genuinely missing" in hrep["candidates"]["status"],
+          str(hrep["candidates"]["status"]))
     # External-research candidates ride along, provenance-flagged and never
     # verified -- the honesty contract for pre-contact seed data.
     ext = hrep["candidates"].get("external", [])
@@ -738,6 +746,59 @@ def main() -> int:
     dsim_dids = dsim.get("dids", [])
     check("drive log default dids include the live SCR/urea DIDs, not dead 042C",
           "05FA" in dsim_dids and "042C" not in dsim_dids, str(dsim_dids))
+
+    # --- the decrypted SDD 169 layer, and that it reaches a screen ----------
+    from backend.profiles.jlr import sdd as jlr_sdd
+
+    sref = jlr_sdd.reference()
+    check("SDD layer loaded the whole extract",
+          sref["modules"] == 57 and sref["dids"] == 37 and sref["routines"] == 24,
+          f"{sref['modules']}/{sref['dids']}/{sref['routines']}")
+    check("SDD address map settles the modules the sweep could not name",
+          (jlr_sdd.module_code(0x7E6), jlr_sdd.module_code(0x744),
+           jlr_sdd.module_code(0x751), jlr_sdd.module_code(0x795))
+          == ("ABS", "DSM", "TPM", "RDCM"),
+          jlr_sdd.module_code(0x7E6))
+    check("SDD scaling reproduces the live L494 payloads it was checked against",
+          jlr_sdd.decode_did(0x0396, bytes.fromhex("5AB6"))[:2] == ("23222", "km")
+          and jlr_sdd.decode_did(0xF405, bytes.fromhex("6E"))[:2] == ("70", "°C"),
+          str(jlr_sdd.decode_did(0x0396, bytes.fromhex("5AB6"))))
+    check("SDD grades the cross-checked rows verified and the rest candidate",
+          jlr_sdd.PCM_DIDS[0x0396].confidence == "verified"
+          and all(jlr_sdd.PCM_DIDS[d].confidence == "candidate"
+                  for d in jlr_sdd.UREA_DIDS),
+          str([jlr_sdd.PCM_DIDS[d].confidence for d in jlr_sdd.UREA_DIDS]))
+    check("SDD invents no scaling for the urea cluster",
+          all(jlr_sdd.PCM_DIDS[d].decode is None for d in jlr_sdd.UREA_DIDS)
+          and all(jlr_sdd.decode_did(d, b"\x00\x00")[0] is None
+                  for d in jlr_sdd.UREA_DIDS))
+    # The rule the whole layer turns on: a candidate is never a bare number.
+    urea_row = jlr_pids.sdd_candidate_reading(0x05FC, bytes.fromhex("00039CC5"))
+    check("a candidate reading always shows its raw payload and its grade",
+          "[candidate]" in urea_row["name"] and "raw 00039CC5" in urea_row["value"],
+          f"{urea_row['name']} = {urea_row['value']}")
+    soot_row = jlr_pids.sdd_candidate_reading(0x042C, bytes.fromhex("3CE6"))
+    check("an SDD-scaled candidate shows raw AND decode, decode never alone",
+          soot_row["value"].startswith("raw 3CE6")
+          and "23.789 g/l" in soot_row["value"], soot_row["value"])
+    check("SDD routines are listed but no routine service is ever sent",
+          len(jlr_sdd.ROUTINES) == 24
+          and any(r.routine == 0x4076 for r in jlr_sdd.ROUTINES)
+          and "never sent" in jlr_sdd._worksheet(),
+          str(len(jlr_sdd.ROUTINES)))
+
+    # --- the urea watch preset: the next real-world step, one press away ----
+    check("drive log offers the urea watch preset",
+          [p["id"] for p in jlr_adblue.presets()] == ["urea", "engine"],
+          str([p["id"] for p in jlr_adblue.presets()]))
+    upre = next(p for p in jlr_adblue.presets() if p["id"] == "urea")
+    check("urea preset watches exactly 05FA-05FD",
+          upre["dids"] == ["05FA", "05FB", "05FC", "05FD"], str(upre["dids"]))
+    ulog = jlr_adblue.drive_log(None, "sim", 60.0, ["urea"])
+    check("the preset name expands to its DIDs in the drive log",
+          ulog["dids"] == ["05FA", "05FB", "05FC", "05FD"], str(ulog["dids"]))
+    check("an ordinary hex DID list still passes through untouched",
+          jlr_adblue.drive_log(None, "sim", 60.0, ["05FC"])["dids"] == ["05FC"])
 
     # --- MCP layer: the four new tools + honest no-adapter errors -----------
     from backend import mcp_server

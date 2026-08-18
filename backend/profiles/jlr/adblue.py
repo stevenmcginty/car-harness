@@ -39,6 +39,7 @@ from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.uds_elm327 import Elm327UdsClient
+from backend.profiles.jlr import sdd
 from backend.profiles.jlr.pids import (
     AFTERTREATMENT_PIDS,
     EXTERNAL_ENGINE_DIDS,
@@ -72,13 +73,21 @@ _CAPTURE_PENDING = {
         {"did": f"{did:04X}", "name": name, "provenance": prov, "verified": False}
         for did, name, prov in EXTERNAL_ENGINE_DIDS
     ],
-    "status": ("capture pending -- no public JLR DID exists for DPF soot mass, "
-               "regen status, DEF level/quality, NOx ppm or EGTs. External "
-               "research adds unverified candidates (042C DPF soot is the one "
-               "to try first). Run jlr_engine_sweep on 7E0 over the research "
-               "§7 ranges (0300-05FF, 2100-21FF, 2200-22FF, F400-F4FF), "
-               "identify a signal by how it moves, then pass the found ids to "
-               "jlr_adblue_drive_log."),
+    "status": ("Partly answered. SDD 169 named the urea/SCR dosing cluster "
+               "05FA-05FD on the PCM -- manufacturer names, live on the L494, "
+               "but SDD publishes no scaling for any of the four, so they are "
+               "logged raw as candidates. SDD also defines 042C as DPF soot in "
+               "g/l, and this calibration refuses it. Still genuinely missing: "
+               "DPF soot mass, regen status, DEF tank level/quality and NOx ppm "
+               "have no identifier that both exists in SDD and answers on this "
+               "car. Next step: run the 'urea' drive-log preset warm -- 05FC is "
+               "a monotonic total, so the rate it climbs is what pins the "
+               "scaling."),
+    "ureaCluster": [
+        {"did": f"{did:04X}", "name": sdd.did_name(did),
+         "source": "SDD 169 diesel PCM", "scaling": None, "verified": False}
+        for did in sdd.UREA_DIDS
+    ],
 }
 
 # Research §4: the AdBlue/SCR fault space on the XF 3.0d, ranked by community
@@ -128,6 +137,47 @@ _REGEN_THRESHOLDS = {
 # Consecutive all-silent ticks before the drive log gives up (adapter or
 # ignition gone -- a working car never goes quiet this long).
 _DEAD_TICKS = 10
+
+
+# ---- drive-log watch presets ----------------------------------------------
+# A preset is a named short list of DIDs to poll instead of the default set.
+# Fewer DIDs per tick means a faster sample rate on each one, which is what
+# calibrating a counter needs: the whole point of the urea preset is to catch
+# 05FC ticking over, and it cannot do that while the log is also reading eight
+# other identifiers over a slow Bluetooth link.
+#
+# These are the SAME single source of truth the phone's preset chips use --
+# keep them in step with android/.../JlrAdBlue.kt.
+DRIVE_LOG_PRESETS: List[dict] = [
+    {
+        "id": "urea",
+        "label": "Urea / SCR cluster (05FA-05FD)",
+        "dids": [f"{did:04X}" for did in sdd.UREA_DIDS],
+        "seconds": 900,
+        "note": (
+            "The next real-world step on this car. Four SDD-named, PCM-managed urea "
+            "identifiers, polled on their own so each one gets a fast sample rate. "
+            "Drive it warm -- reagent dosing only happens once the SCR catalyst is up "
+            "to temperature, so a cold log records four constants. "
+            + sdd.UREA_WATCH_NOTE
+        ),
+    },
+    {
+        "id": "engine",
+        "label": "Known engine set (default)",
+        "dids": [],          # empty = whatever _default_drive_dids() builds
+        "seconds": 300,
+        "note": "The Old Jaguar Group engine DIDs plus every live external candidate — "
+                "the broad default when you do not yet know what you are chasing.",
+    },
+]
+
+_PRESETS_BY_ID = {p["id"]: p for p in DRIVE_LOG_PRESETS}
+
+
+def presets() -> List[dict]:
+    """The watch presets, for a UI that wants to offer them as buttons."""
+    return [dict(p) for p in DRIVE_LOG_PRESETS]
 
 # Generic Mode-01 decoders (ISO 15031 -- public formulas, unlike the JLR DIDs).
 def _decode_pid(pid: int, body: Optional[bytes]) -> Optional[float]:
@@ -273,6 +323,22 @@ def _assessment(modules: List[dict]) -> dict:
     }
 
 
+def _expand_dids(dids: Optional[List[str]]) -> Optional[List[str]]:
+    """Turn a preset name into its DID list; pass anything else through.
+
+    The desktop's drive-log field and the MCP tool both take a plain list of
+    hex ids, so a preset is offered as a name you can type there ("urea")
+    rather than as a second parameter that every caller would have to learn.
+    An empty preset (the default engine set) resolves to None, which is what
+    the rest of the function already means by "use the default"."""
+    if not dids or len(dids) != 1:
+        return dids
+    preset = _PRESETS_BY_ID.get(str(dids[0]).strip().lower())
+    if preset is None:
+        return dids
+    return list(preset["dids"]) or None
+
+
 def _default_drive_dids() -> List[str]:
     """The OJG engine set plus the external research candidates (042C DPF soot
     first among them); sweep-captured candidates join by passing ``dids``
@@ -305,10 +371,27 @@ def _panel(baseline: Optional[dict], modules: List[dict],
         readings.append({"name": f"{mod['code']} {mod['address']}", "value": state,
                          "unit": "", "description": mod.get("name", "")})
     for value in values:
+        did = int(value["did"], 16)
+        entry = sdd.PCM_DIDS.get(did)
+        # SDD's name outranks the harness's own label when SDD has one: it is
+        # the manufacturer's, and it carries the confidence grade with it.
+        label = entry.label() if entry else value["name"]
+        display = value["payload"]
+        if entry is not None:
+            decoded, unit, _ = sdd.decode_did(did, bytes.fromhex(value["payload"]))
+            if decoded is not None:
+                # Raw first, always: a candidate must never read as a settled
+                # number, and even a verified row is easier to sanity-check
+                # with its payload beside it.
+                display = f"{value['payload']} → {decoded}{(' ' + unit) if unit else ''}"
+            elif did in sdd.UREA_DIDS and len(value["payload"]) <= 8:
+                as_int = sdd.unscaled_int(bytes.fromhex(value["payload"]))
+                if as_int is not None:
+                    display = f"{value['payload']} (unscaled integer {as_int})"
         readings.append({
-            "name": f"DID {value['did']} · {value['name']}",
-            "value": value["payload"], "unit": "raw",
-            "description": value.get("provenance", ""),
+            "name": f"DID {value['did']} · {label}",
+            "value": display, "unit": "raw",
+            "description": (entry.describe() if entry else value.get("provenance", "")),
         })
 
     lines = ["JLR AdBlue/DPF health pass"]
@@ -360,6 +443,21 @@ def health(adapter: Optional[dict], mode: str = "real") -> dict:
             {"did": "0520", "name": "Charge air temp (post-intercooler)",
              "payload": "2A",
              "provenance": "old-jaguar-group (petrol capture -- unverified on diesel)"},
+            # The SDD-named rows, with the payloads the real L494 answered --
+            # this is what the health card looks like once SDD is loaded, and
+            # it is the shape the urea preset goes on to log over a drive.
+            {"did": "0396", "name": "Distance to next service", "payload": "5AB6",
+             "provenance": "SDD 169 diesel PCM, cross-checked on SALWA2EK8HA"},
+            {"did": "F405", "name": "Engine coolant temperature", "payload": "6E",
+             "provenance": "SDD 169 diesel PCM, cross-checked on SALWA2EK8HA"},
+            {"did": "05FA", "name": sdd.did_name(0x05FA), "payload": "048A00000301",
+             "provenance": "SDD 169 diesel PCM -- name authoritative, no scaling"},
+            {"did": "05FB", "name": sdd.did_name(0x05FB), "payload": "0FA0",
+             "provenance": "SDD 169 diesel PCM -- name authoritative, no scaling"},
+            {"did": "05FC", "name": sdd.did_name(0x05FC), "payload": "00039CC5",
+             "provenance": "SDD 169 diesel PCM -- name authoritative, no scaling"},
+            {"did": "05FD", "name": sdd.did_name(0x05FD), "payload": "0651",
+             "provenance": "SDD 169 diesel PCM -- name authoritative, no scaling"},
         ]
         return {
             "ok": True, "simulated": True,
@@ -506,10 +604,14 @@ def drive_log(adapter: Optional[dict], mode: str = "real", seconds: float = 300.
     Payloads are raw on purpose: a signal is identified by how it moves
     against rpm, then decoded against the car -- never guessed here.
 
-    dids: hex strings. None uses the known OJG engine set plus the external
-        research candidates (042C soot first); sweep-captured candidates
-        replace the set when passed explicitly.
+    dids: hex strings. None uses the known OJG engine set plus every live
+        external candidate; sweep-captured candidates replace the set when
+        passed explicitly. A single-element list holding a preset name from
+        DRIVE_LOG_PRESETS ("urea") expands to that preset's DIDs -- the short
+        watch list that makes the urea counter 05FC sample fast enough to
+        calibrate.
     """
+    dids = _expand_dids(dids)
     if mode == "sim":
         # Fake warm-up: rpm with raw DID payloads beside it, coolant + voltage
         # on the every-fifth-tick baseline, a non-answer recorded as a gap.
