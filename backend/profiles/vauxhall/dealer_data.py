@@ -46,10 +46,23 @@ on VIN W0LPF2EC8HG072884. That match validates the *read* half of the decode
 rule: that the extracted parameter id really is the wire id, and that the
 extracted conversion really is the scaling.
 
+It does more than that, and this is worth keeping in view because it settles a
+question the profile got wrong once. Several module sets in the same file carry
+a parameter of that same name, and they disagree about where it lives: the T76
+sets put it on 0x1940 scaled -40, while the AF40 sets (0x05ABE67C and
+0x05AC07C4) put it on 0x210A scaled -50. This car answers 0x1940 with values
+that make sense under -40. So the car independently agrees with the menu tree
+that this gearbox is a T76 and not an AF40 -- from a direction that has nothing
+to do with the menu tree at all. An earlier round of this work attributed the
+Astra K TCM to the AF40 family and drew a fault-code list from it; that was
+wrong, and this is the check that would have caught it.
+
 It validates nothing about the device-control half. The fluid-temperature PID
-is built by a different code path in the dealer tool and never exercises the
-$AE frame assembly. Those two facts must not be flattened into "the data is
-verified on the car".
+is a read, built by a different code path in the dealer tool, and it never
+exercises the $AE frame assembly -- not the template, not the byte-pattern
+append, not the OR-in at the value offset. "The extract's read decoding is
+confirmed on the car" and "the control frame is verified" are different
+statements and must not be flattened into one.
 
 EQUATIONS
 ---------
@@ -82,6 +95,16 @@ GROUND_TRUTH = {
         "matched generic OBD coolant on a car that had been standing; rose to "
         "30 °C over several minutes of idling. The dealer file names the same "
         "parameter id with the same scaling."
+    ),
+    "discriminates": (
+        "The AF40 module sets in the same deliverable put this parameter on "
+        "0x210A scaled -50. The car answering 0x1940 under -40 therefore also "
+        "confirms this gearbox is a T76 rather than an AF40, independently of "
+        "the menu tree."
+    ),
+    "doesNotCover": (
+        "The device-control frame assembly, which is a different code path in "
+        "the dealer tool and is exercised by nothing here."
     ),
 }
 
