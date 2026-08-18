@@ -31,6 +31,7 @@ from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.fiat import pids as fiat_pids  # noqa: E402
 from backend.profiles.fiat import scan as fiat_scan  # noqa: E402
 from backend.profiles.jlr import adblue as jlr_adblue  # noqa: E402
+from backend.profiles.jlr import dealer_data as jlr_dealer_data_mod  # noqa: E402
 from backend.profiles.jlr import discover as jlr_discover  # noqa: E402
 from backend.profiles.jlr import pids as jlr_pids  # noqa: E402
 from backend.profiles.jlr import scan as jlr_scan  # noqa: E402
@@ -1182,8 +1183,15 @@ def jlr_adblue_drive_log(
     real car, pass them as dids (hex strings like ["042C", "F40C"], max 24) --
     they replace the default set for that run.
 
+    A watch preset may be passed instead of a hex list: dids=["urea"] logs only
+    the SDD-named urea/SCR cluster 05FA-05FD, which is the short focused list
+    that samples fast enough to calibrate 05FC (total mass fluid injected -- a
+    monotonic total). Drive the car warm for it: reagent dosing does not start
+    until the SCR catalyst is up to temperature.
+
     seconds: how long to log for. Drive normally while it runs.
-    dids: hex DID strings to log instead of the default engine set.
+    dids: hex DID strings, or a single watch-preset name, to log instead of
+        the default engine set.
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
         required for real mode. mode="sim" returns a clearly-labelled fake.
     """
@@ -1193,6 +1201,34 @@ def jlr_adblue_drive_log(
     return _jlr_capture(
         "drive-log", jlr_adblue.drive_log(instance, mode, seconds, dids), instance
     )
+
+
+@mcp.tool()
+def jlr_dealer_data() -> dict:
+    """What JLR's own SDD 169 dealer database says about the 306DT family (no car).
+
+    A pure reference view, decrypted from SDD 169 (3DES-ECB; method and key
+    recorded in backend/profiles/jlr/data/sdd_dids.json, reproducible with
+    backend/tools/jlr_sdd_decrypt.py). Three things:
+
+      * the 57-module L494 MY16 CAN address map -- this is what lets
+        jlr_discover_modules report ABS at 0x7E6 and DSM at 0x744 instead of a
+        bare id, and it is what refuted the "0x7E6 is the SCR controller"
+        hypothesis: there is no separate SCR ECU, SCR is PCM-managed at 0x7E0;
+      * 37 diesel-PCM data identifiers with SDD's own names, byte sizes,
+        scaling and units, each graded verified or candidate;
+      * 24 PCM/SCR routine identifiers, including the SCR prime (0x4076) and
+        the three reductant dosing tests (0x4094-0x4096). REFERENCE ONLY --
+        the harness sends none of them and has no way to.
+
+    Rows marked [candidate] have an authoritative manufacturer name against a
+    value this car has not proved; SDD publishes no scaling for the urea
+    cluster 05FA-05FD, so those stay raw. SDD names a curated 37 of the ~191
+    DIDs the PCM answers, so absence here does NOT mean a DID is dead.
+
+    Touches no car and needs no adapter.
+    """
+    return jlr_dealer_data_mod.reference(None, "real")
 
 
 # --------------------------------------------------------------------------- #

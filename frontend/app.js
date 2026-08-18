@@ -124,6 +124,8 @@
     brandLogFields: document.getElementById("brand-log-fields"),
     brandLogSeconds: document.getElementById("brand-log-seconds"),
     brandLogDids: document.getElementById("brand-log-dids"),
+    brandLogPresets: document.getElementById("brand-log-presets"),
+    brandLogPresetNote: document.getElementById("brand-log-preset-note"),
     brandExtrasActions: document.getElementById("brand-extras-actions"),
     brandExtrasCopy: document.getElementById("brand-extras-copy"),
     brandExtrasDownload: document.getElementById("brand-extras-download"),
@@ -1674,6 +1676,7 @@
       sweep: "sweep",
       "adblue-health": "adblue",
       "adblue-drive-log": "adblue",
+      "dealer-data": "dealerData",
     };
     (panel.actions || []).forEach(function (a) {
       var feat = actionFeature[a.id];
@@ -2112,6 +2115,35 @@
     }));
   }
 
+  // Drive-log watch presets, rendered from the action's own metadata so no
+  // brand needs UI code for one. A preset is a short focused DID list: fewer
+  // ids per tick means each one samples faster, which is the difference
+  // between watching a counter tick over and watching it sit still. Pressing a
+  // preset fills the fields and shows its note -- it deliberately does NOT
+  // start the log, because the length is worth reading before a drive.
+  function renderLogPresets(action) {
+    if (!el.brandLogPresets) return;
+    el.brandLogPresets.innerHTML = "";
+    el.brandLogPresetNote.hidden = true;
+    el.brandLogPresetNote.textContent = "";
+    var presets = (action && action.presets) || [];
+    el.brandLogPresets.hidden = !presets.length;
+    presets.forEach(function (p) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-secondary btn-small";
+      btn.textContent = p.label || p.id;
+      btn.title = p.note || "";
+      btn.addEventListener("click", function () {
+        el.brandLogDids.value = p.dids || "";
+        if (p.seconds) el.brandLogSeconds.value = p.seconds;
+        el.brandLogPresetNote.textContent = p.note || "";
+        el.brandLogPresetNote.hidden = !p.note;
+      });
+      el.brandLogPresets.appendChild(btn);
+    });
+  }
+
   // One extras read (Mazda live extras / snapshot, Peugeot health check, …).
   // ``action`` is the profile's panel.actions entry; its id doubles as the
   // endpoint: /api/{brand}/live or /api/{brand}/snapshot. The two parametered
@@ -2120,7 +2152,11 @@
   function runBrandExtras(action, btn) {
     var p = currentProfile();
     if (!p || brand.extrasInFlight) return;
+    // An action flagged noCar is a data view -- the manufacturer's dealer
+    // tables, say. Demanding an adapter for it would be theatre, so the guard
+    // is skipped rather than answered with a fake adapter.
     if (
+      !action.noCar &&
       !guardAdapterPicked(p, function (msg) {
         el.brandExtras.hidden = false;
         el.brandExtrasTitle.textContent = action.title || action.label || "Extras";
@@ -2131,6 +2167,7 @@
     }
     brand.extrasInFlight = true;
     btn.disabled = true;
+
     var original = btn.textContent;
     btn.textContent = "Reading…";
     el.brandExtras.hidden = false;
@@ -2150,6 +2187,7 @@
     el.brandExtrasForm.hidden = !(isSweep || isDriveLog);
     el.brandSweepFields.hidden = !isSweep;
     el.brandLogFields.hidden = !isDriveLog;
+    renderLogPresets(isDriveLog ? action : null);
 
     var url = obdUrl("/api/" + encodeURIComponent(p.id) + "/" + action.id);
     var seconds = 300;

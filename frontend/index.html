@@ -205,7 +205,13 @@
             <input id="brand-log-seconds" class="jobs-input" type="number" min="5" max="3600" value="300" aria-label="Seconds to log">
             <input id="brand-log-dids" class="jobs-input" placeholder="Optional DIDs, e.g. 042C,F40C" size="26" aria-label="DIDs to log (comma-separated hex)">
           </label>
+          <!-- Watch presets come from the profile's panel metadata
+               (panel.actions[].presets), so a brand adds one by editing its
+               profile.json. Pressing one fills the fields above; it does not
+               start the log, because the length is worth a second look. -->
+          <div id="brand-log-presets" class="jobs-form" hidden></div>
         </div>
+        <p id="brand-log-preset-note" class="status-message" hidden></p>
         <p id="brand-extras-message" class="status-message"></p>
         <div id="brand-extras-chips" class="obd-chips"></div>
         <div id="brand-extras-actions" class="jobs-form" hidden>

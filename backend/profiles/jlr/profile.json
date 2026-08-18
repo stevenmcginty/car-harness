@@ -42,12 +42,37 @@
         "readOnly": true
       },
       {
+        "id": "dealer-data",
+        "label": "SDD dealer data",
+        "busy": "Reading the decrypted SDD 169 tables…",
+        "title": "SDD 169 dealer data (L494 MY16 / 306DT diesel)",
+        "noCar": true,
+        "hint": "What Jaguar Land Rover's own dealer database says about this family, decrypted from SDD 169 and shown without a car attached. Three things: the 57-module L494 MY16 CAN address map, which is what lets the module sweep print ABS at 0x7E6 and DSM at 0x744 instead of a bare id; the 37 diesel-PCM data identifiers with SDD's own names, byte sizes, scaling and units; and the 24 PCM/SCR routine identifiers -- including the SCR prime and the three reductant dosing tests -- listed for reference only, because the harness sends none of them. Rows marked [candidate] carry an authoritative SDD name against a value this car has not proved: SDD publishes no scaling for the urea cluster 05FA-05FD, so those stay raw. SDD names a curated 37 of the ~191 DIDs the PCM answers, so absence here does not mean a DID is dead. No car contact at all -- this reads the same with the dongle unplugged.",
+        "readOnly": true
+      },
+      {
         "id": "adblue-drive-log",
         "label": "AdBlue drive log",
         "busy": "Logging rpm against the aftertreatment DIDs…",
         "title": "AdBlue / DPF drive log",
-        "hint": "A timed log pairing engine rpm with the AdBlue/DPF candidate DIDs -- set the length above (a regen is ~20 min at 500 °C+, so give it the seconds; the backend saves every real run to captures/jlr/ and the CSV button appears after). Every tick reads rpm plus each DID's RAW payload with a timestamp, every fifth tick adds coolant and module voltage, and the achieved sample rate is reported. Payloads stay raw on purpose: a signal is identified by how it moves against rpm, then decoded against the car. Default DIDs are the known engine set; paste sweep-captured candidates (comma-separated hex) to log those instead. Read-only.",
-        "readOnly": true
+        "hint": "A timed log pairing engine rpm with the AdBlue/DPF candidate DIDs -- set the length above (a regen is ~20 min at 500 °C+, so give it the seconds; the backend saves every real run to captures/jlr/ and the CSV button appears after). Every tick reads rpm plus each DID's RAW payload with a timestamp, every fifth tick adds coolant and module voltage, and the achieved sample rate is reported. Payloads stay raw on purpose: a signal is identified by how it moves against rpm, then decoded against the car. Default DIDs are the known engine set; paste sweep-captured candidates (comma-separated hex) to log those instead, or press a watch preset to load a short focused list. Read-only.",
+        "readOnly": true,
+        "presets": [
+          {
+            "id": "urea",
+            "label": "Urea / SCR 05FA-05FD",
+            "dids": "05FA,05FB,05FC,05FD",
+            "seconds": 900,
+            "note": "The next real-world step on the L494. Four SDD-named, PCM-managed urea identifiers polled on their own, so each samples fast enough to be calibrated. Drive it WARM -- reagent dosing only starts once the SCR catalyst is up to temperature, so a cold log records four constants. 05FC is 'total mass fluid injected by the urea dosing system', a monotonic total: the rate it climbs is what pins the scaling SDD does not publish."
+          },
+          {
+            "id": "engine",
+            "label": "Known engine set",
+            "dids": "",
+            "seconds": 300,
+            "note": "The Old Jaguar Group engine DIDs plus every live external candidate -- the broad default when you do not yet know what you are chasing."
+          }
+        ]
       }
     ]
   }

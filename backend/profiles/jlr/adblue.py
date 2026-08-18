@@ -39,7 +39,7 @@ from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.uds_elm327 import Elm327UdsClient
-from backend.profiles.jlr import sdd
+from backend.profiles.jlr import dealer_data as sdd
 from backend.profiles.jlr.pids import (
     AFTERTREATMENT_PIDS,
     EXTERNAL_ENGINE_DIDS,

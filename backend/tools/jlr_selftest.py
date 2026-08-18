@@ -44,7 +44,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from backend.core import uds  # noqa: E402
+from backend.core import brands, uds  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
 from backend.obd.elm327 import ObdError  # noqa: E402
 from backend.obd.uds_elm327 import Elm327UdsClient, reassemble  # noqa: E402
@@ -54,6 +54,13 @@ from backend.profiles.jlr import pids as jlr_pids  # noqa: E402
 from backend.profiles.jlr import resets as jlr_resets  # noqa: E402
 from backend.profiles.jlr import scan as jlr_scan  # noqa: E402
 from backend.profiles.jlr import sweep as jlr_sweep  # noqa: E402
+
+# The desktop front-end is data-driven, but the one place it is NOT is the
+# map from action id to feature flag -- an action with no entry there renders
+# no button, however good its backend. Read the file so a check can prove the
+# JLR entries are present rather than assuming they are.
+_FRONTEND_JS = (Path(__file__).resolve().parents[2] / "frontend" / "app.js").read_text(
+    encoding="utf-8")
 
 FAKE_VIN = "SALLSAAF4FA000001"   # Land Rover-style VIN
 ENGINE, TCM, RDCM = 0x7E0, 0x7E1, 0x795
@@ -375,9 +382,9 @@ def main() -> int:
     check("profile.json name == Jaguar / Land Rover",
           manifest.get("name") == "Jaguar / Land Rover")
     action_ids = [a["id"] for a in manifest["panel"]["actions"]]
-    check("panel actions are live + the four X260 AdBlue tools",
+    check("panel actions are live + the X260 AdBlue tools + the dealer-data view",
           set(action_ids) == {"live", "discover", "sweep", "adblue-health",
-                              "adblue-drive-log"}, str(action_ids))
+                              "adblue-drive-log", "dealer-data"}, str(action_ids))
     check("panel hint states the DoIP wall",
           "DoIP" in manifest["panel"]["hint"])
     check("panel hint states the MS-CAN body wall",
@@ -748,7 +755,7 @@ def main() -> int:
           "05FA" in dsim_dids and "042C" not in dsim_dids, str(dsim_dids))
 
     # --- the decrypted SDD 169 layer, and that it reaches a screen ----------
-    from backend.profiles.jlr import sdd as jlr_sdd
+    from backend.profiles.jlr import dealer_data as jlr_sdd
 
     sref = jlr_sdd.reference()
     check("SDD layer loaded the whole extract",
@@ -799,6 +806,30 @@ def main() -> int:
           ulog["dids"] == ["05FA", "05FB", "05FC", "05FD"], str(ulog["dids"]))
     check("an ordinary hex DID list still passes through untouched",
           jlr_adblue.drive_log(None, "sim", 60.0, ["05FC"])["dids"] == ["05FC"])
+
+    # --- and that all of it actually REACHES the desktop -------------------
+    # The front-end renders brand panels from profile.json alone, so the test
+    # for "Steve can see it" is that the metadata carries it.
+    jmeta = brands.profile_meta("jlr") or {}
+    jactions = {a["id"]: a for a in (jmeta.get("panel") or {}).get("actions", [])}
+    check("desktop panel offers the dealer-data view",
+          "dealer-data" in jactions and jactions["dealer-data"].get("noCar") is True,
+          str(sorted(jactions)))
+    check("dealer-data is gated by a real backend capability",
+          brands.features("jlr")["dealerData"] is True)
+    check("desktop drive log offers the urea preset with its warm-drive note",
+          [p["id"] for p in jactions["adblue-drive-log"].get("presets", [])]
+          == ["urea", "engine"]
+          and jactions["adblue-drive-log"]["presets"][0]["dids"]
+          == "05FA,05FB,05FC,05FD"
+          and "WARM" in jactions["adblue-drive-log"]["presets"][0]["note"],
+          str(jactions["adblue-drive-log"].get("presets")))
+    check("profile presets match the profile module's own preset list",
+          [p["id"] for p in jactions["adblue-drive-log"]["presets"]]
+          == [p["id"] for p in jlr_adblue.presets()])
+    check("the front-end knows how to gate the dealer-data button",
+          '"dealer-data": "dealerData"' in _FRONTEND_JS
+          or "'dealer-data': 'dealerData'" in _FRONTEND_JS)
 
     # --- MCP layer: the four new tools + honest no-adapter errors -----------
     from backend import mcp_server

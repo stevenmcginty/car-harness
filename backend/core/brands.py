@@ -17,7 +17,15 @@ light up its routes:
     sweep.py     sweep(adapter, mode, ...)  walk a 0x22 DID range on one module
                  keeping every answer raw -- the DID-mapping instrument
     adblue.py    health(...), drive_log(...)  aftertreatment-focused passes
-                 with their results kept raw until decoded against the car
+                 with their results kept raw until decoded against the car.
+                 May also expose presets() -- named short DID watch lists the
+                 drive log accepts by name instead of a hex list
+    dealer_data.py
+                 reference(adapter, mode)  what the manufacturer's OWN dealer
+                 database says about this family: module address map, named
+                 identifiers with factory scaling and units, routine ids.
+                 Touches no car -- both arguments are accepted and ignored so
+                 the front-end can call it like any other brand action
     pids.py      live(adapter, mode)      brand-specific live values
                  -- "enet-doip" profiles use live(mode), like scan/clear
                  -- ALSO feeds the Live Data dashboard automatically; see the
@@ -106,6 +114,11 @@ def features(brand: str) -> dict:
         and hasattr(brand_module(brand, "sweep"), "sweep"),
         # AdBlue/SCR/DPF health + drive logging.
         "adblue": brand_module(brand, "adblue") is not None,
+        # The manufacturer's own dealer database, loaded as a reference view:
+        # module address map, named identifiers with factory scaling, routine
+        # identifiers. Touches no car (JLR's is the decrypted SDD 169 extract).
+        "dealerData": brand_module(brand, "dealer_data") is not None
+        and hasattr(brand_module(brand, "dealer_data"), "reference"),
         # A printable customer-facing PDF. Opt-in per brand: a profile only
         # advertises one once it has something worth putting a name to.
         "report": pids_mod is not None and hasattr(pids_mod, "report"),

@@ -39,7 +39,7 @@ from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.uds_elm327 import Elm327UdsClient
-from backend.profiles.jlr import sdd
+from backend.profiles.jlr import dealer_data as sdd
 from backend.profiles.jlr.scan import IDENT_DIDS, JLR_ECU_TABLE, _printable
 
 # The swept request-id block. 0x7E0/0x7E1/0x795 -- the known table -- sit
