@@ -56,10 +56,19 @@ def decrypt_exml(data):
 
 
 def text_of(node, tag, default=None):
+    """Text of a child element, including any nested markup.
+
+    Some SDD names and descriptions wrap their text in a translation marker,
+    `<NAME><tm id="@J_I_...">Engine input/output parameters</tm></NAME>`. Reading
+    only `.text` returns the empty string for those, which silently loses the
+    name of every DID that carries one -- and `tm` appears 17,750 times in this
+    corpus. Collect the whole subtree instead.
+    """
     e = node.find(tag)
     if e is None:
         return default
-    return (e.text or "").strip()
+    txt = " ".join("".join(e.itertext()).split())
+    return txt if txt else default
 
 
 def flatten(node, limit=4000):

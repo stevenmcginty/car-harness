@@ -92,6 +92,26 @@ Partially mined; see `captures/peugeot/diagbox-ep6-extraction.md`.
   trees plus record-pattern sweeps over the Firebird FDBs (whose page structure
   is still not decoded).
 
+- `dealerdb.py` query tool and `selftest.py` written. All seven GDS2 deliverables,
+  all 54 SDD platforms and the whole DiagBox tree/FDB corpus are built. 23
+  self-test checks against independently established facts, all passing.
+
+## Two more bugs the self-test caught
+
+1. **SDD names wrapped in `<tm>` were being lost.** Some `<NAME>` and
+   `<DESCRIPTION>` elements wrap their text in a translation marker,
+   `<NAME><tm id="@J_I_...">Engine input/output parameters</tm></NAME>`. Reading
+   `.text` returns the empty string for those. `tm` occurs 17,750 times in the
+   corpus, so this silently blanked the name of every DID carrying one -- DID
+   0416 and C124 on the L494 diesel PCM among them. `text_of()` now collects the
+   whole subtree with `itertext()`.
+2. **DiagBox labels were truncated at the first accent**, because the printable
+   run used for the record sweep was ASCII only. Widening it to latin-1 fixed the
+   labels but then glued record bytes onto the short tokens (`UNM` became
+   `UNM\xfb`), which lost the format and conversion columns. The sweep now strips
+   non-ASCII from the ends of a token before classifying it and keeps the raw run
+   for the label.
+
 ## Correction to the earlier DiagBox read
 
 In `DSD.FDB` a parameter row is laid out **name, inline French label, then the

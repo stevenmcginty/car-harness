@@ -40,13 +40,16 @@ ATTR_RE = re.compile(r'([\w.:-]+)\s*=\s*("([^"]*)"|\'([^\']*)\'|[^\s>]+)')
 POLUX_RE = re.compile(r"@?(P\d+)-POLUXDATA")
 LOCAL_ID_RE = re.compile(r"_([0-9A-Fa-f]{2})$")
 
-PRINTABLE = re.compile(rb"[\x20-\x7E]{3,}")
+# The inline labels are French in latin-1, so accented bytes have to count as
+# printable or every label is truncated at its first accent.
+PRINTABLE = re.compile(rb"[\x20-\x7E\xA0-\xFF]{3,}")
 MP_RE = re.compile(rb"\b(MP[A-Z]?_[A-Z0-9_]{2,})")
 FAMILY_RE = re.compile(
     rb"\$PV\$(\S+)\s+\$M\$(\S+)\s+\$C\$(\S+?)(?:\s+\$PD\$(\S+))?[\x00-\x1F]")
 MESSAGERIE_RE = re.compile(rb"\b(INJ_[A-Z0-9_]+_\d+_[A-Z0-9]+\.xml)")
 IOCB_RE = re.compile(rb"\b(IOCBLID[A-Z]*_[A-Z0-9_]+)")
 DID_TOKEN = re.compile(r"^[0-9A-F]{4}$")
+EDGE_NOISE = re.compile(r"^[^\x20-\x7E]+|[^\x20-\x7E]+$")
 FORMATS = {"UNM", "SNM", "ENUM", "ENUM_TEXT", "ASCII", "HEXA", "BOOL", "TEXT",
            "BIT", "BITS"}
 CONVERSIONS = {"FLOAT", "INT", "LINEAR", "TABLE", "DIRECT", "HEXA", "ASCII",
@@ -219,15 +222,20 @@ class DiagboxBuilder(object):
                 t = t.strip()
                 if not t:
                     continue
-                if did is None and DID_TOKEN.match(t):
-                    did = t
-                elif fmt is None and t in FORMATS:
-                    fmt = t
-                elif conv is None and t in CONVERSIONS:
-                    conv = t
-                elif label is None and len(t) > 3 and not t.startswith("MP_"):
-                    if not DID_TOKEN.match(t) and t not in FORMATS \
-                            and t not in CONVERSIONS:
+                # Accented bytes count as printable so that French labels
+                # survive, but that also glues the surrounding record bytes onto
+                # short tokens ("UNM\xfb"). Strip non-ASCII from the ends before
+                # classifying; keep the raw run for the label.
+                core = EDGE_NOISE.sub("", t)
+                if did is None and DID_TOKEN.match(core):
+                    did = core
+                elif fmt is None and core in FORMATS:
+                    fmt = core
+                elif conv is None and core in CONVERSIONS:
+                    conv = core
+                elif label is None and len(t) > 3 and not core.startswith("MP_"):
+                    if not DID_TOKEN.match(core) and core not in FORMATS \
+                            and core not in CONVERSIONS:
                         label = t
             rows.append((sfid, m.start(), name, label, did, fmt, conv))
             if len(rows) >= 20000:

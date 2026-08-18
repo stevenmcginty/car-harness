@@ -37,6 +37,24 @@ python tools/dealer_index/build_diagbox.py         # PSA DiagBox
 Each builder is idempotent per deliverable: re-running one deletes and replaces
 just that deliverable's rows.
 
+Build times on this machine: GDS2 about 20 minutes for all seven deliverables,
+SDD about 90 seconds, DiagBox about 4 minutes.
+
+## Checking
+
+```
+python tools/dealer_index/selftest.py
+```
+
+23 checks that the index agrees with facts established independently elsewhere:
+the Astra-K T76 TCM node and test `110282_001` from the decode notes, PID
+`8442_6736` decoding to `22 19 40` with `(X(0)*1)-40 degC` as read live from the
+car, the MH8/T76 versus AF40/M36 option split, the L494 module address map and
+diesel-PCM DIDs and routines against `backend/profiles/jlr/data/sdd_dids.json`,
+and the DiagBox oil-circuit DIDs and the `0x2D` oil-pump actuator against the
+DiagBox extraction notes. A failure here is a finding: either the index is wrong
+or the thing it is checked against is.
+
 ## Querying
 
 ```
