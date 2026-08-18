@@ -7,9 +7,10 @@ that a lost session is a re-read, not a re-crack.
 
 **Branch and checkout.** Work happens in a git worktree at
 `C:\Users\steve\Desktop\car-harness-index` on branch `dealer-data-index`, cut from
-`master`. The main checkout stays on `vauxhall-gm-global-a` untouched because
-another agent is working there. `tools/gds2/` was taken by `git show cef7121:...`
-rather than by checking that branch out.
+`master`. The main checkout at `C:\Users\steve\Desktop\car-harness` stays on
+`master`; the Vauxhall and JLR agents have their own worktrees
+(`car-harness-vauxhall`, `car-harness-jlr`). `tools/gds2/` was taken by
+`git show cef7121:...` rather than by checking that branch out.
 
 **Where the databases live.** Outside the repository, at
 `C:\Users\steve\Desktop\car-harness-data\` (override with the `CARHARNESS_DATA`

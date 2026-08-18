@@ -51,10 +51,17 @@ def find_vatbins(root=None):
     out = []
     if not root.exists():
         return out
+    generic = {"binaryfile", "unpacked", "databackups", "data", "bin"}
     for p in root.rglob("vatbin.bin"):
-        # The deliverable is the directory above BinaryFile/.
-        parent = p.parent
-        label = parent.parent.name if parent.name.lower() == "binaryfile" else parent.name
+        # The deliverable is the first directory above the file whose name is not
+        # one of the generic container directories the installers use.
+        label = p.parent.name
+        for parent in p.parents:
+            if parent == root:
+                break
+            if parent.name.lower() not in generic:
+                label = parent.name
+                break
         out.append((label, p))
     out.sort(key=lambda lp: lp[0])
     return out
