@@ -58,8 +58,28 @@ object JlrDiscover {
         val dialect: String,                    // "uds" or "unproven"
         val provedBy: String,                   // proving rung: "3E 00" / "22 F190"
         val ident: List<Pair<String, String>>,  // UDS ident reads that answered
-        val known: String,                      // table name, "" when not in it
+        val module: String,                     // module name, "" when unnamed
+        val source: String,                     // where the name came from, "" if none
     )
+
+    /**
+     * (display name, where it came from) for a swept address.
+     *
+     * Two sources, in order of standing: the shipped table (three rows publicly
+     * verified on a real car), then the decrypted SDD 169 L494 MY16 address map
+     * (57 rows, the manufacturer's own). Before the SDD map was loaded, 54 of
+     * 57 modules could only be reported as "not in the shipped table" beside a
+     * bare CAN id; now the sweep prints ABS at 0x7E6 and DSM at 0x744 the way
+     * the dealer tool does. Anything neither source knows still says so.
+     */
+    private fun identify(reqId: Int): Pair<String, String> {
+        JlrUds.ECUS.firstOrNull { it.req == reqId }?.let {
+            return "${it.code} (${it.name})" to "shipped table"
+        }
+        val code = JlrSdd.moduleCode(reqId)
+        if (code.isNotEmpty()) return code to "SDD 169 ${JlrSdd.PLATFORM} map"
+        return "" to ""
+    }
 
     /**
      * Cheap presence ladder for the walk: 3E 00, then 22 F190. Same two-rung
@@ -109,9 +129,10 @@ object JlrDiscover {
     private fun foundRows(found: List<Found>): List<EnhancedReading> = found.map { f ->
         val vin = f.ident.firstOrNull { it.first == "VIN" }?.second ?: ""
         val parts = mutableListOf(f.dialect.uppercase())
-        parts.add(f.known.ifEmpty { "not in the shipped table" })
+        parts.add(f.module.ifEmpty { "unnamed by any source" })
         if (vin.isNotEmpty()) parts.add("VIN $vin")
         parts.add("proved by ${f.provedBy}")
+        if (f.source.isNotEmpty()) parts.add("named from the ${f.source}")
         EnhancedReading("${f.address} → ${f.response}", parts.joinToString(" · "), "")
     }
 
@@ -126,14 +147,25 @@ object JlrDiscover {
                 "",
             )
         )
-        val extras = found.filter { it.known.isEmpty() }.map { it.address }
-        if (extras.isNotEmpty()) {
+        val fromSdd = found.filter { it.source.startsWith("SDD") }.map { it.address }
+        if (fromSdd.isNotEmpty()) {
             out.add(
                 EnhancedReading(
-                    "Not in the shipped table",
-                    "⚠ ${extras.joinToString(", ")} — candidates for the SCR/reagent " +
-                        "controller or the never-published HS-CAN modules; identify " +
-                        "before trusting.",
+                    "Named from the SDD map",
+                    "${fromSdd.joinToString(", ")} — manufacturer data, but the map is " +
+                        "the L494's, so on another JLR treat a name as a strong hint " +
+                        "rather than a fact.",
+                    "",
+                )
+            )
+        }
+        val unnamed = found.filter { it.module.isEmpty() }.map { it.address }
+        if (unnamed.isNotEmpty()) {
+            out.add(
+                EnhancedReading(
+                    "Unnamed by any source",
+                    "⚠ ${unnamed.joinToString(", ")} — neither the shipped table nor the " +
+                        "SDD map knows these addresses; identify before trusting.",
                     "",
                 )
             )
@@ -166,31 +198,32 @@ object JlrDiscover {
             // one unexpected UDS answerer at 0x730 to show what discovery is FOR.
             onProgress("SIMULATED — building the demo discovery…")
             val found = listOf(
-                Found(
-                    "0x730", "0x738", "uds", "3E 00",
-                    listOf("Part number" to "XR8Q-5K698-BC"), "",
-                ),
-                Found(
-                    "0x7E0", "0x7E8", "uds", "3E 00",
+                Triple(0x7E6, "3E 00", listOf("Part number" to "GX63-2C405-AC")),
+                Triple(0x744, "3E 00", emptyList()),
+                Triple(
+                    0x7E0, "3E 00",
                     listOf(
                         "VIN" to "SIMULATEDX260DIE",
                         "Part number" to "AA52-12A650-EC",
                     ),
-                    "PCM (Engine control (ECM/PCM))",
                 ),
+                Triple(0x7E1, "22 F190", listOf("VIN" to "SIMULATEDX260DIE")),
+            ).map { (addr, proved, ident) ->
+                val (module, source) = identify(addr)
                 Found(
-                    "0x7E1", "0x7E9", "uds", "22 F190",
-                    listOf("VIN" to "SIMULATEDX260DIE"),
-                    "TCM (Transmission (ZF 6HP/8HP))",
-                ),
-            )
+                    "0x%03X".format(addr), "0x%03X".format(addr + 8),
+                    if (ident.isEmpty()) "unproven" else "uds", proved, ident,
+                    module, source,
+                )
+            }
             return listOf(
                 EnhancedReading(
                     "Note",
-                    "SIMULATED — swept $SWEEPABLE_COUNT addresses, 3 answered: the PCM and " +
-                        "TCM on their table addresses plus one unexpected answerer at " +
-                        "0x730 (not in the shipped table — the SCR/reagent question this " +
-                        "tool exists to answer). No real car connected.",
+                    "SIMULATED — swept $SWEEPABLE_COUNT addresses, 4 answered. The PCM and " +
+                        "TCM come from the shipped table; 0x7E6 (ABS) and 0x744 (DSM) are " +
+                        "named from the decrypted SDD 169 L494 map, which is what that map " +
+                        "is for — 0x7E6 was long suspected of being an SCR controller and " +
+                        "is not. No real car connected.",
                     "",
                 )
             ) + foundRows(found) + summaryRows(SWEEPABLE_COUNT, 8, found)
@@ -205,7 +238,6 @@ object JlrDiscover {
             )
         }
 
-        val known = JlrUds.ECUS.associate { it.req to "${it.code} (${it.name})" }
         val found = mutableListOf<Found>()
         var swept = 0
         var skipped = 0
@@ -227,6 +259,7 @@ object JlrDiscover {
                 // Only an answering address pays for identification.
                 onProgress("Identifying 0x%03X…".format(reqId))
                 val ident = readIdentUds(session, reqId)
+                val (module, source) = identify(reqId)
                 found.add(
                     Found(
                         address = "0x%03X".format(reqId),
@@ -234,7 +267,8 @@ object JlrDiscover {
                         dialect = if (ident.isEmpty()) "unproven" else "uds",
                         provedBy = provedBy,
                         ident = ident,
-                        known = known[reqId] ?: "",
+                        module = module,
+                        source = source,
                     )
                 )
             }

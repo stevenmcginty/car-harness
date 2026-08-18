@@ -283,9 +283,19 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
         onProgress: (String) -> Unit,
         seconds: Long = 180,
         onSample: (JlrAdBlue.DriveSample) -> Unit = {},
+        preset: JlrAdBlue.WatchPreset? = null,
     ): List<EnhancedReading> = mutex.withLock {
-        JlrAdBlue.driveLog(session, simulated, onProgress, seconds, onSample)
+        JlrAdBlue.driveLog(session, simulated, onProgress, seconds, onSample, preset)
     }
+
+    /**
+     * What JLR's own SDD 169 dealer database says about this family: the
+     * 57-module L494 address map, the 37 named diesel-PCM identifiers with
+     * their factory scaling, and the 24 routine identifiers (reference only —
+     * the harness sends none of them). Reads NOTHING from the car, so it does
+     * not take the session mutex and works with the dongle unplugged.
+     */
+    fun jlrDealerData(): List<EnhancedReading> = JlrSdd.reference()
 
     /** Porsche module scan (Porsche-own UDS/KWP-over-CAN, VAG-MLB reuse, K-line floor). Serialised. */
     suspend fun porscheScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {

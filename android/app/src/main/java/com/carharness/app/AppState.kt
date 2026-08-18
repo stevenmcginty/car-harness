@@ -669,11 +669,21 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     /** Run one of the selected brand's extra actions (extras / snapshot / …). */
     fun runBrandAction(action: BrandAction) {
+        if (extrasBusy || modScanning) return
+        // A reference view needs no car and no session: show it straight away
+        // rather than making the reader connect to something to read a table.
+        action.dataOnly?.let { lookup ->
+            extras = lookup()
+            extrasRead = true
+            extrasSource = action.id
+            extrasBrand = moduleBrand
+            modError = ""
+            return
+        }
         val ctrl = controller ?: run {
             modError = "Connect to the car first — the button on Home does it for you."
             return
         }
-        if (extrasBusy || modScanning) return
         setLive(false) // retargets the ELM; pause the dashboard
         val brand = moduleBrand
         extrasBusy = true
@@ -684,14 +694,27 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 val onStep: (String) -> Unit = { step ->
                     scope.launch(Dispatchers.Main) { modProgress = step }
                 }
-                // The JLR drive log is the one action that also CAPTURES: each
+                // The JLR drive logs are the actions that also CAPTURE: each
                 // tick streams to the on-disk CSV as it lands, so the run is a
                 // dataset the moment it happens (see the drive-log block above).
+                // "urealog" is the same log watching only the SDD-named urea
+                // cluster, and it must capture for exactly the same reason --
+                // more so, since pinning 05FC's scaling IS the CSV.
+                val preset = if (brand == "jlr") {
+                    JlrAdBlue.PRESETS.firstOrNull { "${it.id}log" == action.id }
+                } else null
                 val readings =
-                    if (brand == "jlr" && action.id == "drivelog") {
+                    if (brand == "jlr" && (action.id == "drivelog" || preset != null)) {
                         startDriveLog()
                         try {
-                            ctrl.jlrAdblueDriveLog(onStep, driveLogSeconds, ::appendDriveSample)
+                            // The length picker wins either way. A preset
+                            // carries a suggested length, but overriding a
+                            // deliberate choice would be worse than honouring
+                            // a short one -- the card says what length the job
+                            // wants.
+                            ctrl.jlrAdblueDriveLog(
+                                onStep, driveLogSeconds, ::appendDriveSample, preset,
+                            )
                         } finally {
                             endDriveLog()
                         }

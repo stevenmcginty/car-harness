@@ -21,6 +21,13 @@ data class BrandAction(
     val emptyHint: String,   // shown when the car answered nothing
     val refreshHint: String, // footer under the readings
     val run: suspend (ObdController, (String) -> Unit) -> List<EnhancedReading>,
+    /**
+     * A reference view that touches no car. When set, [run] is never called
+     * and the button works with nothing plugged in -- which is the whole point
+     * of a lookup you want while standing next to the car deciding what to
+     * ask it. Actions without this need a live connection, as before.
+     */
+    val dataOnly: (() -> List<EnhancedReading>)? = null,
 )
 
 data class Brand(
@@ -270,6 +277,48 @@ object Brands {
                         "drive through warm-up while it runs. A regen needs ~20 min at " +
                         "500 °C+, so a longer window is needed to span one.",
                     run = { ctrl, onStep -> ctrl.jlrAdblueDriveLog(onStep) },
+                ),
+                // The urea watch preset as its own button: on a phone, in a
+                // car park, "press this one" beats typing four hex ids into a
+                // field. Same drive log, four DIDs instead of eleven, which is
+                // what makes 05FC sample fast enough to be calibrated.
+                BrandAction(
+                    id = "urealog",
+                    label = "Urea log",
+                    cardTitle = "JLR UREA / SCR WATCH LOG",
+                    emptyHint = "No ticks were recorded — the log needs the dongle awake " +
+                        "and the ignition ON for the whole run. If the ticks came back " +
+                        "with no payloads, this car's PCM does not answer 05FA-05FD; " +
+                        "SDD names them for the 306DT diesel, not for every JLR.",
+                    refreshHint = "Watches only the four SDD-named urea DIDs 05FA-05FD, so " +
+                        "each samples several times faster than in the full drive log. " +
+                        "DRIVE IT WARM: reagent dosing only starts once the SCR catalyst " +
+                        "is up to temperature, so a cold log records four constants. 05FC " +
+                        "is a monotonic total mass injected — the rate it climbs is what " +
+                        "pins the scaling SDD does not publish. Every tick lands in the " +
+                        "CSV as it happens; share it from the button below.",
+                    run = { ctrl, onStep ->
+                        ctrl.jlrAdblueDriveLog(onStep, preset = JlrAdBlue.UREA_PRESET)
+                    },
+                ),
+                // A pure data view: no car contact at all, so it works with the
+                // dongle unplugged — which is when you most want to look up
+                // what a module address or an identifier actually is.
+                BrandAction(
+                    id = "sdd",
+                    label = "SDD data",
+                    cardTitle = "JLR SDD 169 DEALER DATA",
+                    emptyHint = "The SDD tables did not load — this is compiled-in data, " +
+                        "so an empty card means a build problem, not a car problem.",
+                    refreshHint = "Jaguar Land Rover's own dealer data, decrypted from SDD " +
+                        "169 (L494 MY16): 57 module addresses, 37 named diesel-PCM " +
+                        "identifiers with factory scaling, 24 routine identifiers. The " +
+                        "routines are REFERENCE ONLY — this app sends none of them. Rows " +
+                        "marked [candidate] have an authoritative name against a value " +
+                        "this car has not proved. No car contact: this reads the same " +
+                        "with the dongle unplugged.",
+                    run = { ctrl, _ -> ctrl.jlrDealerData() },
+                    dataOnly = { JlrSdd.reference() },
                 ),
             ),
             scan = { ctrl, onStep -> ctrl.jlrScan(onStep) },

@@ -111,13 +111,23 @@ fun ModulesScreen(state: AppState) {
                         GhostButton(
                             if (state.extrasRunningId == action.id) "Reading…" else action.label,
                             onClick = { state.runBrandAction(action) },
-                            enabled = ready,
+                            // A reference view touches no car, so it stays
+                            // pressable with nothing connected — that is when
+                            // you most want to look an address up.
+                            enabled = if (action.dataOnly != null) {
+                                !state.modScanning && !state.extrasBusy
+                            } else {
+                                ready
+                            },
                         )
                     }
                 }
                 // Drive-log length (JLR): a warm-up pass and a regen are an
                 // order of magnitude apart, so the picker sits right under the
-                // buttons it configures.
+                // buttons it configures. It sets the length of BOTH logs --
+                // the broad Drive log and the focused Urea log, which wants
+                // the long end because dosing only starts once the SCR
+                // catalyst is warm.
                 if (brand == "jlr") {
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
