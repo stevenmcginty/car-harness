@@ -576,8 +576,17 @@ def main() -> int:
           all(f["dialect"] == "uds" for f in drep["found"]),
           str([f["dialect"] for f in drep["found"]]))
     check("discover readings render as panel chips", len(drep["readings"]) == 3)
-    check("discover message names the unknown address honestly",
-          "0x730" in drep["message"] and "Not in the shipped table" in drep["message"],
+    # 0x730 used to come back as a bare "not in the shipped table" address. The
+    # decrypted SDD 169 L494 map names it PSCM, so the sweep now reports the
+    # module AND where the name came from -- the shipped table still outranks
+    # SDD for the three rows it covers.
+    check("discover names the stranger from the SDD map, marked as SDD-sourced",
+          found["0x730"]["module"] == "PSCM"
+          and found["0x730"]["source"].startswith("SDD 169")
+          and found["0x7E0"]["source"] == "shipped table",
+          str(found.get("0x730")))
+    check("discover message says which addresses SDD named",
+          "0x730" in drep["message"] and "SDD 169" in drep["message"],
           drep["message"])
     discover_services = {req[0] for _, req in dcar.sent}
     check("discover only ever sent 3E 00 / 22 (no fault services, no writes)",
