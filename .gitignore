@@ -32,6 +32,15 @@ server.log.err
 # Car captures -- real scan data (may carry VINs) and downloaded binaries,
 # local-only like the logs above
 captures/
+# Mined dealer-tool indexes. These live outside the repo by default (see
+# tools/dealer_index/paths.py, CARHARNESS_DATA); this is belt and braces for
+# anyone who points --db at the tree. They are derived data, gigabytes of it,
+# and rebuildable from one command.
+datasets/
+car-harness-data/
+*.db
+*.db-journal
+
 # Generated BMW live-data pack -- derived from the SGBD files on the local
 # machine (see backend/tools/bmw_live_extract.py). Regenerate, never commit.
 backend/profiles/bmw/live_pack.json
