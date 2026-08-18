@@ -645,11 +645,18 @@ def analyze(adapter: Optional[dict], mode: str = "real") -> dict:
                 break
 
             live: List[dict] = []
+            adapts: Optional[dict] = None
             if chosen:
                 live = tcm_mod.read_transmission(client)
                 if not live:
                     from . import pids as vx_pids
                     live = vx_pids._read_obdb_transmission(client)
+                # The clutch adapt block. One extra request, read-only, and
+                # the answer decides a question this profile has carried
+                # unresolved since it was written: whether these cells are
+                # reachable over a dongle at all. A None here is a result,
+                # not a failure, and the message below says which happened.
+                adapts = tcm_mod.read_adaptive_cells(client)
         finally:
             client.restore()
 
@@ -679,13 +686,21 @@ def analyze(adapter: Optional[dict], mode: str = "real") -> dict:
                     "code": code, "name": name, "dialect": dialect or "unproven",
                     "error": error, "trace": trace},
             "ident": ident, "dtcs": dtcs, "live": live, "findings": findings,
+            "adaptiveCells": adapts,
             "readings": readings, "worksheet": worksheet,
             "message": (
                 (f"VIN {vin}. " if vin else "")
                 + f"TCM at 0x{req:03X} ({dialect or 'unproven'}). "
                 + f"{len(dtcs)} fault(s), {len(live)} live value(s). "
                 + f"{len(findings)} finding(s).{unread} "
-                "Read-only -- nothing was changed on the car."
+                + (f"Clutch adapt block answered with {len(adapts['cells'])} "
+                   "cell(s) -- names and scaling are from the GDS2 data set "
+                   "and have never been checked against this gearbox, so "
+                   "read them against the raw payload. "
+                   if adapts else
+                   "Clutch adapt block (GMLAN 1A 50) did not answer, so the "
+                   "GDS2 layout is unconfirmed on this car. ")
+                + "Read-only -- nothing was changed on the car."
             ),
             "timestamp": _now(),
         }
