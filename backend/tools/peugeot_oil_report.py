@@ -37,6 +37,26 @@ HEALTHY_PUMP_VS_RPM = [(760, 35), (3000, 9)]
 HEALTHY_RPM_POINTS = [(800, 1.43), (2436, 3.38), (2500, 3.0), (3000, 3.41)]
 
 
+def _flatten_scan_dtcs(result):
+    """A module scan stores DTCs per module; the report wants one flat list.
+
+    Without this a `scan` run has no top-level "dtcs" key at all, so it is
+    skipped when picking the latest fault read and the report quietly shows an
+    older capture's codes as current. Engine-ECU codes come first because the
+    oil work lives there; every other module that answered follows, tagged.
+    """
+    modules = result.get("modules")
+    if result.get("dtcs") is not None or not modules:
+        return
+    flat, others = [], []
+    for module in modules:
+        for dtc in module.get("dtcs") or []:
+            entry = dict(dtc)
+            entry["module"] = module.get("code") or module.get("address")
+            (flat if module.get("code") == "CMM" else others).append(entry)
+    result["dtcs"] = flat + others
+
+
 def _load(car):
     runs = []
     for path in sorted(CAPTURES.glob(f"{car}-*.json")):
@@ -45,6 +65,7 @@ def _load(car):
         except (OSError, ValueError):
             continue
         data["_path"] = path.name
+        _flatten_scan_dtcs(data.get("result") or {})
         # Re-decode raw blocks so an older capture gains newer signals. Drive
         # logs keep their samples under "readings" rather than "samples".
         result = data.get("result") or {}
@@ -187,8 +208,10 @@ DTC_MEANINGS = {
     "P15A6": "Oil pressure too high relative to the setpoint.",
     "P0945": "Oil pressure regulation solenoid valve circuit.",
     "P0521": "Oil pressure sensor / switch range or performance.",
-    "P1336": "Flywheel (crankshaft target) adaptation not learned.",
-    "P1339": "Misfire detected.",
+    "P1336": "PSA factory definition: catalyst-damaging misfire across several cylinders, cylinder undetermined. Not the generic 'flywheel adaptation' "
+             "meaning this number carries on other makes.",
+    "P1339": "PSA factory definition: catalyst-damaging misfire on CYLINDER 3. "
+             "Names the cylinder directly.",
     "P0318": "Rough road / crankshaft signal disturbance, usually recorded "
              "alongside misfire.",
     "U1113": "CAN communication fault recorded by the engine ECU.",
@@ -204,6 +227,10 @@ DTC_MEANINGS = {
 RELIEF_CAP_BAR = 4.5
 SENSOR_RAIL_BAR = 10.5
 EXCURSION_BAR = 6.0
+# The healthy RCZ idles at 1.43 bar, so anything under that is below the known-good
+# car; LOW_DIP_BAR is the tighter line used to group dips worth reporting as events.
+LOW_IDLE_BAR = 1.43
+LOW_DIP_BAR = 1.5
 
 
 def _regulation(runs):
@@ -282,15 +309,38 @@ def _drive_stats(run):
     anchors = [s for s in readings if s.get("engine_rpm") is not None]
     running = [s for s in anchors if s["engine_rpm"] > 300]
 
-    excursions, current = [], []
-    for t, bar in press:
-        if bar > EXCURSION_BAR:
-            current.append((t, bar))
-        elif current:
-            excursions.append(current)
-            current = []
-    if current:
-        excursions.append(current)
+    def _group(test):
+        """Contiguous runs of samples satisfying ``test``. Six seconds outside
+        range means something very different from one sample outside it."""
+        groups, current = [], []
+        for t, bar in press:
+            if test(bar):
+                current.append((t, bar))
+            elif current:
+                groups.append(current)
+                current = []
+        if current:
+            groups.append(current)
+        return groups
+
+    excursions = _group(lambda bar: bar > EXCURSION_BAR)
+    # The low end matters as much as the high one: a warning lamp that comes on
+    # and off while driving is pressure crossing the threshold downward, and a
+    # report that only counts high excursions cannot see the driver's symptom.
+    dips = _group(lambda bar: bar < LOW_DIP_BAR)
+
+    # Thirds of the log, in time order. The oil warms as the drive goes on, so a
+    # spread that widens third by third is the signature worth surfacing.
+    thirds = []
+    if len(press) >= 3:
+        step = len(press) // 3
+        for index in range(3):
+            chunk = press[index * step:(index + 1) * step if index < 2 else None]
+            if chunk:
+                bars = [b for _, b in chunk]
+                thirds.append({"from": chunk[0][0], "to": chunk[-1][0],
+                               "min": min(bars), "max": max(bars),
+                               "median": statistics.median(bars)})
 
     def pct(p):
         return values[min(len(values) - 1, int(len(values) * p))]
@@ -305,8 +355,13 @@ def _drive_stats(run):
         "over_relief": sum(1 for v in values if v > RELIEF_CAP_BAR),
         "over_excursion": sum(1 for v in values if v > EXCURSION_BAR),
         "over_rail": sum(1 for v in values if v > SENSOR_RAIL_BAR),
+        "min": values[0],
+        "under_idle": sum(1 for v in values if v < LOW_IDLE_BAR),
+        "under_dip": sum(1 for v in values if v < LOW_DIP_BAR),
         "excursions": sorted(excursions,
                              key=lambda e: e[-1][0] - e[0][0], reverse=True),
+        "dips": sorted(dips, key=lambda e: e[-1][0] - e[0][0], reverse=True),
+        "thirds": thirds,
         "anchors": anchors,
         "running_anchors": running,
         "curve": [(s["engine_rpm"], s["oil_pressure_bar"]) for s in running
@@ -804,12 +859,41 @@ def build(car: str) -> Path:
                 f"log above {EXCURSION_BAR:.0f} bar and peaking at "
                 f"{dstats['max']:.2f} bar. The longest single excursion lasted "
                 f"{longest[-1][0] - longest[0][0]:.0f} seconds.")
+        if dstats["dips"]:
+            longest_dip = dstats["dips"][0]
+            pct_low = 100.0 * dstats["under_dip"] / dstats["with_pressure"]
+            drive_finding += (
+                f" It also went the other way: {dstats['under_dip']} samples "
+                f"({pct_low:.1f}% of the log) fell below {LOW_DIP_BAR} bar, "
+                f"bottoming at {dstats['min']:.2f} bar, in "
+                f"{len(dstats['dips'])} separate dips of which the longest lasted "
+                f"{longest_dip[-1][0] - longest_dip[0][0]:.0f} seconds. A warning "
+                f"lamp that comes on and off while driving is this, not the high "
+                f"excursions -- the lamp reports pressure crossing its threshold "
+                f"downward. Every dip in this log sits at the low-pressure pump "
+                f"command and low engine speed, and every high excursion sits at "
+                f"the high-pressure command, so the solenoid is switching: it is "
+                f"the pressure each stage produces that is wrong, at BOTH ends.")
         else:
             drive_finding = (
                 f"Driven for {dstats['minutes']:.0f} minutes under real load, the "
                 f"pressure stayed inside range at a median {dstats['median']:.2f} "
                 f"bar, peaking at {dstats['max']:.2f} bar.")
         findings.insert(0, drive_finding)
+        thirds_html = '<p class="muted">Too few samples to split.</p>'
+        if dstats["thirds"]:
+            thirds_html = (
+                "<table><tr><th>window</th><th>lowest</th><th>median</th>"
+                "<th>highest</th></tr>"
+                + "".join(
+                    f"<tr><td>{t['from']:.0f}&ndash;{t['to']:.0f} s</td>"
+                    f"<td>{t['min']:.2f} bar</td><td>{t['median']:.2f} bar</td>"
+                    f"<td>{t['max']:.2f} bar</td></tr>" for t in dstats["thirds"])
+                + "</table><p class=\"muted\">Thirds of the log in time order, so "
+                  "the oil is warmest in the last row. A spread that widens as it "
+                  "warms -- lower lows and higher highs -- is the pattern to watch: "
+                  "it says the regulation is losing authority in both directions "
+                  "rather than sitting at one fixed wrong value.</p>")
         rows_ex = "".join(
             f"<tr><td>{e[0][0]:.0f}&ndash;{e[-1][0]:.0f} s</td>"
             f"<td>{e[-1][0] - e[0][0]:.1f} s</td>"
@@ -831,7 +915,16 @@ def build(car: str) -> Path:
      <td>{dstats['over_rail']}</td></tr>
  <tr><td>separate excursions above {EXCURSION_BAR:.0f} bar</td>
      <td>{len(dstats['excursions'])}</td></tr>
+ <tr><td>lowest reading</td><td>{dstats['min']:.2f} bar</td></tr>
+ <tr><td>samples below the healthy car's {LOW_IDLE_BAR} bar idle</td>
+     <td>{dstats['under_idle']}</td></tr>
+ <tr><td>samples below {LOW_DIP_BAR} bar</td><td>{dstats['under_dip']}</td></tr>
+ <tr><td>separate dips below {LOW_DIP_BAR} bar</td>
+     <td>{len(dstats['dips'])}</td></tr>
 </table>
+<h3>How the spread moves as the oil warms</h3>
+{thirds_html}
+
 <h3>The longest excursions</h3>
 <table><tr><th>when</th><th>duration</th><th>peak</th><th>samples</th></tr>
 {rows_ex or '<tr><td colspan="4" class="muted">None.</td></tr>'}</table>"""
