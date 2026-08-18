@@ -795,17 +795,42 @@ def main() -> int:
           str(len(jlr_sdd.ROUTINES)))
 
     # --- the urea watch preset: the next real-world step, one press away ----
-    check("drive log offers the urea watch preset",
-          [p["id"] for p in jlr_adblue.presets()] == ["urea", "engine"],
-          str([p["id"] for p in jlr_adblue.presets()]))
-    upre = next(p for p in jlr_adblue.presets() if p["id"] == "urea")
+    # ONE preset mechanism carrying every watch. v2.14 shipped a DPF+EGR watch
+    # as a boolean toggle and this branch shipped a urea watch as metadata; the
+    # merge kept the metadata mechanism and both watches. Neither may be lost.
+    preset_ids = [p["id"] for p in jlr_adblue.presets()]
+    check("drive log offers one preset list carrying both watches",
+          preset_ids == ["full", "dpfegr", "urea"], str(preset_ids))
+    by_id = {p["id"]: p for p in jlr_adblue.presets()}
     check("urea preset watches exactly 05FA-05FD",
-          upre["dids"] == ["05FA", "05FB", "05FC", "05FD"], str(upre["dids"]))
-    ulog = jlr_adblue.drive_log(None, "sim", 60.0, ["urea"])
-    check("the preset name expands to its DIDs in the drive log",
-          ulog["dids"] == ["05FA", "05FB", "05FC", "05FD"], str(ulog["dids"]))
+          by_id["urea"]["dids"] == ["05FA", "05FB", "05FC", "05FD"],
+          str(by_id["urea"]["dids"]))
+    check("DPF+EGR preset watches v2.14's six live sweep candidates",
+          by_id["dpfegr"]["dids"]
+          == ["F40C", "0430", "0434", "F423", "F463", "F485"],
+          str(by_id["dpfegr"]["dids"]))
+    check("the full set is the zero case of a preset, not a special case",
+          by_id["full"]["dids"] == [], str(by_id["full"]["dids"]))
+    for pid, expected in (("urea", ["05FA", "05FB", "05FC", "05FD"]),
+                          ("dpfegr", ["F40C", "0430", "0434", "F423",
+                                      "F463", "F485"])):
+        run = jlr_adblue.drive_log(None, "sim", 60.0, [pid])
+        check(f"the preset name '{pid}' expands to its DIDs in the drive log",
+              run["dids"] == expected, str(run["dids"]))
+    check("the full preset falls back to the default set",
+          jlr_adblue.drive_log(None, "sim", 60.0, ["full"])["dids"]
+          == jlr_adblue._default_drive_dids())
     check("an ordinary hex DID list still passes through untouched",
           jlr_adblue.drive_log(None, "sim", 60.0, ["05FC"])["dids"] == ["05FC"])
+    # v2.14's live sweep candidates and this branch's corrected live ids must
+    # both survive in the polled set, and dead 042C must stay out of it.
+    polled = jlr_adblue._default_drive_dids()
+    check("the default poll set carries both branches' live candidates",
+          all(d in polled for d in ("F40C", "0430", "0434", "F423", "F463",
+                                    "F485", "0417", "0598", "05FA", "05FC")),
+          str(polled))
+    check("dead 042C is not polled by anything",
+          "042C" not in polled, str(polled))
 
     # --- and that all of it actually REACHES the desktop -------------------
     # The front-end renders brand panels from profile.json alone, so the test
@@ -817,13 +842,13 @@ def main() -> int:
           str(sorted(jactions)))
     check("dealer-data is gated by a real backend capability",
           brands.features("jlr")["dealerData"] is True)
-    check("desktop drive log offers the urea preset with its warm-drive note",
-          [p["id"] for p in jactions["adblue-drive-log"].get("presets", [])]
-          == ["urea", "engine"]
-          and jactions["adblue-drive-log"]["presets"][0]["dids"]
-          == "05FA,05FB,05FC,05FD"
-          and "WARM" in jactions["adblue-drive-log"]["presets"][0]["note"],
-          str(jactions["adblue-drive-log"].get("presets")))
+    dpresets = {p["id"]: p for p in jactions["adblue-drive-log"].get("presets", [])}
+    check("desktop drive log offers both watches with their notes",
+          dpresets["urea"]["dids"] == "05FA,05FB,05FC,05FD"
+          and "WARM" in dpresets["urea"]["note"]
+          and dpresets["dpfegr"]["dids"] == "F40C,0430,0434,F423,F463,F485"
+          and dpresets["full"]["dids"] == "",
+          str(sorted(dpresets)))
     check("profile presets match the profile module's own preset list",
           [p["id"] for p in jactions["adblue-drive-log"]["presets"]]
           == [p["id"] for p in jlr_adblue.presets()])

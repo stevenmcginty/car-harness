@@ -4,7 +4,12 @@
   "transport": "elm327",
   "description": "Jaguar and Land Rover over a generic OBD-II dongle. Honest per-era scope (docs/private/jlr-research-architecture.md): the 2006-2016 Ford/PLA CAN cars (XF X250, XK, Disco 3/4, RR Sport L320, Freelander 2, Ford-era L322, XJ X351, F-Type) answer 11-bit UDS on HS-CAN pins 6/14 -- engine 7E0, ZF gearbox 7E1 and the rear e-diff 795 are the publicly-verified modules; body/comfort modules sit on an MS-CAN not wired to pins 6/14 and are physically unreachable bare. Evoque L538 / Discovery Sport L550 gateway-filter the OBD port (generic OBD only). MY17+ new-architecture cars (Disco 5, Velar, 2018+ Jaguars, Defender L663, I-Pace, L460/L461) moved manufacturer diagnostics to DoIP over Ethernet, which no ELM327 can speak -- generic OBD-II only. Early S-Type/X-Type (J1850) and BMW-era L322 (2002-05) are out of scope. The service resets are dash procedures and work on EVERY era, including the DoIP cars.",
   "probe": "profile.py",
-  "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"],
+  "adapters": [
+    "elm327-ble",
+    "elm327-wifi",
+    "elm327-serial",
+    "elm327-bluetooth"
+  ],
   "panel": {
     "title": "JLR modules (OBD dongle)",
     "hint": "Module scan for Jaguar / Land Rover over the ordinary OBD dongle. Reads the VIN first, then the modules a dongle genuinely reaches on a 2006-2016 CAN-era JLR: engine, ZF automatic gearbox and (where fitted) the rear e-diff, laddering UDS then KWP2000-over-CAN for the older cars. This is an honest engine + driveline read, NOT a full SDD/Pathfinder walk: body modules (BCM, cluster, HVAC, doors) sit on a separate MS-CAN that isn't wired to the OBD pins the dongle uses, air suspension and ABS use module addresses that were never published, and MY17+ cars (Disco 5, Velar, 2018+ Jaguars, Defender L663, I-Pace) do manufacturer diagnostics over DoIP/Ethernet -- generic OBD only. Evoque L538 / Disco Sport L550 gateway-filter the port. The Service tab's dash-procedure resets work on every era, dongle or not. Pick the adapter top-right, ignition ON, then scan.",
@@ -30,7 +35,7 @@
         "label": "DID sweep",
         "busy": "Walking the DID range, keeping every answer raw…",
         "title": "Map this module's DIDs",
-        "hint": "Walks a 0x22 DID range on one module -- set the range and target in the fields above (defaults 0300-05FF at 7E0; research seed ranges 2100-21FF / 2200-22FF / F400-F4FF) -- one id at a time, keeping every raw answer. NRC 0x31 refusals are counted (the module is listening, the id isn't implemented); other NRCs are named; the rest are silent. Identify a value by sweeping at idle and again warm/loaded and seeing which payloads MOVE -- nothing is decoded until it has been captured on the car. The target must answer a presence probe or the sweep refuses. Read-only.",
+        "hint": "Walks a 0x22 DID range on one module -- set the range and target in the fields above -- one id at a time, keeping every raw answer. Ranges worth walking on a 306DT diesel PCM (7E0): 0300-05FF and F400-F4FF, where the L494's 191 live DIDs actually are; and D900-D9FF / DE00-DEFF, where SDD 169 names the EGR and turbo valve offsets (D910-D915, DE03-DE05), the high-pressure pump wear (DE02) and the particulate-filter regeneration statistics (DE10/DE11) -- SDD-named for this engine and never yet asked for on a car. Do NOT sweep 2100-21FF or 2200-22FF: all 512 ids refused NRC 31 on the L494 and SDD puts no diesel-PCM identifiers there either. NRC 0x31 refusals are counted (the module is listening, the id isn't implemented); other NRCs are named; the rest are silent. Identify a value by sweeping at idle and again warm/loaded and seeing which payloads MOVE -- nothing is decoded until it has been captured on the car. The target must answer a presence probe or the sweep refuses. Read-only.",
         "readOnly": true
       },
       {
@@ -59,18 +64,25 @@
         "readOnly": true,
         "presets": [
           {
+            "id": "full",
+            "label": "Full candidate set",
+            "dids": "",
+            "seconds": 300,
+            "note": "The Old Jaguar Group engine DIDs plus every live external candidate -- the broad default when you do not yet know what you are chasing. Slowest per-DID sample rate, widest coverage."
+          },
+          {
+            "id": "dpfegr",
+            "label": "DPF + EGR (sweep candidates)",
+            "dids": "F40C,0430,0434,F423,F463,F485",
+            "seconds": 1500,
+            "note": "The six aftertreatment-shaped candidates the 2026-08-18 L494 sweep found live (F40C leading), logged on their own for a higher sample rate. None is decoded and SDD names none of them: the job is to see which payload MOVES like soot, EGR or EGT between idle and warm/loaded. A regen needs ~20 min at 500 °C+, so give it the seconds to span one."
+          },
+          {
             "id": "urea",
             "label": "Urea / SCR 05FA-05FD",
             "dids": "05FA,05FB,05FC,05FD",
             "seconds": 900,
             "note": "The next real-world step on the L494. Four SDD-named, PCM-managed urea identifiers polled on their own, so each samples fast enough to be calibrated. Drive it WARM -- reagent dosing only starts once the SCR catalyst is up to temperature, so a cold log records four constants. 05FC is 'total mass fluid injected by the urea dosing system', a monotonic total: the rate it climbs is what pins the scaling SDD does not publish."
-          },
-          {
-            "id": "engine",
-            "label": "Known engine set",
-            "dids": "",
-            "seconds": 300,
-            "note": "The Old Jaguar Group engine DIDs plus every live external candidate -- the broad default when you do not yet know what you are chasing."
           }
         ]
       }

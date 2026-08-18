@@ -150,6 +150,28 @@ _DEAD_TICKS = 10
 # keep them in step with android/.../JlrAdBlue.kt.
 DRIVE_LOG_PRESETS: List[dict] = [
     {
+        "id": "full",
+        "label": "Full candidate set",
+        "dids": [],          # empty = whatever _default_drive_dids() builds
+        "seconds": 300,
+        "note": "The Old Jaguar Group engine DIDs plus every live external candidate -- "
+                "the broad default when you do not yet know what you are chasing. "
+                "Slowest per-DID sample rate, widest coverage.",
+    },
+    {
+        "id": "dpfegr",
+        "label": "DPF + EGR (sweep candidates)",
+        "dids": ["F40C", "0430", "0434", "F423", "F463", "F485"],
+        "seconds": 1500,
+        "note": (
+            "The six aftertreatment-shaped candidates the 2026-08-18 L494 sweep found "
+            "live (F40C leading), logged on their own for a higher sample rate. None is "
+            "decoded and SDD names none of them: the job is to see which payload MOVES "
+            "like soot, EGR or EGT between idle and warm/loaded. A regen needs ~20 min "
+            "at 500 degC+, so give it the seconds to span one."
+        ),
+    },
+    {
         "id": "urea",
         "label": "Urea / SCR cluster (05FA-05FD)",
         "dids": [f"{did:04X}" for did in sdd.UREA_DIDS],
@@ -161,14 +183,6 @@ DRIVE_LOG_PRESETS: List[dict] = [
             "to temperature, so a cold log records four constants. "
             + sdd.UREA_WATCH_NOTE
         ),
-    },
-    {
-        "id": "engine",
-        "label": "Known engine set (default)",
-        "dids": [],          # empty = whatever _default_drive_dids() builds
-        "seconds": 300,
-        "note": "The Old Jaguar Group engine DIDs plus every live external candidate — "
-                "the broad default when you do not yet know what you are chasing.",
     },
 ]
 
@@ -229,6 +243,7 @@ _AFTERTREATMENT_DECODES = {
     0x85: [("reagent_tank_level_pct", lambda b: _byte_at(b, 5, 2.55))],
     0x8B: [("dpf_regen_trigger_pct", lambda b: _byte_at(b, 2, 2.55))],
     0x78: [("egt_b1s1_c", lambda b: _temp10(_u16b(b, 0)))],
+    0x77: [("egr_commanded_pct", lambda b: _byte_at(b, 0, 2.55))],
 }
 
 

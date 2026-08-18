@@ -16,9 +16,6 @@ android {
         // Bluetooth permissions) are already behind SDK_INT checks.
         minSdk = 21
         targetSdk = 35
-        // 2.14 / code 24 is taken by the dealer-data-index branch's own build.
-        // Skipping to 25 keeps the two from colliding if both land: a phone
-        // must never see two different APKs claiming the same versionCode.
         versionCode = 25
         versionName = "2.15"
     }

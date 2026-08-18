@@ -44,6 +44,8 @@ import com.carharness.app.AppState
 import com.carharness.app.ConnState
 import com.carharness.app.ai.AiFaultContext
 import com.carharness.app.obd.Brands
+import com.carharness.app.obd.JlrAdBlue
+import com.carharness.app.obd.JlrSweep
 import com.carharness.app.obd.UdsDtc
 import com.carharness.app.obd.UdsModuleResult
 import com.carharness.app.obd.VinDecode
@@ -122,13 +124,39 @@ fun ModulesScreen(state: AppState) {
                         )
                     }
                 }
-                // Drive-log length (JLR): a warm-up pass and a regen are an
-                // order of magnitude apart, so the picker sits right under the
-                // buttons it configures. It sets the length of BOTH logs --
-                // the broad Drive log and the focused Urea log, which wants
-                // the long end because dosing only starts once the SCR
-                // catalyst is warm.
+                // JLR job settings, each sitting under the button it configures:
+                // which DID range the sweep walks, and how long the drive log
+                // runs for against which watch set.
                 if (brand == "jlr") {
+                    // DID sweep range. The desktop has three text fields; the
+                    // phone gets chips over the ranges worth walking, so the
+                    // SDD-named Dxxx/DExx identifiers can actually be asked for
+                    // rather than only read about in the SDD data card.
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Sweep range", color = TextFaint, fontFamily = Barlow,
+                            fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        JlrSweep.RANGES.forEach { range ->
+                            DurationChip(
+                                label = range.label,
+                                selected = state.sweepRangeId == range.id,
+                                onClick = { state.sweepRangeId = range.id },
+                            )
+                        }
+                    }
+                    JlrSweep.RANGES
+                        .firstOrNull { it.id == state.sweepRangeId }
+                        ?.let { range ->
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                range.note,
+                                color = TextFaint, fontFamily = Barlow,
+                                fontSize = 12.sp, lineHeight = 17.sp,
+                            )
+                        }
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -144,6 +172,36 @@ fun ModulesScreen(state: AppState) {
                             )
                         }
                     }
+                    // Watch set: which DIDs the drive log polls. The chips come
+                    // from JlrAdBlue.PRESETS rather than being written out here,
+                    // so adding a watch is a data change in one file and the
+                    // screen needs no edit. Each preset's note explains what the
+                    // watch is for and what it needs from the drive.
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Watch set", color = TextFaint, fontFamily = Barlow,
+                            fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        JlrAdBlue.PRESETS.forEach { preset ->
+                            DurationChip(
+                                label = preset.label,
+                                selected = state.driveLogPresetId == preset.id,
+                                onClick = { state.driveLogPresetId = preset.id },
+                            )
+                        }
+                    }
+                    JlrAdBlue.PRESETS
+                        .firstOrNull { it.id == state.driveLogPresetId }
+                        ?.let { preset ->
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                preset.note,
+                                color = TextFaint, fontFamily = Barlow,
+                                fontSize = 12.sp, lineHeight = 17.sp,
+                            )
+                        }
                 }
                 if ((state.modScanning || state.extrasBusy) && state.modProgress.isNotEmpty()) {
                     Spacer(Modifier.height(14.dp))

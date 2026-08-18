@@ -2,20 +2,20 @@
   "title": "JLR 306DT external PID/DID candidates (pre-first-contact research)",
   "engine_family": "306DT / AJ-V6D Lion 3.0 V6 diesel (X260 XF, EU6 SCR)",
   "confidence": {
-    "22042c_soot": "medium — two independent JLR-diesel provenances (XF 2.2d forum capture, Car Scanner's own JLR PID via ELM327-emulator log on an L322 4.4 TDV8); NOT yet read on the 3.0 V6; units label g/m^3 reads more like a percent soot load",
-    "mode01_aftertreatment": "standard-defined formulas (SAE J1979DA via DashLogic) — legislated, not JLR-invented; per-car support on this ECU unknown until asked",
-    "dead_on_2_2d": "220417 / 220434 / 220598 / 22D922 all returned zero on the XF 2.2d — Ford Duratorq family, unlikely on the Lion V6; listed so nobody re-chases them blind",
-    "l494_sweep_2026_08_18": "On-car sweep, VIN SALWA2EK8HA (HY32-14C204-PAE): 191 DIDs live (136 in 0300-05FF, 55 in F400-F4FF); 2100-21FF and 2200-22FF returned NRC 31 across the swept range. 042C did NOT answer (dead on this calibration). 0417/0598/0434 all ANSWERED (they are NOT dead - the earlier 'dead on 2.2d' rows were wrong for this car).",
-    "sdd_169_cross_check": "SDD 169 dealer data decrypted and cross-checked (see data/sdd_dids.json). SDD confirms 042C is a real diesel-PCM DID (DPF soot g/l, differential-pressure inferred) though this PCM refuses it, and it decodes several live DIDs by name/scaling: 0396 service distance (km), F405 coolant (deg C, byte-40), 0479 stop-start counter, 0463 injector correction codes (64 bytes), and urea/SCR DIDs 05FA-05FD. SDD read frame for 042C is 22 04 2C."
+    "22042c_soot": "medium - two independent JLR-diesel provenances (XF 2.2d forum capture, Car Scanner's own JLR PID via ELM327-emulator log on an L322 4.4 TDV8); NOT yet read on the 3.0 V6; units label g/m^3 reads more like a percent soot load",
+    "mode01_aftertreatment": "standard-defined formulas (SAE J1979DA via DashLogic) - legislated, not JLR-invented; per-car support on this ECU unknown until asked",
+    "dead_on_2_2d": "220417 / 220434 / 220598 / 22D922 all returned zero on the XF 2.2d - Ford Duratorq family, unlikely on the Lion V6; listed so nobody re-chases them blind",
+    "l494_sweep_2026_08_18": "On-car sweep, VIN SALWA2EK8HA (HY32-14C204-PAE): 191 DIDs live (136 in 0300-05FF, 55 in F400-F4FF). 2100-21FF and 2200-22FF are fully unimplemented (all 256 refused NRC 31 in each range) - never sweep them again on this family. 042C refused NRC 31 (dead on this calibration). 0417/0434/0598 all ANSWERED - they are NOT dead, the earlier 'dead on 2.2d' rows were wrong for this car - and F40C/0430/F423/F463/F485 answered raw at idle as aftertreatment-shaped candidates.",
+    "sdd_169_cross_check": "SDD 169 dealer data decrypted and cross-checked (see data/sdd_dids.json). SDD confirms 042C is a real diesel-PCM DID (DPF soot g/l, differential-pressure inferred) though this PCM refuses it, and it decodes several live DIDs by name/scaling: 0396 service distance (km), F405 coolant (deg C, byte-40), 0479 stop-start counter, 0463 injector correction codes (64 bytes), and urea/SCR DIDs 05FA-05FD. SDD read frame for 042C is 22 04 2C. SDD names none of F40C/0430/0434/F423/F463/F485/0417/0598, so those stay sweep-candidates."
   },
   "sources": [
     "https://torque-bhp.com/community/main-forum/dpf-active-regeneration/ (22042C on a 2014 XF Sportbrake 2.2d, raw response 7E80562042C3CE6)",
     "https://www.fullfatrr.com/forum/post671897.html (Car Scanner's JLR soot PID = 22042C, captured via Ircama ELM327-emulator on an L322 4.4 TDV8)",
     "https://www.jaginfo.org/threads/dpf-data-via-obd.8760/ (XF 2.2d soot readings 7-24 tracked over days)",
     "https://www.jaguarforums.com/forum/general-tech-help-7/custom-pids-torque-app-oil-temp-oil-level-trans-temp-more-213503/ (OJG pack v1.1 PDF: adds 22D120 diff-lock state, diesel 'expected compatible' claim)",
-    "https://www.dropbox.com/s/kmdtvb80g53ybe8/x351_x150_pids.csv?dl=0 (OJG metric CSV, retrieved verbatim — matches the shipped JLR_DIDS table)",
+    "https://www.dropbox.com/s/kmdtvb80g53ybe8/x351_x150_pids.csv?dl=0 (OJG metric CSV, retrieved verbatim - matches the shipped JLR_DIDS table)",
     "https://www.dashlogic.com/docs/technical/obdii_pids (J1979DA formulas for PIDs 78/7A/7C/83/85/8B)",
-    "https://www.discosportforums.co.uk/threads/obdii-parameter-ids-pids-to-detect-dpf-regeneration.14064/ (Car Scanner standard-sensor approach; the circulating 'PID 244' is a ChatGPT hallucination — disregard)"
+    "https://www.discosportforums.co.uk/threads/obdii-parameter-ids-pids-to-detect-dpf-regeneration.14064/ (Car Scanner standard-sensor approach; the circulating 'PID 244' is a ChatGPT hallucination - disregard)"
   ],
   "mode01": [
     {
@@ -23,42 +23,49 @@
       "name": "dpf_delta_pressure_kpa",
       "unit": "kPa",
       "formula": "((256*B)+C)/100, two's complement signed",
-      "provenance": "legislated J1979DA — support untested on 306DT"
+      "provenance": "legislated J1979DA - support untested on 306DT"
     },
     {
       "pid": "0x7C",
       "name": "dpf_temps_c",
       "unit": "°C",
       "formula": "inlet (((256*B)+C)/10)-40; outlet (((256*D)+E)/10)-40",
-      "provenance": "legislated J1979DA — support untested on 306DT"
+      "provenance": "legislated J1979DA - support untested on 306DT"
     },
     {
       "pid": "0x83",
       "name": "nox_ppm_b1s1_b1s2",
       "unit": "ppm",
       "formula": "(256*B)+C ; (256*D)+E",
-      "provenance": "legislated J1979DA — support untested on 306DT"
+      "provenance": "legislated J1979DA - support untested on 306DT"
     },
     {
       "pid": "0x85",
       "name": "reagent_tank_level_pct",
       "unit": "%",
       "formula": "F/2.55 (bytes A-E are consumption/demand rates)",
-      "provenance": "legislated J1979DA — support untested on 306DT"
+      "provenance": "legislated J1979DA - support untested on 306DT"
     },
     {
       "pid": "0x8B",
       "name": "dpf_regen_metrics",
       "unit": "%, min, km",
       "formula": "trigger C/2.55; time between regens (256*D)+E; distance (256*F)+G",
-      "provenance": "legislated J1979DA — support untested on 306DT"
+      "provenance": "legislated J1979DA - support untested on 306DT"
     },
     {
       "pid": "0x78",
       "name": "egt_bank1_c",
       "unit": "°C",
       "formula": "(((256*B)+C)/10)-40, sensor pairs BC/DE/FG/HI",
-      "provenance": "legislated J1979DA — support untested on 306DT"
+      "provenance": "legislated J1979DA - support untested on 306DT"
+    },
+    {
+      "pid": "0x77",
+      "name": "egr_commanded_pct",
+      "unit": "%",
+      "formula": "(A*100)/255",
+      "provenance": "legislated J1979DA commanded EGR - support untested on 306DT"
     }
   ],
   "dids": [
@@ -68,9 +75,9 @@
       "name": "DPF soot concentration (SDD: inferred from differential pressure)",
       "unit": "g/l (SDD diesel-PCM definition)",
       "formula": null,
-      "provenance": "SDD 169 MDX_PCM_D (0x042C, res 0.00152590219 g/l) - but REFUSED/no-answer on the L494 306DT PCM 2026-08-18",
+      "provenance": "SDD 169 MDX_PCM_D (0x042C, res 0.00152590219 g/l), corroborated by the XF 2.2d forum capture and Car Scanner's JLR PID - but REFUSED (NRC 31) on the L494 306DT PCM 2026-08-18",
       "verified": false,
-      "notes": "Real diesel-PCM DID per SDD 169 (DPF soot g/l, res 0.00152590219, from differential pressure) but this L494 calibration does NOT answer it. Read frame is 22 04 2C (NOT 22 F0 4C 2C). Formula nulled so the drive log stops polling a dead DID; SDD scaling kept here."
+      "notes": "Real diesel-PCM DID per SDD 169 (DPF soot g/l, res 0.00152590219, from differential pressure) and proven absent on this 3.0 V6 (L494, HY32-14C204-PAE): it answers 7F 22 31. Read frame is 22 04 2C - the 22 F0 4C 2C that circulated in the earlier notes was fabricated. Formula nulled so nothing polls a dead DID; SDD scaling kept here and the full definition is in data/sdd_dids.json, so the row can be read without being re-chased."
     },
     {
       "did": "D120",
@@ -78,7 +85,7 @@
       "name": "Rear diff lock state",
       "unit": "active / not active",
       "formula": "{A:1}",
-      "provenance": "OJG PDF v1.1 only (not in the CSV) — unverified",
+      "provenance": "OJG PDF v1.1 only (not in the CSV) - unverified",
       "verified": false,
       "notes": "Screenshot-derived; PDF-only row."
     },
@@ -95,12 +102,12 @@
     {
       "did": "0434",
       "module": "0x7E0",
-      "name": "Ford-family DPF candidate (dead on 2.2d)",
+      "name": "Aftertreatment candidate 0434 (raw 0002FADD at idle on L494)",
       "unit": "raw",
-      "formula": null,
-      "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
+      "formula": "raw",
+      "provenance": "Ford Duratorq set (dead on XF 2.2d) but ANSWERED on the L494 306DT 2026-08-18",
       "verified": false,
-      "notes": "Dead list."
+      "notes": "Live and undecoded on the 3.0 V6. Polled raw like its five sweep siblings - a null formula here would have left the desktop skipping a DID the phone reads, and it answers."
     },
     {
       "did": "0598",
@@ -118,9 +125,59 @@
       "name": "Ford-family DPF candidate (dead on 2.2d)",
       "unit": "raw",
       "formula": null,
-      "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
+      "provenance": "cintakc Ford Duratorq set - returned 0.0 on the XF 2.2d",
       "verified": false,
-      "notes": "Dead list. Sits OUTSIDE the shipped sweep ranges — sweep D900-D9FF if chasing it."
+      "notes": "Dead list. Sits OUTSIDE the shipped sweep ranges - sweep D900-D9FF if chasing it."
+    },
+    {
+      "did": "F40C",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate F40C (raw 0A4E at idle)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 - answered with data at idle",
+      "verified": false,
+      "notes": "Top aftertreatment candidate from the on-car sweep (car-sweep-20260818T111735Z.json). Decode by re-reading warm/loaded and watching the payload move."
+    },
+    {
+      "did": "0430",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate 0430 (raw 025F at idle)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 - answered with data at idle",
+      "verified": false,
+      "notes": "Live, undecoded."
+    },
+    {
+      "did": "F423",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate F423 (raw 0B4A at idle)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 - answered with data at idle",
+      "verified": false,
+      "notes": "Live, undecoded."
+    },
+    {
+      "did": "F463",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate F463 (raw 02BC at idle)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 - answered with data at idle",
+      "verified": false,
+      "notes": "Live, undecoded."
+    },
+    {
+      "did": "F485",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate F485 (raw 0F0007000742000049A5)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 - answered with data at idle",
+      "verified": false,
+      "notes": "Multi-field, undecoded."
     },
     {
       "did": "05FA",

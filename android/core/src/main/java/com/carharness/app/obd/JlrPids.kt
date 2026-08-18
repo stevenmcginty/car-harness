@@ -106,20 +106,56 @@ object JlrPids {
 
     /**
      * Candidate DIDs for the 306DT diesel, polled RAW alongside the verified
-     * set — the phone's copy of backend/profiles/jlr/data/external_pids.json.
+     * set -- the phone's copy of backend/profiles/jlr/data/external_pids.json.
+     * NOTHING here is decoded: none of it is verified on this engine, and a
+     * raw payload is the honest form.
      *
-     * 042C is deliberately NOT here any more. SDD 169 confirms it is a real
-     * diesel-PCM identifier (DPF soot in g/l, inferred from differential
-     * pressure) but the L494 SALWA2EK8HA PCM refuses it outright, so polling
-     * it costs a timeout every tick and returns nothing. Its definition is
-     * kept in JlrSdd.DIDS, where it is visible without being chased.
+     * Three sources, all from the 2026-08-18 L494 SALWA2EK8HA sweep or from
+     * SDD 169, and all of them ids the car ANSWERED:
+     *   * F40C / 0430 / 0434 / F423 / F463 / F485 -- aftertreatment-shaped
+     *     candidates, recorded with the raw payload they held at idle so a
+     *     warm re-read can be diffed against it;
+     *   * 0417 / 0598 -- live, and nothing in SDD or anywhere else names them;
+     *   * the SDD-named urea cluster 05FA-05FD, appended below.
      *
-     * What replaced it are ids the car actually answered on the 2026-08-18
-     * sweep: 0417 and 0598, which nothing names, and the SDD-named urea
-     * cluster. NOTHING here is decoded — none of it is verified on this
-     * engine, and a raw payload is the honest form.
+     * 042C is deliberately absent. Both the sweep and SDD agree on what it is
+     * -- a genuine diesel-PCM identifier for DPF soot in g/l, inferred from
+     * differential pressure -- and this PCM answers NRC 31 to it, so polling it
+     * would spend a timeout every tick for nothing. Its full definition stays
+     * visible in JlrSdd.DIDS and in external_pids.json, where it can be read
+     * without being chased, and the backend already refuses to poll it.
      */
     val EXTERNAL_ENGINE_DIDS: List<Triple<Int, String, String>> = listOf(
+        Triple(
+            0xF40C,
+            "Aftertreatment candidate (raw 0A4E at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0x0430,
+            "Aftertreatment candidate (raw 025F at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0x0434,
+            "Aftertreatment candidate (raw 0002FADD at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0xF423,
+            "Aftertreatment candidate (raw 0B4A at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0xF463,
+            "Aftertreatment candidate (raw 02BC at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0xF485,
+            "Aftertreatment candidate (raw 0F0007000742000049A5)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
         Triple(
             0x0417,
             "Live DID 0417 (unnamed)",
@@ -197,6 +233,15 @@ object JlrPids {
     )
 
     /**
+     * The DPF + EGR watch preset: the aftertreatment-shaped subset of the
+     * candidate list. Logging only these trims the tick so the sample rate
+     * rises — the point of a watch is shape-over-time, not breadth. The
+     * legislated Mode-01 set is read regardless (see AFTERTREATMENT_PIDS).
+     */
+    val DPF_EGR_WATCH_DIDS: List<Int> =
+        listOf(0xF40C, 0x0430, 0x0434, 0xF423, 0xF463, 0xF485)
+
+    /**
      * The legislated Mode-01 aftertreatment set (SAE J1979DA formulas — a
      * public standard, not JLR-invented; per-car support unknown until
      * asked). The drive log reads these on its every-fifth-tick baseline and
@@ -210,5 +255,6 @@ object JlrPids {
         0x85 to "reagent_tank_level_pct",
         0x8B to "dpf_regen_trigger_pct",
         0x78 to "egt_b1s1_c",
+        0x77 to "egr_commanded_pct",
     )
 }

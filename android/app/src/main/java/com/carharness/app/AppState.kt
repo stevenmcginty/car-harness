@@ -25,6 +25,7 @@ import com.carharness.app.obd.Dtc
 import com.carharness.app.obd.DtcRecord
 import com.carharness.app.obd.Elm327Session
 import com.carharness.app.obd.JlrAdBlue
+import com.carharness.app.obd.JlrSweep
 import com.carharness.app.obd.LiveReading
 import com.carharness.app.obd.ObdController
 import com.carharness.app.obd.ObdTransport
@@ -501,6 +502,15 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     /** Drive-log length picker, seconds. A regen needs ~20 min (1500 s+). */
     var driveLogSeconds by mutableStateOf(180L)
+    /** Which DID-sweep range is selected, by JlrSweep.SweepRange id. The
+     *  desktop has text fields for this; the phone has chips over the ranges
+     *  actually worth walking. */
+    var sweepRangeId by mutableStateOf(JlrSweep.DEFAULT_RANGE.id)
+
+    /** Which drive-log watch is selected, by JlrAdBlue.WatchPreset id.
+     *  "full" (the default) means no filtering. One id rather than v2.14's
+     *  boolean, because there are now three watches and there will be more. */
+    var driveLogPresetId by mutableStateOf(JlrAdBlue.FULL_PRESET.id)
     private var driveLogWriter: BufferedWriter? = null
     private var driveLogDids: List<Int>? = null
     private var driveLogExtras: List<String>? = null
@@ -694,26 +704,25 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 val onStep: (String) -> Unit = { step ->
                     scope.launch(Dispatchers.Main) { modProgress = step }
                 }
-                // The JLR drive logs are the actions that also CAPTURE: each
+                // The JLR drive log is the action that also CAPTURES: each
                 // tick streams to the on-disk CSV as it lands, so the run is a
                 // dataset the moment it happens (see the drive-log block above).
-                // "urealog" is the same log watching only the SDD-named urea
-                // cluster, and it must capture for exactly the same reason --
-                // more so, since pinning 05FC's scaling IS the CSV.
-                val preset = if (brand == "jlr") {
-                    JlrAdBlue.PRESETS.firstOrNull { "${it.id}log" == action.id }
-                } else null
+                // Which DIDs it watches comes from the selected preset -- the
+                // full candidate set, DPF+EGR, or the urea cluster.
                 val readings =
-                    if (brand == "jlr" && (action.id == "drivelog" || preset != null)) {
+                    if (brand == "jlr" && action.id == "sweep") {
+                        val range = JlrSweep.rangeById(sweepRangeId)
+                        ctrl.jlrSweep(onStep, range.first, range.last)
+                    } else if (brand == "jlr" && action.id == "drivelog") {
                         startDriveLog()
                         try {
-                            // The length picker wins either way. A preset
-                            // carries a suggested length, but overriding a
-                            // deliberate choice would be worse than honouring
-                            // a short one -- the card says what length the job
-                            // wants.
+                            // The length picker wins over the preset's own
+                            // suggested length. A preset says what the job
+                            // wants; overriding a deliberate choice would be
+                            // worse than honouring a short one.
                             ctrl.jlrAdblueDriveLog(
-                                onStep, driveLogSeconds, ::appendDriveSample, preset,
+                                onStep, driveLogSeconds, ::appendDriveSample,
+                                JlrAdBlue.presetById(driveLogPresetId),
                             )
                         } finally {
                             endDriveLog()

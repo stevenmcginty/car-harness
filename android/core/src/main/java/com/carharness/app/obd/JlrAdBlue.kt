@@ -69,9 +69,40 @@ object JlrAdBlue {
     data class WatchPreset(
         val id: String,
         val label: String,
+        /** Empty means "the full default set" — the broad log, unchanged. */
         val dids: List<Int>,
+        /** The length this watch actually wants, in seconds. Advisory: the
+         *  drive-log length picker is what runs the job. */
         val seconds: Long,
         val note: String,
+    )
+
+    /** The unfiltered log: everything in [defaultDriveDids]. The zero case of a
+     *  preset rather than a special case beside it, so the selector has nothing
+     *  to hard-code. */
+    val FULL_PRESET = WatchPreset(
+        id = "full",
+        label = "Full candidate set",
+        dids = emptyList(),
+        seconds = 180,
+        note = "Every known engine DID plus every live candidate — the broad default " +
+            "when you do not yet know what you are chasing. Slowest per-DID sample " +
+            "rate, widest coverage.",
+    )
+
+    /** The aftertreatment-shaped subset of the candidate list (v2.14). Trimming
+     *  the tick raises the sample rate — the point of a watch is shape over
+     *  time, not breadth. The legislated Mode-01 set is read regardless. */
+    val DPF_EGR_PRESET = WatchPreset(
+        id = "dpfegr",
+        label = "DPF + EGR",
+        dids = JlrPids.DPF_EGR_WATCH_DIDS,
+        seconds = 1500,
+        note = "The six aftertreatment-shaped candidates the 2026-08-18 L494 sweep found " +
+            "live (F40C leading), logged on their own for a higher sample rate. None is " +
+            "decoded: the job is to see which payload MOVES like soot, EGR or EGT " +
+            "between idle and warm/loaded. A regen needs ~20 min at 500 °C+, so give it " +
+            "the long end of the length picker to span one.",
     )
 
     val UREA_PRESET = WatchPreset(
@@ -85,7 +116,13 @@ object JlrAdBlue {
             "temperature, so a cold log records four constants. " + JlrSdd.UREA_WATCH_NOTE,
     )
 
-    val PRESETS: List<WatchPreset> = listOf(UREA_PRESET)
+    /** Every watch the drive log offers, in the order the chips render. */
+    val PRESETS: List<WatchPreset> = listOf(FULL_PRESET, DPF_EGR_PRESET, UREA_PRESET)
+
+    /** Look one up by id; null for an unknown id or for the full set, both of
+     *  which mean "no filtering". */
+    fun presetById(id: String?): WatchPreset? =
+        PRESETS.firstOrNull { it.id == id }?.takeIf { it.dids.isNotEmpty() }
 
     // ------------------------------------------------ aftertreatment Mode-01 --
     // Legislated SAE J1979DA decoders (public standard formulas — not JLR
@@ -120,6 +157,8 @@ object JlrAdBlue {
                 0x8B -> if (b.size > 2) out["dpf_regen_trigger_pct"] =
                     (b[2].toInt() and 0xFF) / 2.55
                 0x78 -> temp10(u16(b, 0))?.let { out["egt_b1s1_c"] = it }
+                0x77 -> if (b.isNotEmpty()) out["egr_commanded_pct"] =
+                    (b[0].toInt() and 0xFF) / 2.55
             }
         }
         return out

@@ -278,7 +278,9 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             JlrAdBlue.health(session, simulated, onProgress)
         }
 
-    /** Timed rpm + raw DID log through warm-up (default 3 minutes). Read-only. */
+    /** Timed rpm + raw DID log through warm-up (default 3 minutes). Read-only.
+     *  preset: null logs the full default set; a watch preset (DPF+EGR, urea)
+     *  passes its trimmed list for a higher per-DID sample rate. */
     suspend fun jlrAdblueDriveLog(
         onProgress: (String) -> Unit,
         seconds: Long = 180,
