@@ -21,6 +21,13 @@ data class BrandAction(
     val emptyHint: String,   // shown when the car answered nothing
     val refreshHint: String, // footer under the readings
     val run: suspend (ObdController, (String) -> Unit) -> List<EnhancedReading>,
+    /**
+     * A reference view that touches no car. When set, [run] is never called
+     * and the button works with nothing plugged in -- which is the whole point
+     * of a lookup you want while standing next to the car deciding what to
+     * ask it. Actions without this need a live connection, as before.
+     */
+    val dataOnly: (() -> List<EnhancedReading>)? = null,
 )
 
 data class Brand(
@@ -241,10 +248,15 @@ object Brands {
                     label = "DID sweep",
                     cardTitle = "JLR DID SWEEP",
                     emptyHint = "No DID in the swept range answered with data. The module " +
-                        "is listening but implements none of these ids — try another " +
-                        "research §7 range (2100-21FF, 2200-22FF, F400-F4FF).",
-                    refreshHint = "One DID at a time over 0x22 — raw hex payloads, nothing " +
-                        "decoded. Roughly 0.6 s per id; tap DID sweep to re-run.",
+                        "is listening but implements none of these ids — pick another " +
+                        "sweep range above. Do NOT bother with 2100-21FF or 2200-22FF: " +
+                        "all 512 refused on the L494 and SDD puts nothing there either.",
+                    refreshHint = "One DID at a time over 0x22 on the PCM, for the sweep " +
+                        "range picked above — raw hex payloads, nothing decoded. The two " +
+                        "Dxxx ranges are where SDD 169 names the EGR/turbo offsets and " +
+                        "the particulate-filter regen statistics, which nothing has yet " +
+                        "asked this car for. Roughly 0.6 s per id, so 256 ids is about " +
+                        "two and a half minutes; tap DID sweep to re-run.",
                     run = { ctrl, onStep -> ctrl.jlrSweep(onStep) },
                 ),
                 BrandAction(
@@ -266,10 +278,33 @@ object Brands {
                     cardTitle = "JLR ADBLUE DRIVE LOG",
                     emptyHint = "No ticks were recorded — the log needs the dongle awake " +
                         "and the ignition ON for the whole run.",
-                    refreshHint = "Three minutes of rpm plus raw DID payloads by default — " +
-                        "drive through warm-up while it runs. A regen needs ~20 min at " +
-                        "500 °C+, so a longer window is needed to span one.",
+                    refreshHint = "Rpm plus raw DID payloads, for the length and the " +
+                        "watch set picked above — drive through warm-up while it runs. " +
+                        "The watch set decides which DIDs each tick reads: the full " +
+                        "candidate set for breadth, DPF + EGR or Urea for a higher " +
+                        "per-DID sample rate. A regen needs ~20 min at 500 °C+, so a " +
+                        "longer window is needed to span one. Every tick lands in the " +
+                        "CSV as it happens; share it from the button below.",
                     run = { ctrl, onStep -> ctrl.jlrAdblueDriveLog(onStep) },
+                ),
+                // A pure data view: no car contact at all, so it works with the
+                // dongle unplugged — which is when you most want to look up
+                // what a module address or an identifier actually is.
+                BrandAction(
+                    id = "sdd",
+                    label = "SDD data",
+                    cardTitle = "JLR SDD 169 DEALER DATA",
+                    emptyHint = "The SDD tables did not load — this is compiled-in data, " +
+                        "so an empty card means a build problem, not a car problem.",
+                    refreshHint = "Jaguar Land Rover's own dealer data, decrypted from SDD " +
+                        "169 (L494 MY16): 57 module addresses, 37 named diesel-PCM " +
+                        "identifiers with factory scaling, 24 routine identifiers. The " +
+                        "routines are REFERENCE ONLY — this app sends none of them. Rows " +
+                        "marked [candidate] have an authoritative name against a value " +
+                        "this car has not proved. No car contact: this reads the same " +
+                        "with the dongle unplugged.",
+                    run = { ctrl, _ -> ctrl.jlrDealerData() },
+                    dataOnly = { JlrSdd.reference() },
                 ),
             ),
             scan = { ctrl, onStep -> ctrl.jlrScan(onStep) },

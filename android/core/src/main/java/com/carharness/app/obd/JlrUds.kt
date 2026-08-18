@@ -621,6 +621,23 @@ object JlrUds {
             }
             if (out.isNotEmpty()) out.add(JlrPids.OJG_CAVEAT)
 
+            // (a2) The SDD-named diesel-PCM rows this car answers but has NOT
+            // proved. Only read them when the verified tier answered — a car
+            // that ignores every JLR DID is not a 306DT and should fall
+            // straight through to the generic set below.
+            if (out.isNotEmpty()) {
+                val candidates = mutableListOf<EnhancedReading>()
+                for (did in JlrPids.SDD_CANDIDATE_DIDS) {
+                    onProgress("Reading SDD DID %04X (candidate)…".format(did))
+                    val body = readDid(session, JlrPids.ENGINE, did) ?: continue
+                    candidates.add(JlrPids.sddCandidateReading(did, body))
+                }
+                if (candidates.isNotEmpty()) {
+                    out.addAll(candidates)
+                    out.add(JlrPids.SDD_CAVEAT)
+                }
+            }
+
             // (b) Nothing JLR-specific answered (DoIP-era / gateway-filtered):
             // the curated generic Mode-01 set keeps the card honest.
             if (out.isEmpty()) {

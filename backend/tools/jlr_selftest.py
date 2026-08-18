@@ -44,7 +44,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from backend.core import uds  # noqa: E402
+from backend.core import brands, uds  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
 from backend.obd.elm327 import ObdError  # noqa: E402
 from backend.obd.uds_elm327 import Elm327UdsClient, reassemble  # noqa: E402
@@ -54,6 +54,13 @@ from backend.profiles.jlr import pids as jlr_pids  # noqa: E402
 from backend.profiles.jlr import resets as jlr_resets  # noqa: E402
 from backend.profiles.jlr import scan as jlr_scan  # noqa: E402
 from backend.profiles.jlr import sweep as jlr_sweep  # noqa: E402
+
+# The desktop front-end is data-driven, but the one place it is NOT is the
+# map from action id to feature flag -- an action with no entry there renders
+# no button, however good its backend. Read the file so a check can prove the
+# JLR entries are present rather than assuming they are.
+_FRONTEND_JS = (Path(__file__).resolve().parents[2] / "frontend" / "app.js").read_text(
+    encoding="utf-8")
 
 FAKE_VIN = "SALLSAAF4FA000001"   # Land Rover-style VIN
 ENGINE, TCM, RDCM = 0x7E0, 0x7E1, 0x795
@@ -375,9 +382,9 @@ def main() -> int:
     check("profile.json name == Jaguar / Land Rover",
           manifest.get("name") == "Jaguar / Land Rover")
     action_ids = [a["id"] for a in manifest["panel"]["actions"]]
-    check("panel actions are live + the four X260 AdBlue tools",
+    check("panel actions are live + the X260 AdBlue tools + the dealer-data view",
           set(action_ids) == {"live", "discover", "sweep", "adblue-health",
-                              "adblue-drive-log"}, str(action_ids))
+                              "adblue-drive-log", "dealer-data"}, str(action_ids))
     check("panel hint states the DoIP wall",
           "DoIP" in manifest["panel"]["hint"])
     check("panel hint states the MS-CAN body wall",
@@ -576,8 +583,17 @@ def main() -> int:
           all(f["dialect"] == "uds" for f in drep["found"]),
           str([f["dialect"] for f in drep["found"]]))
     check("discover readings render as panel chips", len(drep["readings"]) == 3)
-    check("discover message names the unknown address honestly",
-          "0x730" in drep["message"] and "Not in the shipped table" in drep["message"],
+    # 0x730 used to come back as a bare "not in the shipped table" address. The
+    # decrypted SDD 169 L494 map names it PSCM, so the sweep now reports the
+    # module AND where the name came from -- the shipped table still outranks
+    # SDD for the three rows it covers.
+    check("discover names the stranger from the SDD map, marked as SDD-sourced",
+          found["0x730"]["module"] == "PSCM"
+          and found["0x730"]["source"].startswith("SDD 169")
+          and found["0x7E0"]["source"] == "shipped table",
+          str(found.get("0x730")))
+    check("discover message says which addresses SDD named",
+          "0x730" in drep["message"] and "SDD 169" in drep["message"],
           drep["message"])
     discover_services = {req[0] for _, req in dcar.sent}
     check("discover only ever sent 3E 00 / 22 (no fault services, no writes)",
@@ -648,18 +664,26 @@ def main() -> int:
           set(vals) == {"033E", "03E6", "03F2", "03F3", "0520"}
           and vals["03F3"]["payload"] == "58"
           and "old-jaguar-group" in vals["03F3"]["provenance"], str(sorted(vals)))
-    check("health flags the SCR/DPF set capture-pending",
+    # SDD 169 named the urea/SCR cluster, so "no public DID exists for any of
+    # it" is no longer true and the status text no longer says so. What must
+    # still hold: no invented decode (the harness's own SCR/DPF dids list stays
+    # empty), the urea rows are listed as unverified, and what is genuinely
+    # still missing is named rather than glossed over.
+    check("health reports the SCR/DPF set honestly: urea named, soot/NOx still missing",
           hrep["candidates"]["dids"] == []
-          and "capture pending" in hrep["candidates"]["status"]
-          and "jlr_engine_sweep" in hrep["candidates"]["status"],
-          str(hrep["candidates"]))
+          and [r["did"] for r in hrep["candidates"]["ureaCluster"]]
+          == ["05FA", "05FB", "05FC", "05FD"]
+          and all(r["verified"] is False and r["scaling"] is None
+                  for r in hrep["candidates"]["ureaCluster"])
+          and "Still genuinely missing" in hrep["candidates"]["status"],
+          str(hrep["candidates"]["status"]))
     # External-research candidates ride along, provenance-flagged and never
     # verified -- the honesty contract for pre-contact seed data.
     ext = hrep["candidates"].get("external", [])
     check("external candidates carry provenance + verified=false",
           bool(ext)
           and all(e.get("provenance") and e.get("verified") is False for e in ext)
-          and any(e["did"] == "042C" for e in ext),
+          and any(e["did"] == "05FA" for e in ext),
           str(ext)[:120])
     check("health assessment matched the aftertreatment codes it actually read",
           set(hrep["assessment"]["matchedCodes"]) == {"P249D", "P2463"},
@@ -722,10 +746,115 @@ def main() -> int:
               isinstance(res.get("readings"), list) and bool(res["readings"])
               and isinstance(res.get("worksheet"), str) and bool(res["worksheet"]),
               f"{len(res.get('readings', []))} chips")
-    # The drive log's default DID set now includes the external candidate.
+    # The drive log's default DID set includes the live external candidates and
+    # excludes 042C -- SDD 169 names it (DPF soot g/l) but this L494 calibration
+    # does not answer it, so it is not polled (see data/external_pids.json).
     dsim = jlr_adblue.drive_log(None, "sim")
-    check("drive log default dids include external 042C",
-          "042C" in dsim.get("dids", []), str(dsim.get("dids")))
+    dsim_dids = dsim.get("dids", [])
+    check("drive log default dids include the live SCR/urea DIDs, not dead 042C",
+          "05FA" in dsim_dids and "042C" not in dsim_dids, str(dsim_dids))
+
+    # --- the decrypted SDD 169 layer, and that it reaches a screen ----------
+    from backend.profiles.jlr import dealer_data as jlr_sdd
+
+    sref = jlr_sdd.reference()
+    check("SDD layer loaded the whole extract",
+          sref["modules"] == 57 and sref["dids"] == 37 and sref["routines"] == 24,
+          f"{sref['modules']}/{sref['dids']}/{sref['routines']}")
+    check("SDD address map settles the modules the sweep could not name",
+          (jlr_sdd.module_code(0x7E6), jlr_sdd.module_code(0x744),
+           jlr_sdd.module_code(0x751), jlr_sdd.module_code(0x795))
+          == ("ABS", "DSM", "TPM", "RDCM"),
+          jlr_sdd.module_code(0x7E6))
+    check("SDD scaling reproduces the live L494 payloads it was checked against",
+          jlr_sdd.decode_did(0x0396, bytes.fromhex("5AB6"))[:2] == ("23222", "km")
+          and jlr_sdd.decode_did(0xF405, bytes.fromhex("6E"))[:2] == ("70", "°C"),
+          str(jlr_sdd.decode_did(0x0396, bytes.fromhex("5AB6"))))
+    check("SDD grades the cross-checked rows verified and the rest candidate",
+          jlr_sdd.PCM_DIDS[0x0396].confidence == "verified"
+          and all(jlr_sdd.PCM_DIDS[d].confidence == "candidate"
+                  for d in jlr_sdd.UREA_DIDS),
+          str([jlr_sdd.PCM_DIDS[d].confidence for d in jlr_sdd.UREA_DIDS]))
+    check("SDD invents no scaling for the urea cluster",
+          all(jlr_sdd.PCM_DIDS[d].decode is None for d in jlr_sdd.UREA_DIDS)
+          and all(jlr_sdd.decode_did(d, b"\x00\x00")[0] is None
+                  for d in jlr_sdd.UREA_DIDS))
+    # The rule the whole layer turns on: a candidate is never a bare number.
+    urea_row = jlr_pids.sdd_candidate_reading(0x05FC, bytes.fromhex("00039CC5"))
+    check("a candidate reading always shows its raw payload and its grade",
+          "[candidate]" in urea_row["name"] and "raw 00039CC5" in urea_row["value"],
+          f"{urea_row['name']} = {urea_row['value']}")
+    soot_row = jlr_pids.sdd_candidate_reading(0x042C, bytes.fromhex("3CE6"))
+    check("an SDD-scaled candidate shows raw AND decode, decode never alone",
+          soot_row["value"].startswith("raw 3CE6")
+          and "23.789 g/l" in soot_row["value"], soot_row["value"])
+    check("SDD routines are listed but no routine service is ever sent",
+          len(jlr_sdd.ROUTINES) == 24
+          and any(r.routine == 0x4076 for r in jlr_sdd.ROUTINES)
+          and "never sent" in jlr_sdd._worksheet(),
+          str(len(jlr_sdd.ROUTINES)))
+
+    # --- the urea watch preset: the next real-world step, one press away ----
+    # ONE preset mechanism carrying every watch. v2.14 shipped a DPF+EGR watch
+    # as a boolean toggle and this branch shipped a urea watch as metadata; the
+    # merge kept the metadata mechanism and both watches. Neither may be lost.
+    preset_ids = [p["id"] for p in jlr_adblue.presets()]
+    check("drive log offers one preset list carrying both watches",
+          preset_ids == ["full", "dpfegr", "urea"], str(preset_ids))
+    by_id = {p["id"]: p for p in jlr_adblue.presets()}
+    check("urea preset watches exactly 05FA-05FD",
+          by_id["urea"]["dids"] == ["05FA", "05FB", "05FC", "05FD"],
+          str(by_id["urea"]["dids"]))
+    check("DPF+EGR preset watches v2.14's six live sweep candidates",
+          by_id["dpfegr"]["dids"]
+          == ["F40C", "0430", "0434", "F423", "F463", "F485"],
+          str(by_id["dpfegr"]["dids"]))
+    check("the full set is the zero case of a preset, not a special case",
+          by_id["full"]["dids"] == [], str(by_id["full"]["dids"]))
+    for pid, expected in (("urea", ["05FA", "05FB", "05FC", "05FD"]),
+                          ("dpfegr", ["F40C", "0430", "0434", "F423",
+                                      "F463", "F485"])):
+        run = jlr_adblue.drive_log(None, "sim", 60.0, [pid])
+        check(f"the preset name '{pid}' expands to its DIDs in the drive log",
+              run["dids"] == expected, str(run["dids"]))
+    check("the full preset falls back to the default set",
+          jlr_adblue.drive_log(None, "sim", 60.0, ["full"])["dids"]
+          == jlr_adblue._default_drive_dids())
+    check("an ordinary hex DID list still passes through untouched",
+          jlr_adblue.drive_log(None, "sim", 60.0, ["05FC"])["dids"] == ["05FC"])
+    # v2.14's live sweep candidates and this branch's corrected live ids must
+    # both survive in the polled set, and dead 042C must stay out of it.
+    polled = jlr_adblue._default_drive_dids()
+    check("the default poll set carries both branches' live candidates",
+          all(d in polled for d in ("F40C", "0430", "0434", "F423", "F463",
+                                    "F485", "0417", "0598", "05FA", "05FC")),
+          str(polled))
+    check("dead 042C is not polled by anything",
+          "042C" not in polled, str(polled))
+
+    # --- and that all of it actually REACHES the desktop -------------------
+    # The front-end renders brand panels from profile.json alone, so the test
+    # for "Steve can see it" is that the metadata carries it.
+    jmeta = brands.profile_meta("jlr") or {}
+    jactions = {a["id"]: a for a in (jmeta.get("panel") or {}).get("actions", [])}
+    check("desktop panel offers the dealer-data view",
+          "dealer-data" in jactions and jactions["dealer-data"].get("noCar") is True,
+          str(sorted(jactions)))
+    check("dealer-data is gated by a real backend capability",
+          brands.features("jlr")["dealerData"] is True)
+    dpresets = {p["id"]: p for p in jactions["adblue-drive-log"].get("presets", [])}
+    check("desktop drive log offers both watches with their notes",
+          dpresets["urea"]["dids"] == "05FA,05FB,05FC,05FD"
+          and "WARM" in dpresets["urea"]["note"]
+          and dpresets["dpfegr"]["dids"] == "F40C,0430,0434,F423,F463,F485"
+          and dpresets["full"]["dids"] == "",
+          str(sorted(dpresets)))
+    check("profile presets match the profile module's own preset list",
+          [p["id"] for p in jactions["adblue-drive-log"]["presets"]]
+          == [p["id"] for p in jlr_adblue.presets()])
+    check("the front-end knows how to gate the dealer-data button",
+          '"dealer-data": "dealerData"' in _FRONTEND_JS
+          or "'dealer-data': 'dealerData'" in _FRONTEND_JS)
 
     # --- MCP layer: the four new tools + honest no-adapter errors -----------
     from backend import mcp_server

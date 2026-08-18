@@ -39,6 +39,7 @@ from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.uds_elm327 import Elm327UdsClient
+from backend.profiles.jlr import dealer_data as sdd
 
 ENGINE = 0x7E0
 TRANS = 0x7E1
@@ -89,6 +90,11 @@ JLR_DIDS: List[Tuple[int, int, str, str, Callable[[bytes], Optional[str]]]] = [
     (ENGINE, 0x03F2, "Engine oil volume (calculated)", "L", _byte(0.1, 0, dp=1, lo=0, hi=12)),
     (ENGINE, 0x033E, "Boost / manifold pressure", "kPa", _byte(1, 0, dp=0, lo=0, hi=350)),
     (ENGINE, 0x0520, "Charge air temp (post-intercooler)", "°C", _byte(1, 0, dp=0, lo=0, hi=150)),
+    # SDD-169-verified diesel-PCM DIDs (data/sdd_dids.json). Scaling is from the
+    # decrypted MDX_PCM_D tables and cross-checks against the L494 SALWA2EK8HA
+    # sweep (0396 answered 5AB6 -> 23222 km; F405 answered 6E -> 70 C).
+    (ENGINE, 0x0396, "Distance to next service", "km", _u16_scaled(1, 0, dp=0, lo=0, hi=65535)),
+    (ENGINE, 0xF405, "Engine coolant temperature (UDS DID)", "°C", _byte(1, -40, dp=0, lo=-40, hi=215)),
     (TRANS, 0x1E69, "Gearbox (ZF) oil temperature", "°C", _byte(1, -40, dp=0, lo=-40, hi=215)),
     (RDCM, 0x1E8A, "Rear e-diff oil temperature", "°C", _byte(1, -40, dp=0, lo=-40, hi=215)),
 ]
@@ -121,6 +127,81 @@ def _load_external_data() -> dict:
 
 _EXTERNAL_DATA = _load_external_data()
 EXTERNAL_DIDS: List[dict] = _EXTERNAL_DATA.get("dids", [])
+
+
+# ---- the SDD-named diesel-PCM candidates ----------------------------------
+# SDD 169 names 37 diesel-PCM DIDs (data/sdd_dids.json, loaded by sdd.py). Two
+# of them -- 0396 and F405 -- came with scaling that reproduced a sane number
+# from the live L494 payload, so they sit in JLR_DIDS above as verified values.
+# The rest of the SDD rows the validation car ANSWERED are listed here instead:
+# the name is the manufacturer's own and is therefore trustworthy, but the
+# value is not settled, either because SDD publishes no scaling for the row or
+# because nothing has yet checked SDD's arithmetic against a real reading.
+# They are read on the live pass and displayed as candidates -- raw payload
+# always shown, decoded figure only beside it and only when SDD gives one.
+#
+# The urea/SCR cluster 05FA-05FD is the headline entry: PCM-managed reagent
+# telemetry, named by the manufacturer, and completely unscaled.
+SDD_CANDIDATE_DIDS: List[int] = [
+    did for did, entry in sorted(sdd.PCM_DIDS.items())
+    if entry.answers_on_l494 and entry.confidence != "verified"
+]
+
+# A 64-byte injector-correction blob is not a phone-card reading. Long raw
+# payloads are shown head-and-tail so the row stays legible and the full
+# capture stays the DID sweep's job.
+_RAW_HEAD_BYTES = 8
+
+
+def _raw_display(body: bytes) -> str:
+    if len(body) <= _RAW_HEAD_BYTES * 2:
+        return body.hex().upper()
+    return (body[:_RAW_HEAD_BYTES].hex().upper() + "…"
+            + body[-_RAW_HEAD_BYTES:].hex().upper()
+            + f" ({len(body)} bytes)")
+
+
+def sdd_candidate_reading(did: int, body: bytes) -> dict:
+    """One SDD-named-but-unproven DID as a display reading.
+
+    The rule the whole SDD layer turns on: a candidate NEVER appears as a bare
+    number. The raw payload is always in the value; a decoded figure joins it
+    only when SDD publishes scaling, and it is labelled as SDD's arithmetic
+    rather than as a measurement. 05FC and friends additionally show the
+    payload as an unscaled integer -- not a decode, just the same bytes in
+    base 10, which is what makes a monotonic counter visibly count."""
+    entry = sdd.PCM_DIDS.get(did)
+    name = entry.label() if entry else f"SDD DID {did:04X} [candidate]"
+    raw = _raw_display(body)
+    decoded, unit, _ = sdd.decode_did(did, body)
+    parts = [f"raw {raw}"]
+    if decoded is not None:
+        parts.append(f"SDD scaling → {decoded}{(' ' + unit) if unit else ''}")
+    elif did in sdd.UREA_DIDS and len(body) <= 4:
+        # Only for payloads narrow enough to BE one number. 05FA is six bytes
+        # and is plainly several fields; reading it as one integer would be a
+        # decode, and an invented one.
+        as_int = sdd.unscaled_int(body)
+        if as_int is not None:
+            parts.append(f"unscaled integer {as_int}")
+    return {
+        "name": f"{name} — DID {did:04X}",
+        "value": " · ".join(parts),
+        "unit": "",
+        "description": entry.describe() if entry else "",
+    }
+
+
+# The caveat that rides with the candidate block, so a raw payload is never
+# mistaken for a reading the harness stands behind.
+_SDD_CAVEAT = {
+    "name": "Note",
+    "value": ("Rows marked [candidate] carry Jaguar Land Rover's own SDD 169 name, which is "
+              "authoritative — but the number beside it is not. Where SDD publishes no "
+              "scaling (the urea cluster 05FA-05FD among them) the payload stays raw. "
+              "Log 05FC warm over a drive to pin its scaling: it is a monotonic total."),
+    "unit": "",
+}
 
 # The engine-module candidates worth polling raw (the dead-list rows carry no
 # formula and are excluded; their silence is documented, not chased).
@@ -186,7 +267,15 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
                 {"name": "Engine oil volume (calculated)", "value": "6.8", "unit": "L"},
                 {"name": "Boost / manifold pressure", "value": "101", "unit": "kPa"},
                 {"name": "Gearbox (ZF) oil temperature", "value": "78", "unit": "°C"},
+                {"name": "Distance to next service", "value": "23222", "unit": "km"},
                 dict(_OJG_CAVEAT),
+                # The SDD candidate tier, in the shape a real pass produces it:
+                # manufacturer name, raw payload, never a bare number.
+                sdd_candidate_reading(0x05FA, bytes.fromhex("048A00000301")),
+                sdd_candidate_reading(0x05FB, bytes.fromhex("0FA0")),
+                sdd_candidate_reading(0x05FC, bytes.fromhex("00039CC5")),
+                sdd_candidate_reading(0x05FD, bytes.fromhex("0651")),
+                dict(_SDD_CAVEAT),
             ],
             "message": "SIMULATED -- no real car connected.",
             "timestamp": _now(),
@@ -222,6 +311,20 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
             if readings:
                 readings.append(dict(_OJG_CAVEAT))
 
+            # TIER 1b: the SDD-named diesel-PCM rows this car answers but has
+            # not proved. Only read them when the verified tier answered --
+            # a car that ignores every JLR DID is not a 306DT and should fall
+            # straight through to the generic set below.
+            if readings:
+                candidates = []
+                for did in SDD_CANDIDATE_DIDS:
+                    body = _read_did(client, ENGINE, did)
+                    if body:
+                        candidates.append(sdd_candidate_reading(did, body))
+                if candidates:
+                    readings.extend(candidates)
+                    readings.append(dict(_SDD_CAVEAT))
+
             # TIER 2: nothing JLR-specific -> curated generic Mode-01 set
             # (a DoIP-era or gateway-filtered car still gets something honest).
             if not readings:
@@ -243,9 +346,11 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
             "message": (
                 f"{len(readings)} JLR value(s) answered. On a 2006-2016 CAN-era car these are "
                 "the Old Jaguar Group oil/gearbox/diff values (single-source capture -- verify "
-                "scaling against the car); a DoIP-era or gateway-filtered car falls back to a "
-                "curated generic Mode-01 set. Values this car doesn't support are skipped. "
-                "Read-only pass; nothing was changed on the car."
+                "scaling against the car), plus the SDD-169-named diesel-PCM rows: two "
+                "verified with their manufacturer scaling and the rest shown as [candidate] "
+                "with the raw payload always in view. A DoIP-era or gateway-filtered car "
+                "falls back to a curated generic Mode-01 set. Values this car doesn't support "
+                "are skipped. Read-only pass; nothing was changed on the car."
             ),
             "timestamp": _now(),
         }

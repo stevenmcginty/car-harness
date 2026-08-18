@@ -25,7 +25,7 @@ import com.carharness.app.obd.Dtc
 import com.carharness.app.obd.DtcRecord
 import com.carharness.app.obd.Elm327Session
 import com.carharness.app.obd.JlrAdBlue
-import com.carharness.app.obd.JlrPids
+import com.carharness.app.obd.JlrSweep
 import com.carharness.app.obd.LiveReading
 import com.carharness.app.obd.ObdController
 import com.carharness.app.obd.ObdTransport
@@ -502,8 +502,15 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     /** Drive-log length picker, seconds. A regen needs ~20 min (1500 s+). */
     var driveLogSeconds by mutableStateOf(180L)
-    /** DPF + EGR watch: log only the aftertreatment candidate subset. */
-    var driveLogDpfEgrOnly by mutableStateOf(false)
+    /** Which DID-sweep range is selected, by JlrSweep.SweepRange id. The
+     *  desktop has text fields for this; the phone has chips over the ranges
+     *  actually worth walking. */
+    var sweepRangeId by mutableStateOf(JlrSweep.DEFAULT_RANGE.id)
+
+    /** Which drive-log watch is selected, by JlrAdBlue.WatchPreset id.
+     *  "full" (the default) means no filtering. One id rather than v2.14's
+     *  boolean, because there are now three watches and there will be more. */
+    var driveLogPresetId by mutableStateOf(JlrAdBlue.FULL_PRESET.id)
     private var driveLogWriter: BufferedWriter? = null
     private var driveLogDids: List<Int>? = null
     private var driveLogExtras: List<String>? = null
@@ -672,11 +679,21 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     /** Run one of the selected brand's extra actions (extras / snapshot / …). */
     fun runBrandAction(action: BrandAction) {
+        if (extrasBusy || modScanning) return
+        // A reference view needs no car and no session: show it straight away
+        // rather than making the reader connect to something to read a table.
+        action.dataOnly?.let { lookup ->
+            extras = lookup()
+            extrasRead = true
+            extrasSource = action.id
+            extrasBrand = moduleBrand
+            modError = ""
+            return
+        }
         val ctrl = controller ?: run {
             modError = "Connect to the car first — the button on Home does it for you."
             return
         }
-        if (extrasBusy || modScanning) return
         setLive(false) // retargets the ELM; pause the dashboard
         val brand = moduleBrand
         extrasBusy = true
@@ -687,16 +704,25 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 val onStep: (String) -> Unit = { step ->
                     scope.launch(Dispatchers.Main) { modProgress = step }
                 }
-                // The JLR drive log is the one action that also CAPTURES: each
+                // The JLR drive log is the action that also CAPTURES: each
                 // tick streams to the on-disk CSV as it lands, so the run is a
                 // dataset the moment it happens (see the drive-log block above).
+                // Which DIDs it watches comes from the selected preset -- the
+                // full candidate set, DPF+EGR, or the urea cluster.
                 val readings =
-                    if (brand == "jlr" && action.id == "drivelog") {
+                    if (brand == "jlr" && action.id == "sweep") {
+                        val range = JlrSweep.rangeById(sweepRangeId)
+                        ctrl.jlrSweep(onStep, range.first, range.last)
+                    } else if (brand == "jlr" && action.id == "drivelog") {
                         startDriveLog()
                         try {
+                            // The length picker wins over the preset's own
+                            // suggested length. A preset says what the job
+                            // wants; overriding a deliberate choice would be
+                            // worse than honouring a short one.
                             ctrl.jlrAdblueDriveLog(
                                 onStep, driveLogSeconds, ::appendDriveSample,
-                                if (driveLogDpfEgrOnly) JlrPids.DPF_EGR_WATCH_DIDS else null,
+                                JlrAdBlue.presetById(driveLogPresetId),
                             )
                         } finally {
                             endDriveLog()

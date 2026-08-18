@@ -77,6 +77,12 @@ object JlrPids {
         JlrDid(ENGINE, 0x03F2, "Engine oil volume (calculated)", "L", byteVal(0.1, 0.0, dp = 1, lo = 0.0, hi = 12.0)),
         JlrDid(ENGINE, 0x033E, "Boost / manifold pressure", "kPa", byteVal(1.0, 0.0, lo = 0.0, hi = 350.0)),
         JlrDid(ENGINE, 0x0520, "Charge air temp (post-intercooler)", "°C", byteVal(1.0, 0.0, lo = 0.0, hi = 150.0)),
+        // SDD-169 diesel-PCM DIDs whose factory scaling reproduced a sane
+        // number from the live L494 SALWA2EK8HA payload (0396 answered 5AB6 ->
+        // 23222 km; F405 answered 6E -> 70 C). Verified, so they show as plain
+        // numbers with their units, like the OJG rows.
+        JlrDid(ENGINE, 0x0396, "Distance to next service", "km", u16Scaled(1.0, 0.0, dp = 0, lo = 0.0, hi = 65535.0)),
+        JlrDid(ENGINE, 0xF405, "Engine coolant temperature (UDS DID)", "°C", byteVal(1.0, -40.0, lo = -40.0, hi = 215.0)),
         JlrDid(TRANS, 0x1E69, "Gearbox (ZF) oil temperature", "°C", byteVal(1.0, -40.0, lo = -40.0, hi = 215.0)),
         JlrDid(RDCM, 0x1E8A, "Rear e-diff oil temperature", "°C", byteVal(1.0, -40.0, lo = -40.0, hi = 215.0)),
     )
@@ -99,23 +105,27 @@ object JlrPids {
     )
 
     /**
-     * Externally-researched candidate DIDs for the 306DT diesel — the seed
-     * data behind backend/profiles/jlr/data/external_pids.json (research:
-     * docs/private/jlr-306dt-external-pid-research.md). Raw payloads only:
-     * NOTHING here is decoded, because none of it is verified on the 3.0 V6.
-     * The drive log polls these alongside the OJG set.
+     * Candidate DIDs for the 306DT diesel, polled RAW alongside the verified
+     * set -- the phone's copy of backend/profiles/jlr/data/external_pids.json.
+     * NOTHING here is decoded: none of it is verified on this engine, and a
+     * raw payload is the honest form.
      *
-     * 2026-08-18 L494 sweep update: 042C answers NRC 31 on this 306DT PCM
-     * (dead here, kept for the other JLR diesels it was captured on); the
-     * L494 candidates below ANSWERED with data at idle — undecoded until a
-     * warm/loaded re-read shows which payload moves like soot/EGR/EGT.
+     * Three sources, all from the 2026-08-18 L494 SALWA2EK8HA sweep or from
+     * SDD 169, and all of them ids the car ANSWERED:
+     *   * F40C / 0430 / 0434 / F423 / F463 / F485 -- aftertreatment-shaped
+     *     candidates, recorded with the raw payload they held at idle so a
+     *     warm re-read can be diffed against it;
+     *   * 0417 / 0598 -- live, and nothing in SDD or anywhere else names them;
+     *   * the SDD-named urea cluster 05FA-05FD, appended below.
+     *
+     * 042C is deliberately absent. Both the sweep and SDD agree on what it is
+     * -- a genuine diesel-PCM identifier for DPF soot in g/l, inferred from
+     * differential pressure -- and this PCM answers NRC 31 to it, so polling it
+     * would spend a timeout every tick for nothing. Its full definition stays
+     * visible in JlrSdd.DIDS and in external_pids.json, where it can be read
+     * without being chased, and the backend already refuses to poll it.
      */
     val EXTERNAL_ENGINE_DIDS: List<Triple<Int, String, String>> = listOf(
-        Triple(
-            0x042C,
-            "DPF soot concentration (dead on 306DT: NRC 31)",
-            "XF 2.2d forum capture + Car Scanner's JLR PID — refused on the L494 3.0d",
-        ),
         Triple(
             0xF40C,
             "Aftertreatment candidate (raw 0A4E at idle)",
@@ -146,6 +156,80 @@ object JlrPids {
             "Aftertreatment candidate (raw 0F0007000742000049A5)",
             "L494 306DT sweep 2026-08-18 — live, undecoded",
         ),
+        Triple(
+            0x0417,
+            "Live DID 0417 (unnamed)",
+            "ANSWERED 00 on the L494 306DT 2026-08-18 — live, undecoded, not in SDD",
+        ),
+        Triple(
+            0x0598,
+            "Live DID 0598 (unnamed)",
+            "ANSWERED 0039 on the L494 306DT 2026-08-18 — live, undecoded, not in SDD",
+        ),
+    ) + JlrSdd.UREA_DIDS.map { did ->
+        Triple(
+            did,
+            JlrSdd.did(did)?.name ?: "Urea DID %04X".format(did),
+            "SDD 169 diesel PCM — name authoritative, SDD publishes no scaling; " +
+                "answered live on L494 SALWA2EK8HA 2026-08-18",
+        )
+    }
+
+    /**
+     * The SDD-named rows this car answers but has not proved. The name is the
+     * manufacturer's own and is trustworthy; the value is not, either because
+     * SDD publishes no scaling or because nobody has checked its arithmetic
+     * against a real reading. Read on the live pass as a candidate tier.
+     */
+    val SDD_CANDIDATE_DIDS: List<Int> = JlrSdd.CANDIDATE_DIDS
+
+    // A 64-byte injector-correction blob is not a phone-card reading. Long raw
+    // payloads are shown head-and-tail so the row stays legible; the full
+    // capture stays the DID sweep's job.
+    private const val RAW_HEAD_BYTES = 8
+
+    private fun rawDisplay(body: ByteArray): String {
+        val hex = body.joinToString("") { "%02X".format(it.toInt() and 0xFF) }
+        if (body.size <= RAW_HEAD_BYTES * 2) return hex
+        return hex.take(RAW_HEAD_BYTES * 2) + "…" + hex.takeLast(RAW_HEAD_BYTES * 2) +
+            " (${body.size} bytes)"
+    }
+
+    /**
+     * One SDD-named-but-unproven DID as a card row.
+     *
+     * The rule the whole SDD layer turns on: a candidate NEVER appears as a
+     * bare number. The raw payload is always in the value; SDD's scaled figure
+     * joins it only when SDD publishes scaling. The narrow urea rows also show
+     * the payload as an unscaled integer — not a decode, just the same bytes in
+     * base 10, which is what makes a monotonic counter visibly count.
+     */
+    fun sddCandidateReading(did: Int, body: ByteArray): EnhancedReading {
+        val entry = JlrSdd.did(did)
+        val name = entry?.label() ?: "SDD DID %04X [candidate]".format(did)
+        val parts = mutableListOf("raw ${rawDisplay(body)}")
+        val decoded = entry?.decode(body)
+        if (decoded != null) {
+            val unit = entry.units
+            parts.add("SDD scaling → $decoded" + if (unit.isNotEmpty()) " $unit" else "")
+        } else if (did in JlrSdd.UREA_DIDS && body.size <= 4) {
+            // Only for payloads narrow enough to BE one number. 05FA is six
+            // bytes and is plainly several fields; reading it as one integer
+            // would be a decode, and an invented one.
+            JlrSdd.unscaledInt(body)?.let { parts.add("unscaled integer $it") }
+        }
+        return EnhancedReading("$name — DID %04X".format(did), parts.joinToString(" · "), "")
+    }
+
+    /** The caveat that rides with the candidate block, so a raw payload is
+     *  never mistaken for a reading the harness stands behind. */
+    val SDD_CAVEAT = EnhancedReading(
+        "Note",
+        "Rows marked [candidate] carry Jaguar Land Rover's own SDD 169 name, which is " +
+            "authoritative — but the number beside it is not. Where SDD publishes no " +
+            "scaling (the urea cluster 05FA-05FD among them) the payload stays raw. " +
+            "Log 05FC warm over a drive to pin its scaling: it is a monotonic total.",
+        "",
     )
 
     /**

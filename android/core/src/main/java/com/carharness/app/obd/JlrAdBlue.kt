@@ -9,14 +9,15 @@ package com.carharness.app.obd
  * aftertreatment: what fault memory says, what live values can be read, and a
  * sourced assessment of the AdBlue fault space — NOT any invented decoding.
  *
- * THE HONEST GAP: no public JLR DID list exists for DPF soot mass, regen
- * status, DEF level/quality, NOx ppm or the EGTs (research §2 Q3). Every
- * SCR/DPF value is therefore CAPTURE-FIRST: until the DID sweep
- * (JlrSweep) has mapped the DIDs on the real car, this tool reads raw
- * payloads for what IS known (the Old Jaguar Group petrol-capture engine
- * DIDs, provenance-marked) and flags the aftertreatment set as capture
- * pending. Nothing here turns a raw byte into a gram of soot or a litre of
- * AdBlue.
+ * THE HONEST GAP, as it now stands. Decrypting SDD 169 closed part of it: the
+ * urea/SCR dosing cluster 05FA-05FD is named by the manufacturer and answers
+ * live on the PCM (there is no separate SCR ECU — see JlrSdd). SDD publishes
+ * no SCALING for any of the four, so they are read raw and marked candidate.
+ * What is still genuinely missing: DPF soot mass, regen status, DEF tank
+ * level/quality and NOx ppm have no identifier that both exists in SDD and
+ * answers on this car — SDD defines 042C as DPF soot in g/l and the L494
+ * calibration refuses it outright. So the values that are absent stay absent,
+ * and nothing here turns a raw byte into a gram of soot or a litre of AdBlue.
  *
  * health()    one read-only pass: generic Mode-01 baseline FIRST (before any
  *             session games), the known-table modules' fault codes through
@@ -49,10 +50,79 @@ object JlrAdBlue {
 
     private const val OJG_PROVENANCE = "OJG petrol capture, unverified on diesel"
 
-    /** OJG engine set + the external research candidates (042C soot first) —
-     *  the drive log's default poll list. */
+    /** OJG engine set + every live external candidate — the drive log's
+     *  default poll list when no watch preset is chosen. */
     private fun defaultDriveDids(): List<Int> =
         OJG_ENGINE_DIDS.map { it.first } + JlrPids.EXTERNAL_ENGINE_DIDS.map { it.first }
+
+    // ------------------------------------------------- drive-log watch presets
+    /**
+     * A watch preset is a named short list of DIDs to poll instead of the
+     * default set. Fewer ids per tick means a faster sample rate on each one,
+     * which is exactly what calibrating a counter needs: the urea preset exists
+     * to catch 05FC ticking over, and it cannot do that while the log is also
+     * reading eight other identifiers over a slow Bluetooth link.
+     *
+     * Mirror of DRIVE_LOG_PRESETS in backend/profiles/jlr/adblue.py — keep the
+     * two in step.
+     */
+    data class WatchPreset(
+        val id: String,
+        val label: String,
+        /** Empty means "the full default set" — the broad log, unchanged. */
+        val dids: List<Int>,
+        /** The length this watch actually wants, in seconds. Advisory: the
+         *  drive-log length picker is what runs the job. */
+        val seconds: Long,
+        val note: String,
+    )
+
+    /** The unfiltered log: everything in [defaultDriveDids]. The zero case of a
+     *  preset rather than a special case beside it, so the selector has nothing
+     *  to hard-code. */
+    val FULL_PRESET = WatchPreset(
+        id = "full",
+        label = "Full candidate set",
+        dids = emptyList(),
+        seconds = 180,
+        note = "Every known engine DID plus every live candidate — the broad default " +
+            "when you do not yet know what you are chasing. Slowest per-DID sample " +
+            "rate, widest coverage.",
+    )
+
+    /** The aftertreatment-shaped subset of the candidate list (v2.14). Trimming
+     *  the tick raises the sample rate — the point of a watch is shape over
+     *  time, not breadth. The legislated Mode-01 set is read regardless. */
+    val DPF_EGR_PRESET = WatchPreset(
+        id = "dpfegr",
+        label = "DPF + EGR",
+        dids = JlrPids.DPF_EGR_WATCH_DIDS,
+        seconds = 1500,
+        note = "The six aftertreatment-shaped candidates the 2026-08-18 L494 sweep found " +
+            "live (F40C leading), logged on their own for a higher sample rate. None is " +
+            "decoded: the job is to see which payload MOVES like soot, EGR or EGT " +
+            "between idle and warm/loaded. A regen needs ~20 min at 500 °C+, so give it " +
+            "the long end of the length picker to span one.",
+    )
+
+    val UREA_PRESET = WatchPreset(
+        id = "urea",
+        label = "Urea / SCR 05FA-05FD",
+        dids = JlrSdd.UREA_DIDS,
+        seconds = 900,
+        note = "The next real-world step on this car. Four SDD-named, PCM-managed urea " +
+            "identifiers, polled on their own so each one gets a fast sample rate. " +
+            "Drive it WARM — reagent dosing only starts once the SCR catalyst is up to " +
+            "temperature, so a cold log records four constants. " + JlrSdd.UREA_WATCH_NOTE,
+    )
+
+    /** Every watch the drive log offers, in the order the chips render. */
+    val PRESETS: List<WatchPreset> = listOf(FULL_PRESET, DPF_EGR_PRESET, UREA_PRESET)
+
+    /** Look one up by id; null for an unknown id or for the full set, both of
+     *  which mean "no filtering". */
+    fun presetById(id: String?): WatchPreset? =
+        PRESETS.firstOrNull { it.id == id }?.takeIf { it.dids.isNotEmpty() }
 
     // ------------------------------------------------ aftertreatment Mode-01 --
     // Legislated SAE J1979DA decoders (public standard formulas — not JLR
@@ -100,12 +170,18 @@ object JlrAdBlue {
     // Until then this is the honest placeholder the health pass and drive log
     // carry.
     private const val CAPTURE_PENDING =
-        "⚠ capture pending — no public JLR DID exists for DPF soot mass, regen status, " +
-            "DEF level/quality, NOx ppm or EGTs."
+        "Partly answered. SDD 169 named the urea/SCR dosing cluster 05FA-05FD on the PCM " +
+            "— manufacturer names, live on this car — but SDD publishes no scaling for " +
+            "any of the four, so they are logged raw as candidates. SDD also defines 042C " +
+            "as DPF soot in g/l and this calibration refuses it. ⚠ Still genuinely " +
+            "missing: DPF soot mass, regen status, DEF tank level/quality and NOx ppm have " +
+            "no identifier that both exists in SDD and answers on this car."
     private const val CAPTURE_PENDING_NEXT =
-        "Run the DID sweep on 0x7E0 over the research §7 ranges (0300-05FF, 2100-21FF, " +
-            "2200-22FF, F400-F4FF), identify a signal by how it moves, then log it with " +
-            "Drive log."
+        "Run the Urea log preset warm — 05FC is 'total mass fluid injected by the urea " +
+            "dosing system', a monotonic total, so the rate it climbs is what pins the " +
+            "scaling SDD does not publish. For the values still missing entirely, sweep " +
+            "0x7E0 over the research §7 ranges (0300-05FF, F400-F4FF) and identify a " +
+            "signal by how it moves."
 
     // Research §4: the AdBlue/SCR fault space on the XF 3.0d, ranked by
     // community frequency. Sourced text, shown as the guide when the dash complains.
@@ -270,10 +346,19 @@ object JlrAdBlue {
                     emptyList(), emptyList(), null,
                 ),
             )
+            // The SDD-named rows carry the payloads the real L494 answered —
+            // this is what the health card looks like once SDD is loaded, and
+            // it is the shape the Urea log preset goes on to log over a drive.
             val values = listOf(
                 DidValue("033E", "Boost / manifold pressure", "0064"),
                 DidValue("03F3", "Engine oil temperature", "58"),
                 DidValue("0520", "Charge air temp (post-intercooler)", "2A"),
+                DidValue("0396", "Distance to next service", "5AB6"),
+                DidValue("F405", "Engine coolant temperature", "6E"),
+                DidValue("05FA", JlrSdd.did(0x05FA)?.name ?: "", "048A00000301"),
+                DidValue("05FB", JlrSdd.did(0x05FB)?.name ?: "", "0FA0"),
+                DidValue("05FC", JlrSdd.did(0x05FC)?.name ?: "", "00039CC5"),
+                DidValue("05FD", JlrSdd.did(0x05FD)?.name ?: "", "0651"),
             )
             val baseline = Triple(820.0, 74.0, 14.1)
             val summary =
@@ -347,6 +432,13 @@ object JlrAdBlue {
                 val body = JlrUds.readDid(session, ENGINE, did, 1500) ?: continue
                 values.add(DidValue("%04X".format(did), name, hex(body)))
             }
+            // 3b. The candidates: the two live-but-unnamed ids and the
+            //     SDD-named urea cluster. Raw, marked, never decoded here.
+            for ((did, name, _) in JlrPids.EXTERNAL_ENGINE_DIDS) {
+                onProgress("Reading candidate DID %04X (raw)…".format(did))
+                val body = JlrUds.readDid(session, ENGINE, did, 1500) ?: continue
+                values.add(DidValue("%04X".format(did), name, hex(body)))
+            }
         } finally {
             JlrUds.restore(session)
         }
@@ -390,7 +482,31 @@ object JlrAdBlue {
             }
         }
         for (v in values) {
-            out.add(EnhancedReading("${v.name} — DID ${v.did} · $OJG_PROVENANCE", v.payload, ""))
+            val did = v.did.toInt(16)
+            val entry = JlrSdd.did(did)
+            // SDD's name outranks the harness's own label when SDD has one: it
+            // is the manufacturer's, and it carries the confidence grade with
+            // it. Raw payload first, always — a candidate must never read as a
+            // settled number, and even a verified row is easier to sanity-check
+            // with its payload beside it.
+            val label = entry?.label() ?: "${v.name} · $OJG_PROVENANCE"
+            var display = v.payload
+            if (entry != null) {
+                val body = ByteArray(v.payload.length / 2) {
+                    v.payload.substring(it * 2, it * 2 + 2).toInt(16).toByte()
+                }
+                val decoded = entry.decode(body)
+                display = when {
+                    decoded != null ->
+                        "${v.payload} → $decoded" +
+                            if (entry.units.isNotEmpty()) " ${entry.units}" else ""
+                    did in JlrSdd.UREA_DIDS && body.size <= 4 ->
+                        JlrSdd.unscaledInt(body)?.let { "${v.payload} (unscaled integer $it)" }
+                            ?: v.payload
+                    else -> v.payload
+                }
+            }
+            out.add(EnhancedReading("$label — DID ${v.did}", display, ""))
         }
         out.add(EnhancedReading("SCR/DPF values", CAPTURE_PENDING, ""))
         out.add(EnhancedReading("Next step", CAPTURE_PENDING_NEXT, ""))
@@ -446,19 +562,19 @@ object JlrAdBlue {
         onProgress: (String) -> Unit = {},
         seconds: Long = 180,
         onSample: (DriveSample) -> Unit = {},
-        presetDids: List<Int>? = null,
+        preset: WatchPreset? = null,
     ): List<EnhancedReading> {
         if (simulated) {
             // Fake warm-up: rpm with raw DID payloads beside it, coolant +
             // voltage on the every-fifth-tick baseline, a non-answer recorded
             // as a gap.
             onProgress("SIMULATED — building the demo drive log…")
-            val didList = presetDids ?: defaultDriveDids()
+            val didList = preset?.dids ?: defaultDriveDids()
             val samples = listOf(
                 DriveSample(
                     0.0, 810.0,
                     mapOf(0x033E to "0064", 0x03E6 to "34", 0x03F2 to "44", 0x03F3 to "3C",
-                          0x0520 to "1E", 0x042C to "1F40"),
+                          0x0520 to "1E", 0x05FC to "00039CC5"),
                     22.0, 12.2,
                     mapOf("dpf_delta_pressure_kpa" to 0.15, "nox_b1s1_ppm" to 85.0,
                           "reagent_tank_level_pct" to 62.4, "egt_b1s1_c" to 118.0),
@@ -466,19 +582,19 @@ object JlrAdBlue {
                 DriveSample(
                     4.2, 1750.0,
                     mapOf(0x033E to "00C4", 0x03E6 to "35", 0x03F2 to "44", 0x03F3 to "42",
-                          0x0520 to "28", 0x042C to "2AF8"),
+                          0x0520 to "28", 0x05FC to "00039CD1"),
                     null, null,
                 ),
                 DriveSample(
                     8.1, 1980.0,
                     mapOf(0x033E to "00E1", 0x03E6 to "35", 0x03F2 to "45", 0x03F3 to "4B",
-                          0x0520 to "2C", 0x042C to "30D4"),
+                          0x0520 to "2C", 0x05FC to "00039CE6"),
                     null, null,
                 ),
                 DriveSample(
                     12.4, 690.0,
                     mapOf(0x033E to "005A", 0x03E6 to null, 0x03F2 to "45", 0x03F3 to "50",
-                          0x0520 to "30", 0x042C to "2134"),
+                          0x0520 to "30", 0x05FC to "00039CF0"),
                     null, null,
                 ),
             )
@@ -492,7 +608,7 @@ object JlrAdBlue {
             return logRows(summary, didList, samples)
         }
 
-        val didList = presetDids ?: defaultDriveDids()
+        val didList = preset?.dids ?: defaultDriveDids()
         session.ensureProtocol()
         if (!JlrUds.protocolSupported(session)) {
             throw ObdException(

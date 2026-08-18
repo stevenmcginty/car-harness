@@ -39,6 +39,7 @@ from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
 from backend.obd.transport import TransportError
 from backend.obd.uds_elm327 import Elm327UdsClient
+from backend.profiles.jlr import dealer_data as sdd
 from backend.profiles.jlr.scan import IDENT_DIDS, JLR_ECU_TABLE, _printable
 
 # The swept request-id block. 0x7E0/0x7E1/0x795 -- the known table -- sit
@@ -101,6 +102,24 @@ def _dialect_of(ident: List[dict]) -> str:
     return "uds" if ident else "unproven"
 
 
+def _identify(req_id: int) -> tuple:
+    """(display name, where it came from) for a swept address.
+
+    Two sources, in order of standing: the shipped table (three rows publicly
+    verified on a real car), then the decrypted SDD 169 L494 MY16 address map
+    (57 rows, the manufacturer's own). Before the SDD layer existed 54 of 57
+    modules could only be reported as "not in the shipped table" beside a bare
+    CAN id; now the sweep prints ABS at 0x7E6 and DSM at 0x744 like the dealer
+    tool does. Anything neither source knows still says so plainly."""
+    known = {addr: f"{code} ({name})" for addr, code, name, _ in JLR_ECU_TABLE}
+    if req_id in known:
+        return known[req_id], "shipped table"
+    code = sdd.module_code(req_id)
+    if code:
+        return code, f"SDD 169 {sdd.PLATFORM} map"
+    return "", ""
+
+
 def _readings(found: List[dict]) -> List[dict]:
     """The findings as generic name/value chips -- the shape the desktop panel
     renders for any brand action, so discovery needs no front-end code."""
@@ -108,14 +127,21 @@ def _readings(found: List[dict]) -> List[dict]:
     for f in found:
         vin = next((i["value"] for i in f.get("ident", []) if i["label"] == "VIN"), "")
         parts = [f["dialect"].upper()]
-        parts.append(f["known"] if f.get("known") else "not in the shipped table")
+        parts.append(f.get("module") or "unnamed by any source")
         if vin:
             parts.append(f"VIN {vin}")
+        source = f.get("source") or ""
+        description = f"Proved by {f.get('provedBy') or 'a probe'} answering."
+        if source:
+            description += f" Named from the {source}."
+        elif f.get("module") == "" or not f.get("module"):
+            description += (" No source names this address — identify it before "
+                            "trusting it.")
         readings.append({
             "name": f"{f['address']} → {f['response']}",
             "value": " · ".join(parts),
             "unit": "",
-            "description": f"Proved by {f.get('provedBy') or 'a probe'} answering.",
+            "description": description,
         })
     return readings
 
@@ -133,32 +159,31 @@ def discover(adapter: Optional[dict], mode: str = "real") -> dict:
     if mode == "sim":
         # A fake X260-shaped bus: PCM + TCM on their table addresses, plus one
         # unexpected UDS answerer at 0x730 to show what discovery is FOR.
-        found = [
-            {"address": "0x730", "response": "0x738", "dialect": "uds",
-             "provedBy": "3E 00",
-             "ident": [{"label": "Part number", "value": "XR8Q-5K698-BC"}],
-             "known": ""},
-            {"address": "0x7E0", "response": "0x7E8", "dialect": "uds",
-             "provedBy": "3E 00",
-             "ident": [{"label": "VIN", "value": "SIMULATEDX260DIE"},
-                       {"label": "Part number", "value": "AA52-12A650-EC"}],
-             "known": "PCM (Engine control (ECM/PCM))"},
-            {"address": "0x7E1", "response": "0x7E9", "dialect": "uds",
-             "provedBy": "22 F190",
-             "ident": [{"label": "VIN", "value": "SIMULATEDX260DIE"}],
-             "known": "TCM (Transmission (ZF 6HP/8HP))"},
-        ]
+        found = []
+        for addr, proved, ident in (
+            (0x7E6, "3E 00", [{"label": "Part number", "value": "GX63-2C405-AC"}]),
+            (0x744, "3E 00", []),
+            (0x7E0, "3E 00", [{"label": "VIN", "value": "SIMULATEDX260DIE"},
+                              {"label": "Part number", "value": "AA52-12A650-EC"}]),
+            (0x7E1, "22 F190", [{"label": "VIN", "value": "SIMULATEDX260DIE"}]),
+        ):
+            module, source = _identify(addr)
+            found.append({
+                "address": f"0x{addr:03X}", "response": f"0x{addr + 8:03X}",
+                "dialect": "uds" if ident else "unproven", "provedBy": proved,
+                "ident": ident, "module": module, "source": source,
+                "known": module if source == "shipped table" else "",
+            })
         return {
             "ok": True, "simulated": True, "sweptAddresses": 248, "skipped": 8,
             "found": found, "readings": _readings(found),
-            "message": "SIMULATED -- swept 248 addresses, 3 answered: the PCM and TCM "
-                       "on their table addresses plus one unexpected answerer at "
-                       "0x730 (not in the shipped table -- the SCR/reagent question "
-                       "this tool exists to answer). No real car connected.",
+            "message": "SIMULATED -- swept 248 addresses, 4 answered. The PCM and TCM come "
+                       "from the shipped table; 0x7E6 (ABS) and 0x744 (DSM) are named from "
+                       "the decrypted SDD 169 L494 map, which is what that map is for -- "
+                       "0x7E6 was long suspected of being an SCR controller and is not. "
+                       "No real car connected.",
             "timestamp": _now(),
         }
-
-    known = {addr: f"{code} ({name})" for addr, code, name, _ in JLR_ECU_TABLE}
 
     def run(session, entry):
         session.ensure_protocol()
@@ -189,24 +214,31 @@ def discover(adapter: Optional[dict], mode: str = "real") -> dict:
                     continue
                 # Only an answering address pays for identification.
                 ident = _read_ident_uds(client, req_id)
+                module, source = _identify(req_id)
                 found.append({
                     "address": f"0x{req_id:03X}",
                     "response": f"0x{req_id + 8:03X}",
                     "dialect": _dialect_of(ident),
                     "provedBy": proved_by,
                     "ident": ident,
-                    "known": known.get(req_id, ""),
+                    "module": module,
+                    "source": source,
+                    "known": module if source == "shipped table" else "",
                 })
         finally:
             client.restore()
 
-        extras = [f["address"] for f in found if not f["known"]]
+        from_sdd = [f["address"] for f in found
+                    if f.get("source", "").startswith("SDD")]
+        unnamed = [f["address"] for f in found if not f.get("module")]
         message = (
             f"Swept {swept} addresses ({skipped} skipped -- a +8 response would leave "
             f"the 11-bit id space), {len(found)} answered. "
-            + (f"Not in the shipped table: {', '.join(extras)} -- candidates for the "
-               "SCR/reagent controller or the never-published HS-CAN modules; "
-               "identify before trusting. " if extras else "")
+            + (f"Named from the SDD 169 {sdd.PLATFORM} map: {', '.join(from_sdd)} -- "
+               "manufacturer data, but the map is the L494's, so on another JLR treat a "
+               "name as a strong hint rather than a fact. " if from_sdd else "")
+            + (f"Unnamed by any source: {', '.join(unnamed)} -- identify before "
+               "trusting. " if unnamed else "")
             + "Expect this sweep to take roughly 2-5 minutes over a Bluetooth dongle "
               "(each silent address costs one short timeout). Read-only sweep; "
               "nothing was changed on the car."

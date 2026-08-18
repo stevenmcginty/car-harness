@@ -1,0 +1,673 @@
+{
+  "title": "JLR SDD 169 authoritative diagnostic data (306DT/AJD-V6D diesel PCM + platform)",
+  "provenance": {
+    "package": "SDD_169.00.001_FULL.exe (InstallShield/MSI; payload data2.cab, group CURRENT_JLR_XCL_XML_DATA_XML)",
+    "encryption": "Per-file 3DES-ECB. Key = first 24 bytes of nibble-swapped blob embedded in Environment.dll CCryptFile ctor (RVA 0x1000) = ASCII 'YmZwZlQrQ3V4dVltNTArWE9s'. PKCS5 padding. CryptImportKey PLAINTEXTKEYBLOB alg CALG_3DES(0x6603), KP_MODE=ECB(2).",
+    "source_files": {
+      "module_address_map": "Xml/L494_201600/<MODULE>.exml (decrypted) -> moduletype + CAN srcId/targetId",
+      "pcm_dids": "Xml/L494_201600/MDX_PCM_D_3LT.exml and MDX_PCM_D.exml (decrypted)",
+      "scr_routines": "Xml/L494_201600/MDX_SCR.exml (decrypted; ECU_NAME=PCM)"
+    },
+    "validated_against": "Live capture VIN SALWA2EK8HA162826 (2017 L494 3.0 SDV6), captures/jlr/car-sweep-*.json 2026-08-18"
+  },
+  "notes": [
+    "SDD names only a curated subset of DIDs (37 for the diesel PCM); the ECU physically answers ~191. Absence from this list does NOT mean a DID is dead.",
+    "0x7E6 is the ABS module on L494 (request 0x7E6 / response 0x7EE), NOT an SCR/reagent controller. No separate SCR ECU exists in the L494 CAN map; SCR/reagent is managed by the PCM at 0x7E0.",
+    "042C (DPF soot, g/l, inferred from differential pressure) IS a defined diesel-PCM DID in SDD, but the L494 SALWA2EK8HA PCM did not answer it (dead on this calibration). Read frame is 22 04 2C.",
+    "Urea/SCR DIDs 05FA-05FD live-answered on the PCM: this is the reagent-system telemetry for the AdBlue job."
+  ],
+  "module_address_map_L494_MY16": {
+    "0x68": {
+      "module": "NCM",
+      "request": "0x68",
+      "response": "0x70"
+    },
+    "0x80": {
+      "module": "ACM",
+      "request": "0x80",
+      "response": "0x88"
+    },
+    "0x81": {
+      "module": "SRM",
+      "request": "0x81",
+      "response": "0x89"
+    },
+    "0x85": {
+      "module": "DABM",
+      "request": "0x85",
+      "response": "0x8D"
+    },
+    "0x86": {
+      "module": "AAM",
+      "request": "0x86",
+      "response": "0x8E"
+    },
+    "0x87": {
+      "module": "TVM",
+      "request": "0x87",
+      "response": "0x8F"
+    },
+    "0x8b": {
+      "module": "REM",
+      "request": "0x8B",
+      "response": "0x93"
+    },
+    "0x701": {
+      "module": "GPSM",
+      "request": "0x701",
+      "response": "0x709"
+    },
+    "0x706": {
+      "module": "IPMA",
+      "request": "0x706",
+      "response": "0x70E"
+    },
+    "0x710": {
+      "module": "CHCM",
+      "request": "0x710",
+      "response": "0x718"
+    },
+    "0x716": {
+      "module": "GWM",
+      "request": "0x716",
+      "response": "0x71E"
+    },
+    "0x720": {
+      "module": "IPC",
+      "request": "0x720",
+      "response": "0x728"
+    },
+    "0x722": {
+      "module": "VIM",
+      "request": "0x722",
+      "response": "0x72A"
+    },
+    "0x726": {
+      "module": "BCM",
+      "request": "0x726",
+      "response": "0x72E"
+    },
+    "0x730": {
+      "module": "PSCM",
+      "request": "0x730",
+      "response": "0x738"
+    },
+    "0x731": {
+      "module": "RFA",
+      "request": "0x731",
+      "response": "0x739"
+    },
+    "0x732": {
+      "module": "GSM",
+      "request": "0x732",
+      "response": "0x73A"
+    },
+    "0x733": {
+      "module": "HVAC",
+      "request": "0x733",
+      "response": "0x73B"
+    },
+    "0x735": {
+      "module": "NAV",
+      "request": "0x735",
+      "response": "0x73D"
+    },
+    "0x736": {
+      "module": "PAM",
+      "request": "0x736",
+      "response": "0x73E"
+    },
+    "0x737": {
+      "module": "RCM",
+      "request": "0x737",
+      "response": "0x73F"
+    },
+    "0x740": {
+      "module": "DDM",
+      "request": "0x740",
+      "response": "0x748"
+    },
+    "0x741": {
+      "module": "PDM",
+      "request": "0x741",
+      "response": "0x749"
+    },
+    "0x743": {
+      "module": "PRDM",
+      "request": "0x743",
+      "response": "0x74B"
+    },
+    "0x744": {
+      "module": "DSM",
+      "request": "0x744",
+      "response": "0x74C"
+    },
+    "0x74a": {
+      "module": "DRDM",
+      "request": "0x74A",
+      "response": "0x742"
+    },
+    "0x751": {
+      "module": "TPM",
+      "request": "0x751",
+      "response": "0x759"
+    },
+    "0x754": {
+      "module": "TCU",
+      "request": "0x754",
+      "response": "0x75C"
+    },
+    "0x756": {
+      "module": "PBM",
+      "request": "0x756",
+      "response": "0x75E"
+    },
+    "0x761": {
+      "module": "TCCM",
+      "request": "0x761",
+      "response": "0x769"
+    },
+    "0x764": {
+      "module": "CCM",
+      "request": "0x764",
+      "response": "0x76C"
+    },
+    "0x765": {
+      "module": "OCS",
+      "request": "0x765",
+      "response": "0x76D"
+    },
+    "0x766": {
+      "module": "RBM",
+      "request": "0x766",
+      "response": "0x76E"
+    },
+    "0x773": {
+      "module": "CHCMB",
+      "request": "0x773",
+      "response": "0x77B"
+    },
+    "0x775": {
+      "module": "RGTM",
+      "request": "0x775",
+      "response": "0x77D"
+    },
+    "0x781": {
+      "module": "CAV",
+      "request": "0x781",
+      "response": "0x789"
+    },
+    "0x785": {
+      "module": "RHVAC",
+      "request": "0x785",
+      "response": "0x78D"
+    },
+    "0x792": {
+      "module": "ATCM",
+      "request": "0x792",
+      "response": "0x79A"
+    },
+    "0x795": {
+      "module": "RDCM",
+      "request": "0x795",
+      "response": "0x79D"
+    },
+    "0x797": {
+      "module": "SASM",
+      "request": "0x797",
+      "response": "0x79F"
+    },
+    "0x7a0": {
+      "module": "FCIMB",
+      "request": "0x7A0",
+      "response": "0x7A8"
+    },
+    "0x7a1": {
+      "module": "FCIMC",
+      "request": "0x7A1",
+      "response": "0x7A9"
+    },
+    "0x7a3": {
+      "module": "PSM",
+      "request": "0x7A3",
+      "response": "0x7AB"
+    },
+    "0x7a5": {
+      "module": "FCDIM",
+      "request": "0x7A5",
+      "response": "0x7AD"
+    },
+    "0x7a7": {
+      "module": "FCIM",
+      "request": "0x7A7",
+      "response": "0x7AF"
+    },
+    "0x7b1": {
+      "module": "IPMB",
+      "request": "0x7B1",
+      "response": "0x7B9"
+    },
+    "0x7b2": {
+      "module": "HUD",
+      "request": "0x7B2",
+      "response": "0x7BA"
+    },
+    "0x7c4": {
+      "module": "SODL",
+      "request": "0x7C4",
+      "response": "0x7CC"
+    },
+    "0x7c6": {
+      "module": "SODR",
+      "request": "0x7C6",
+      "response": "0x7CE"
+    },
+    "0x7c7": {
+      "module": "AUCM",
+      "request": "0x7C7",
+      "response": "0x7CF"
+    },
+    "0x7d1": {
+      "module": "SPMA",
+      "request": "0x7D1",
+      "response": "0x7D9"
+    },
+    "0x7d4": {
+      "module": "SPMB",
+      "request": "0x7D4",
+      "response": "0x7DC"
+    },
+    "0x7e0": {
+      "module": "PCM",
+      "request": "0x7E0",
+      "response": "0x7E8"
+    },
+    "0x7e1": {
+      "module": "TCM",
+      "request": "0x7E1",
+      "response": "0x7E9"
+    },
+    "0x7e4": {
+      "module": "BECM",
+      "request": "0x7E4",
+      "response": "0x7EC"
+    },
+    "0x7e6": {
+      "module": "ABS",
+      "request": "0x7E6",
+      "response": "0x7EE"
+    },
+    "0x7e7": {
+      "module": "EPIC",
+      "request": "0x7E7",
+      "response": "0x7EF"
+    }
+  },
+  "pcm_diesel_dids": [
+    {
+      "did": "0396",
+      "name": "Distance To Next Service",
+      "byte_size": "2",
+      "data_type": "unsigned",
+      "resolution": "1",
+      "offset": "0",
+      "units": "km",
+      "live_L494_SALWA2EK8HA": "answered 5AB6"
+    },
+    {
+      "did": "0463",
+      "name": "Injector Correction Codes for Cylinders 1 - 6",
+      "byte_size": "64",
+      "data_type": "bytes",
+      "live_L494_SALWA2EK8HA": "answered FC0FFF80...(64B)"
+    },
+    {
+      "did": "03FE",
+      "name": "Injector Correction Codes for Cylinders 1 - 6",
+      "byte_size": "48",
+      "data_type": "bytes",
+      "live_L494_SALWA2EK8HA": "did not answer (dead on this calibration)"
+    },
+    {
+      "did": "D910",
+      "name": "EGR Valve Bank 1 Offset Values",
+      "byte_size": "16",
+      "data_type": "unsigned",
+      "resolution": "0.01221",
+      "offset": "0"
+    },
+    {
+      "did": "D911",
+      "name": "EGR Valve Bank 2 Offset Values",
+      "byte_size": "16",
+      "data_type": "unsigned",
+      "resolution": "0.01221",
+      "offset": "0"
+    },
+    {
+      "did": "D912",
+      "name": "EGR Throttle offset values",
+      "byte_size": "16",
+      "data_type": "unsigned",
+      "resolution": "0.01221",
+      "offset": "0"
+    },
+    {
+      "did": "D915",
+      "name": "Turbo Charger Valve Offset Values",
+      "byte_size": "16",
+      "data_type": "unsigned",
+      "resolution": "0.01221",
+      "offset": "0"
+    },
+    {
+      "did": "D91E",
+      "name": "Oil dilution data",
+      "byte_size": "68",
+      "data_type": null
+    },
+    {
+      "did": "042C",
+      "name": "Diesel Particulate Filter Soot Concentration - Inferred Using Differential Pressure",
+      "byte_size": "2",
+      "data_type": "unsigned",
+      "resolution": "0.00152590219",
+      "offset": "0",
+      "units": "g/l",
+      "live_L494_SALWA2EK8HA": "did not answer (dead on this calibration)"
+    },
+    {
+      "did": "0479",
+      "name": "Stop-Start Start Counter",
+      "byte_size": "3",
+      "data_type": "unsigned",
+      "resolution": "1",
+      "offset": "0",
+      "units": "count",
+      "live_L494_SALWA2EK8HA": "answered 000000"
+    },
+    {
+      "did": "0518",
+      "name": "Injector Quantity Adjustment (IMA) values",
+      "byte_size": "32",
+      "data_type": "ascii",
+      "live_L494_SALWA2EK8HA": "did not answer (dead on this calibration)"
+    },
+    {
+      "did": "C18C",
+      "name": "PCM Target ID",
+      "byte_size": "8",
+      "data_type": null
+    },
+    {
+      "did": "C25C",
+      "name": "ABS Serial Number",
+      "byte_size": "6",
+      "data_type": null
+    },
+    {
+      "did": "C25D",
+      "name": "PCM Level 03",
+      "byte_size": "5",
+      "data_type": null
+    },
+    {
+      "did": "C25E",
+      "name": "PCM Level 03",
+      "byte_size": "5",
+      "data_type": null
+    },
+    {
+      "did": "D12F",
+      "name": "PCM Level 03",
+      "byte_size": "5",
+      "data_type": null
+    },
+    {
+      "did": "DE02",
+      "name": "High Pressure Pump Wear values",
+      "byte_size": "12",
+      "data_type": "unsigned"
+    },
+    {
+      "did": "DE03",
+      "name": "EGR Valve Bank 1 Offset Values",
+      "byte_size": "16",
+      "data_type": "unsigned",
+      "resolution": "0.01221",
+      "offset": "0"
+    },
+    {
+      "did": "DE04",
+      "name": "EGR Throttle Offset Values",
+      "byte_size": "16",
+      "data_type": "unsigned",
+      "resolution": "0.01221",
+      "offset": "0"
+    },
+    {
+      "did": "DE05",
+      "name": "Turbo Charger Valve Offset Values",
+      "byte_size": "16",
+      "data_type": "unsigned",
+      "resolution": "0.01221",
+      "offset": "0"
+    },
+    {
+      "did": "DE06",
+      "name": "Start Torque Correction",
+      "byte_size": "2",
+      "data_type": "signed",
+      "resolution": "0.1",
+      "offset": "0",
+      "units": "torque, newton metre, Nm"
+    },
+    {
+      "did": "DE07",
+      "name": "HLSDEM Low Setpoint Adjustment",
+      "byte_size": "2",
+      "data_type": "signed",
+      "resolution": "0.5",
+      "offset": "0",
+      "units": "revolutions, revolutions per minute, rpm"
+    },
+    {
+      "did": "DE09",
+      "name": "FMO adjustment value",
+      "byte_size": "130",
+      "data_type": null
+    },
+    {
+      "did": "DE0A",
+      "name": "FanCtl season counter",
+      "byte_size": "1",
+      "data_type": null
+    },
+    {
+      "did": "DE0B",
+      "name": "Block offset for starting torque adjustment value",
+      "byte_size": "8",
+      "data_type": null
+    },
+    {
+      "did": "DE0C",
+      "name": "Low idle engine speed adjustment",
+      "byte_size": "58",
+      "data_type": null
+    },
+    {
+      "did": "DE10",
+      "name": "Particulate Filter Regeneration Statistics Load Information",
+      "byte_size": "178",
+      "data_type": null
+    },
+    {
+      "did": "DE11",
+      "name": "Particulate Filter Values",
+      "byte_size": "100",
+      "data_type": null
+    },
+    {
+      "did": "05FA",
+      "name": "Current air volume in urea pressure lines",
+      "byte_size": "6",
+      "data_type": null,
+      "live_L494_SALWA2EK8HA": "answered 048A00000301"
+    },
+    {
+      "did": "05FB",
+      "name": "Frozen cavity detection in urea tank",
+      "byte_size": "2",
+      "data_type": null,
+      "live_L494_SALWA2EK8HA": "answered 0FA0"
+    },
+    {
+      "did": "05FC",
+      "name": "Total mass fluid injected by urea dosing system",
+      "byte_size": "4",
+      "data_type": null,
+      "live_L494_SALWA2EK8HA": "answered 00039CC5"
+    },
+    {
+      "did": "05FD",
+      "name": "Total time of urea dosing value exceeding upper temperature threshold",
+      "byte_size": "2",
+      "data_type": null,
+      "live_L494_SALWA2EK8HA": "answered 0651"
+    },
+    {
+      "did": "DE19",
+      "name": "Number of adaptions which are triggered by slip",
+      "byte_size": "264",
+      "data_type": null
+    },
+    {
+      "did": "F111",
+      "name": "Assembly number",
+      "byte_size": "24",
+      "data_type": "ascii",
+      "live_L494_SALWA2EK8HA": "did not answer (dead on this calibration)"
+    },
+    {
+      "did": "F405",
+      "name": "Engine Coolant Temperature",
+      "byte_size": "1",
+      "data_type": "unsigned",
+      "resolution": "1",
+      "offset": "-40",
+      "units": "Deg C",
+      "live_L494_SALWA2EK8HA": "answered 6E"
+    },
+    {
+      "did": "0416",
+      "name": "<tm id=\"@J_I_ENG_INPUT_OUTPUT_PARAMETERS\">Engine input/output parameters</tm>",
+      "byte_size": "4",
+      "data_type": "enumerated",
+      "live_L494_SALWA2EK8HA": "answered 16003000"
+    },
+    {
+      "did": "C124",
+      "name": "<tm id=\"@START_AUTHORISATION_STATUS\">Start authorisation status</tm>",
+      "byte_size": "4",
+      "data_type": "enumerated"
+    }
+  ],
+  "pcm_diesel_routines": [
+    {
+      "routine": "0202",
+      "name": "Self Test"
+    },
+    {
+      "routine": "0404",
+      "name": "VIN Learning"
+    },
+    {
+      "routine": "0406",
+      "name": "Adaption Clear"
+    },
+    {
+      "routine": "4003",
+      "name": "Speed limitation"
+    },
+    {
+      "routine": "400D",
+      "name": "Air Conditioning Compressor Exchanged"
+    },
+    {
+      "routine": "400F",
+      "name": "High Pressure Unit Exchanged"
+    },
+    {
+      "routine": "4024",
+      "name": "Oil Change Reset"
+    },
+    {
+      "routine": "4026",
+      "name": "Reset DPF pressure sensor adaptation value"
+    },
+    {
+      "routine": "4027",
+      "name": "Fuel lift pump reset"
+    },
+    {
+      "routine": "402C",
+      "name": "Reset Fuel Mass Observer"
+    },
+    {
+      "routine": "4030",
+      "name": "Initialise Throttle Valve Actuator"
+    },
+    {
+      "routine": "4035",
+      "name": "Initialise Oxygen Sensor"
+    },
+    {
+      "routine": "4050",
+      "name": "Turbine shut-off valve learn"
+    },
+    {
+      "routine": "4051",
+      "name": "Initialise EGR Valve Learning"
+    },
+    {
+      "routine": "405B",
+      "name": "Activate service function - various"
+    },
+    {
+      "routine": "4063",
+      "name": "Reset Oil Market Counter"
+    },
+    {
+      "routine": "4064",
+      "name": "Reset water in fuel level"
+    },
+    {
+      "routine": "4076",
+      "name": "Selective Catalytic Reductant Preparation"
+    },
+    {
+      "routine": "4089",
+      "name": "DC to DC Convertor mode"
+    },
+    {
+      "routine": "408A",
+      "name": "HEV Operation mode"
+    },
+    {
+      "routine": "4091",
+      "name": "Enable Glow Plugs"
+    },
+    {
+      "routine": "4094",
+      "name": "Test Dosing Valve Dynamic Behaviour"
+    },
+    {
+      "routine": "4095",
+      "name": "Test Measured Static Reductant Dosing Quantity"
+    },
+    {
+      "routine": "4096",
+      "name": "Test Reductant Spray Pattern"
+    }
+  ]
+}

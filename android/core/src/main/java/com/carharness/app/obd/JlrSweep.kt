@@ -35,6 +35,67 @@ package com.carharness.app.obd
  */
 object JlrSweep {
 
+    /**
+     * A named DID range the sweep button can be pointed at.
+     *
+     * The desktop has three text fields for this; the phone had a single fixed
+     * 0300-05FF, which left every SDD-named identifier outside that window
+     * listed in the dealer-data view and unreadable from the car. These are the
+     * ranges worth walking, and each one says where it comes from:
+     *
+     *  * 0300-05FF and F400-F4FF are where this PCM's answers actually live —
+     *    191 of them on the 2026-08-18 L494 sweep.
+     *  * D900-D9FF and DE00-DEFF are where SDD 169 puts the EGR/turbo valve
+     *    offsets (D910-D915), the high-pressure pump wear and start-torque
+     *    values (DE02-DE0C) and the particulate-filter regeneration statistics
+     *    (DE10/DE11). SDD names them for this engine; nothing has yet asked
+     *    this car for them.
+     *
+     * 2100-21FF and 2200-22FF are deliberately absent: all 512 ids refused with
+     * NRC 31 on the L494, and SDD puts no diesel-PCM identifiers there either.
+     * They are not worth another twenty minutes of anybody's morning.
+     */
+    data class SweepRange(
+        val id: String,
+        val label: String,
+        val first: String,
+        val last: String,
+        val note: String,
+    )
+
+    val RANGES: List<SweepRange> = listOf(
+        SweepRange(
+            "0300", "0300-05FF", "0300", "05FF",
+            "The main answering block — 136 of the L494's 191 live DIDs, including "
+                + "the urea cluster 05FA-05FD. The default, and the right first walk "
+                + "on an unknown car.",
+        ),
+        SweepRange(
+            "F400", "F400-F4FF", "F400", "F4FF",
+            "The F4xx block — 55 more live DIDs on the L494, including F405 coolant "
+                + "and several of the aftertreatment-shaped sweep candidates.",
+        ),
+        SweepRange(
+            "D900", "D900-D9FF", "D900", "D9FF",
+            "SDD 169 names D910/D911/D912 (EGR valve and throttle offsets), D915 "
+                + "(turbo charger valve offsets) and D91E (oil dilution data) for this "
+                + "engine. Nothing has asked this car for them yet — this walk is how "
+                + "you find out whether the calibration implements them.",
+        ),
+        SweepRange(
+            "DE00", "DE00-DEFF", "DE00", "DEFF",
+            "SDD 169 names DE02 (HP pump wear), DE03-DE06 (EGR/turbo offsets, start "
+                + "torque), and DE10/DE11 (particulate-filter regeneration statistics "
+                + "and values) here. The regen statistics are the most interesting "
+                + "unread thing SDD gave us. Unasked so far.",
+        ),
+    )
+
+    val DEFAULT_RANGE: SweepRange = RANGES.first()
+
+    fun rangeById(id: String?): SweepRange =
+        RANGES.firstOrNull { it.id == id } ?: DEFAULT_RANGE
+
     // Keep one call proportionate: 4096 ids at ~0.6 s each is already the
     // better part of an hour over Bluetooth. Split wider ranges; the
     // research's default ranges (0300-05FF, 2100-21FF, 2200-22FF, F400-F4FF

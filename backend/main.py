@@ -610,7 +610,8 @@ def brand_adblue_drive_log(
 ) -> dict:
     """Timed read-only log pairing rpm with the AdBlue/DPF candidate DIDs,
     payloads kept raw until decoded against the car. dids is a comma-separated
-    hex list (sweep-captured candidates) replacing the default engine set."""
+    hex list (sweep-captured candidates) replacing the default engine set, or
+    the name of one of the profile's watch presets ("urea")."""
     module = _brand_capability_or_404(brand, "adblue")
     instance = _obd_adapter_or_400(adapter, mode)
     if not 5 <= seconds <= 3600:
@@ -620,6 +621,16 @@ def brand_adblue_drive_log(
         )
     did_list: list[str] = []
     if dids:
+        # A watch preset is a name, not hex -- pass it through untouched and
+        # let the profile expand it, so the preset list stays defined in one
+        # place (the profile) rather than being duplicated in the route.
+        preset_ids = {p["id"] for p in module.presets()} if hasattr(module, "presets") else set()
+        if dids.strip().lower() in preset_ids:
+            return _stamp_capture(
+                brand, "drive-log",
+                module.drive_log(instance, mode, seconds, [dids.strip().lower()]),
+                instance,
+            )
         parts = [d.strip().upper() for d in dids.split(",") if d.strip()]
         if len(parts) > 24:
             raise HTTPException(
@@ -636,6 +647,21 @@ def brand_adblue_drive_log(
         brand, "drive-log", module.drive_log(instance, mode, seconds, did_list or None),
         instance,
     )
+
+
+@app.get("/api/{brand}/dealer-data")
+def brand_dealer_data(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
+    """What the manufacturer's own dealer database says about this family.
+
+    A pure data view: the module address map, the named data identifiers with
+    their factory scaling and units, and the routine identifiers the dealer
+    tool would run. It touches no car -- the adapter and mode arguments are
+    accepted so the front-end can call it exactly like any other brand action,
+    and they are ignored. JLR's is the decrypted SDD 169 extract; the routines
+    are listed for reference and the harness sends none of them.
+    """
+    module = _brand_capability_or_404(brand, "dealer_data")
+    return module.reference(None, mode)
 
 
 @app.get("/api/{brand}/scan")
