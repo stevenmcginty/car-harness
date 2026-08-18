@@ -37,8 +37,14 @@ python tools/dealer_index/build_diagbox.py         # PSA DiagBox
 Each builder is idempotent per deliverable: re-running one deletes and replaces
 just that deliverable's rows.
 
-Build times on this machine: GDS2 about 20 minutes for all seven deliverables,
-SDD about 90 seconds, DiagBox about 4 minutes.
+Build times on this machine: GDS2 about 25 minutes for all seven deliverables
+plus index creation, SDD about 90 seconds, DiagBox about 4 minutes.
+
+Do not query a database while it is being built — the builders run with
+`journal_mode=OFF` for speed, so a reader takes a lock the writer then waits on.
+They set a two-minute busy timeout so a passing reader no longer kills the run,
+and `build_gds2.py --index-only` recreates the indexes without re-extracting if
+one ever does.
 
 ## Checking
 

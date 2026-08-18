@@ -791,11 +791,14 @@ def open_db(path, schema_path):
     parent = os.path.dirname(os.path.abspath(path))
     if parent and not os.path.isdir(parent):
         os.makedirs(parent)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=120)
     conn.execute("PRAGMA journal_mode=OFF")
     conn.execute("PRAGMA synchronous=OFF")
     conn.execute("PRAGMA cache_size=-200000")
     conn.execute("PRAGMA temp_store=MEMORY")
+    # A reader opening the database mid-build otherwise fails the whole run at
+    # the index step, which is a long way to come to lose the work.
+    conn.execute("PRAGMA busy_timeout=120000")
     with open(schema_path, "r", encoding="utf-8") as fh:
         conn.executescript(fh.read())
     return conn
@@ -895,6 +898,8 @@ def main():
     ap.add_argument("--corpus", default=None, help="root of the GDS2 corpus")
     ap.add_argument("--list", action="store_true",
                     help="list the deliverables found and exit")
+    ap.add_argument("--index-only", action="store_true",
+                    help="skip extraction and just (re)create the indexes")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--languages", default="all",
                     help="'all' (default) keeps every language record of every "
@@ -921,9 +926,10 @@ def main():
 
     db = args.db or str(paths.db_path("gds2"))
     conn = open_db(db, os.path.join(HERE, "schema_gds2.sql"))
-    for label, p in found:
-        sys.stderr.write("building %s from %s\n" % (label, p))
-        build_one(conn, label, p, verbose=not args.quiet, langs=langs)
+    if not args.index_only:
+        for label, p in found:
+            sys.stderr.write("building %s from %s\n" % (label, p))
+            build_one(conn, label, p, verbose=not args.quiet, langs=langs)
     sys.stderr.write("creating indexes\n")
     for sql in INDEXES:
         conn.execute(sql)

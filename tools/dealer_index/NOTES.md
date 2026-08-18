@@ -112,6 +112,15 @@ Partially mined; see `captures/peugeot/diagbox-ep6-extraction.md`.
    non-ASCII from the ends of a token before classifying it and keeps the raw run
    for the label.
 
+## Operational lesson
+
+Do not run a query against a database that is still being built. The builders use
+`journal_mode=OFF` for speed; a read-only connection opened mid-build takes a lock
+that the writer then fails on, and it failed at the index step after all seven
+deliverables had extracted — twenty minutes of work nearly lost to a smoke test.
+Fixed two ways: a two-minute `busy_timeout` on the writer, and
+`build_gds2.py --index-only` so the index step can be redone on its own.
+
 ## Correction to the earlier DiagBox read
 
 In `DSD.FDB` a parameter row is laid out **name, inline French label, then the
