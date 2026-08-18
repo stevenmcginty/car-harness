@@ -269,6 +269,11 @@ backend/
   tools/               self-tests; run them all:
                        .venv\Scripts\python -m backend.tools.run_all
 modules_store/         user-imported modules live here (removable)
+tools/                 offline research tooling, nothing that talks to a car
+  gds2/                readers for the GDS2 vatbin.bin dealer data file
+  dealer_index/        builders and query tool for the mined-data indexes
+docs/
+  dataset-registry.md  the map of every dealer-tool corpus on this machine
 frontend/              static single-page UI (served at /, owned by the UI app)
 android/               Compose companion app (brand registry: obd/Brands.kt)
 requirements.txt

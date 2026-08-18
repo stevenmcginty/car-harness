@@ -243,7 +243,7 @@ def cmd_pids(args):
          " JOIN deliverable d ON d.id=p.deliverable_id"
          " LEFT JOIN pid_item i ON i.pid_off=p.off"
          "        AND i.deliverable_id=p.deliverable_id AND i.idx=0"
-         " WHERE s.ref_name LIKE ? OR s.module_name LIKE ?")
+         " WHERE (s.ref_name LIKE ? OR s.module_name LIKE ?)")
     params = [like(args.module), like(args.module)]
     if args.grep:
         q += " AND (p.name LIKE ? OR p.ref_name LIKE ?)"
@@ -466,7 +466,8 @@ def cmd_routines(args):
     q = ("SELECT m.platform, m.file_stem, m.shortname, r.number, r.name,"
          "       r.session_refs"
          " FROM routine r JOIN mdx m ON m.id=r.mdx_id"
-         " WHERE m.shortname LIKE ? OR m.file_stem LIKE ? OR m.platform LIKE ?")
+         " WHERE (m.shortname LIKE ? OR m.file_stem LIKE ?"
+         "         OR m.platform LIKE ?)")
     params = [like(args.module)] * 3
     if args.grep:
         q += " AND r.name LIKE ?"
@@ -483,7 +484,7 @@ def cmd_screens(args):
     if not d:
         return
     q = ("SELECT model, function, family, tag, screen, local_id"
-         " FROM tree_screen WHERE family LIKE ? OR model LIKE ?")
+         " FROM tree_screen WHERE (family LIKE ? OR model LIKE ?)")
     params = [like(args.family), like(args.family)]
     if args.grep:
         q += " AND screen LIKE ?"

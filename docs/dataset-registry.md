@@ -70,6 +70,12 @@ the ground truth is the CFR-decompiled runtime at
 **How it was opened** Statically, with the decompiled reader classes as the
 specification. No installer was run.
 
+**Tooling** `tools/gds2/` in this repository. Those thirteen files were checked
+byte-for-byte against the working copies in
+`C:\Users\steve\Desktop\vauxhall\unpack\tools\`, which is outside version control
+and is what was lost between earlier sessions; they are identical, and there is
+nothing left in that directory that exists only there.
+
 **What is mined** Everything reachable, into `gds2.db`:
 
 - the whole menu-item tree with containers, attributes and state triples
