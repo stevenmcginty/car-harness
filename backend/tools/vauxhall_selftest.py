@@ -27,12 +27,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.obd import service as obd_service  # noqa: E402
 from backend.obd.elm327 import ObdError  # noqa: E402
+from backend.profiles.vauxhall import dealer_data  # noqa: E402
 from backend.profiles.vauxhall import gmlan  # noqa: E402
 from backend.profiles.vauxhall import pids as vx_pids  # noqa: E402
+from backend.profiles.vauxhall import procedures as vx_procedures  # noqa: E402
 from backend.profiles.vauxhall import resets as vx_resets  # noqa: E402
 from backend.profiles.vauxhall import scan as vx_scan  # noqa: E402
 from backend.profiles.vauxhall import gearbox as vx_gearbox
 from backend.profiles.vauxhall import software as vx_software  # noqa: E402
+from backend.profiles.vauxhall import tcm as vx_tcm  # noqa: E402
 
 PASS = []
 FAIL = []
@@ -450,8 +453,14 @@ def main():
         check("live adds the generic engine set",
               got.get("Engine speed") == "2738" and got.get("Vehicle speed") == "48" and
               got.get("Coolant temperature") == "93", str(got))
-        check("live is honest about the adapt cells it cannot read",
-              "GDS2-only" in live["message"], live["message"])
+        # The adapt cells stopped being unreachable when the dealer data was
+        # extracted, so the honest message changed shape: it must no longer
+        # claim they are GDS2-only, and it must still not imply this pass has
+        # read them.
+        check("live no longer claims the adapt cells are GDS2-only",
+              "no longer GDS2-only" in live["message"], live["message"])
+        check("live still shows no adapt values it has not measured",
+              "not a measurement" in live["message"], live["message"])
         check("live restored the ELM", fake_l.header == "7DF", fake_l.header)
 
         # --- the Live Data fast path: only the picked channels get read ---
@@ -532,6 +541,92 @@ def main():
           "DeviceControl" in run["message"], str(run.get("message")))
     check("an unknown reset id is rejected",
           vx_resets.perform(None, "real", "nope", confirm=True)["ok"] is False)
+
+    # ------------------------------------------- GDS2 dealer data, read side
+    #
+    # The extract is authoritative about naming and scaling and knows nothing
+    # about this particular car, so the tests here are of two kinds: that the
+    # one datum with a live cross-check still agrees with the car, and that
+    # everything else is labelled as unproven rather than promoted.
+    check("the dealer extract loads and is the T76 node",
+          dealer_data.load()["moduleNode"]["name"].endswith(
+              "TCM - T76 - (Conti) - GME"),
+          dealer_data.load()["moduleNode"]["name"])
+    check("the extract agrees with the car on fluid temperature",
+          dealer_data.decode(dealer_data.by_ref("8442_6736"),
+                             bytes([63]))["value"] == 23.0,
+          "raw 63 must decode to the 23 C this car read cold")
+    check("the extract's CAN addressing matches the verified car",
+          dealer_data.load()["connection"]["canRequest"] == "0x7E2" and
+          dealer_data.load()["connection"]["canResponse"] == "0x7EA")
+    learn_states = dealer_data.states_for("8682_51909")
+    check("the fast learn status table has all 17 states",
+          len(learn_states) == 17 and
+          learn_states[0] == "Fast Learn Disabled" and
+          learn_states[2] == "Brake Must be Applied", str(len(learn_states)))
+    check("a status answer decodes to a named state, not a bare number",
+          vx_tcm._learn_status(bytes([3])).startswith(
+              "Transmission Temperature is Below"),
+          str(vx_tcm._learn_status(bytes([3]))))
+    check("194C is no longer logged as an unidentified parameter",
+          any(row[0] == 0x194C and "shift time" in row[1].lower()
+              for row in vx_tcm.SIGNALS))
+    check("dealer-named signals are not graded as verified",
+          all(row[3] != "verified" for row in vx_tcm.SIGNALS
+              if row[4] == "dealer-data"),
+          str([row[1] for row in vx_tcm.SIGNALS
+               if row[4] == "dealer-data" and row[3] == "verified"]))
+    check("an unscalable equation returns nothing rather than a number",
+          dealer_data.apply_equation("SOMETHING_UNPARSEABLE", 5) is None)
+
+    # ------------------------------------- GDS2 dealer data, write side: inert
+    #
+    # These are the checks that matter most in this section. The device control
+    # bytes are known now, and the whole point of the way they are stored is
+    # that knowing them changes nothing about what the harness sends.
+    learn = vx_procedures.describe("vauxhall-t76-adaptive-values-learn")
+    check("the adaptive learn procedure ships marked unverified",
+          learn is not None and learn["verified"] is False)
+    check("the procedure records what a live run could still refuse with",
+          any("0x33" in q for q in learn["verification"]["openQuestions"]))
+    check("the procedure keeps the control frame tied to its own PID set",
+          learn["module"]["pidSet"] == "0x05AC7CAC" and
+          "cannot be carried across" in learn["module"]["pidSetWarning"])
+    for confirmed in (False, True):
+        run = vx_procedures.execute(ADAPTER, "vauxhall-t76-adaptive-values-learn",
+                                    confirm=confirmed)
+        check(f"the procedure sends nothing with confirm={confirmed}",
+              run["ok"] is False and run["runnable"] is False and
+              run["sent"] == [], str(run.get("message")))
+    check("confirming alone is not enough to unblock it",
+          len(vx_procedures.blocking_reasons(
+              "vauxhall-t76-adaptive-values-learn", confirm=True)) >= 1)
+    check("there is no GMLAN device control transport to send with",
+          not hasattr(gmlan, "device_control") and
+          not hasattr(gmlan, "SVC_DEVICE_CONTROL"))
+
+    # The gear-select control encodes the gear in the HIGH nibble. An earlier
+    # write-up read the equation as X(0)<<0 and published AE 30 81..86, then
+    # recommended AE 30 81 00 00 00 00 as a harmless first probe. It is neither
+    # harmless nor a gear command -- 0x81 is an undefined state on a solenoid
+    # driver. Both halves of that mistake are guarded here.
+    gear = dealer_data.device_control("6173_51909_3")
+    gear_frames = {c["request"] for c in gear["commands"]}
+    check("gear select frames put the gear in the high nibble",
+          gear_frames == {"AE 30 90 00 00 00 00", "AE 30 A0 00 00 00 00",
+                          "AE 30 B0 00 00 00 00", "AE 30 C0 00 00 00 00",
+                          "AE 30 D0 00 00 00 00", "AE 30 E0 00 00 00 00"},
+          str(sorted(gear_frames)))
+    profile_dir = Path(vx_tcm.__file__).resolve().parent
+    bad_frame_hits = [
+        p.name for p in profile_dir.rglob("*")
+        if p.is_file() and p.suffix in (".py", ".json")
+        and "AE 30 81" in p.read_text(encoding="utf-8", errors="ignore")
+    ]
+    check("the retracted AE 30 81 probe frame appears nowhere in the profile",
+          not bad_frame_hits, str(bad_frame_hits))
+    check("the safe probe is the null CPID release, not a gear command",
+          learn["safeProbe"]["request"] == "AE 00")
 
     # -------------------------------------------------- software versions
     sw_session = SoftwareSession()

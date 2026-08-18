@@ -18,6 +18,39 @@ asks the car.
       github.com/roffe/gocan  pkg/gmlan  (see docs/private/vauxhall-data/gocan-gmlan/)
       Comments quote GMW3110-2010 section numbers.
 
+  gds2_t76_tcm.json
+    The GDS2 dealer data for one module node, extracted rather than
+    distilled. Unlike everything else in this folder it is not a copy of an
+    open implementation; it is a static read of GM's own diagnostic
+    database, and it is here because it is the only source that names this
+    module's parameters, scalings and state tables authoritatively.
+
+    Source:  GDS2 2023.3 Opel/Vauxhall deliverable, BinaryFile/vatbin.bin
+             (137,644,844 bytes), module menu node
+             "Transmission Control Module$TCM - T76 - (Conti) - GME" at
+             file offset 0x058EFF64 -- the node the 2017 Astra-K MY2017
+             menu tree binds.
+    Made by: tools/gds2/export_module.py, which walks the node and emits
+             every entry with the file offset and object type it was read
+             from. Regenerating it is one command; every value in it can be
+             traced back to a byte range and re-checked.
+    Read by: dealer_data.py.
+
+    Scope of what it proves. The read half of the decode rule has a live
+    cross-check and passes: the file's transmission fluid temperature is
+    22 19 40 scaled (X*1)-40, which is what this harness already reads
+    correctly from 0x7E2 on VIN W0LPF2EC8HG072884. The device-control half
+    has no such check -- those frames are built by a different code path in
+    the dealer tool and none of them has been sent to a car. The file
+    records device controls as descriptions and procedures.py keeps them
+    inert.
+
+    The file carries no full DTC list for this module. The node binds an
+    8885-row corpus-wide text dictionary plus a two-row local override, so
+    the only DTC content here is GM's wording for codes the profile already
+    carries, plus those two override rows. Being in the master dictionary
+    means GM assigned the code somewhere -- not that this module supports it.
+
   19xx live PIDs (Torque / on-car):
     Torque Pro predefined set "Pontiac / GM / Opel / Vauxhall":
       Mode 22 PID 1940, header 7E2, equation A-40.

@@ -320,11 +320,13 @@ ADAPTIVE_VALUES_LEARN = {
         "gated": True,
         "warning": (
             "Do not substitute a gear-select frame for this probe. An earlier "
-            "write-up suggested AE 30 81 00 00 00 00 as a harmless first test; "
-            "it is not harmless and it is not a gear command. The gear sits in "
-            "the high nibble (the write equation is X(0)<<4), so gear 1 is "
-            "AE 30 90 00 00 00 00 and 0x81 requests an undefined state on a "
-            "transmission solenoid driver."
+            "write-up recommended one carrying 0x81 in the command byte as a "
+            "harmless first test. It is neither harmless nor a gear command: "
+            "the gear sits in the high nibble, because the write equation is "
+            "X(0)<<4, so gear 1 is 0x90 and 0x81 requests an undefined state "
+            "on a transmission solenoid driver. That frame is deliberately "
+            "not written out anywhere in this profile, and the self-test "
+            "fails if it reappears."
         ),
     },
 }

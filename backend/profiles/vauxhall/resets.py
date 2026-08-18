@@ -9,27 +9,43 @@ anyone reading this file is the person who would otherwise try to implement it:
   1. **Fast Learn is DeviceControl, not RoutineControl.** GM Global A speaks
      GMW3110. There is no UDS 0x31 routine to call. The equivalent service is
      0xAE DeviceControl, which addresses a per-module CPID (Control Packet
-     Identifier) naming the function being driven.
-  2. **The CPID is not public.** No open source documents the Astra K TCM's
-     Fast Learn CPID or its control bytes. Nothing in this repository should
-     guess at a byte sequence whose job is to command clutches.
-  3. **It is gated behind SecurityAccess.** 0xAE on a powertrain module needs
-     0x27 sub-functions 03/04 (DevCtrl requestSeed / sendKey). The seed-to-key
-     algorithm is per-module and GM-proprietary. Without it every request comes
-     back NRC 0x33.
-  4. **An ELM327 cannot hold the channel anyway.** The routine runs for
-     minutes, keeps the box in neutral, streams operator prompts back to the
-     tool, and needs 0x28 DisableNormalCommunication plus periodic 0x3E
-     TesterPresent throughout. An ELM327 is a request/response text bridge with
-     no scheduler.
+     Identifier) naming the function being driven. This one is still true and
+     is the reason a ``uds`` reset entry would be the wrong shape here:
+     uds_reset.execute() speaks 0x31 and 0x2E, not 0xAE.
 
-So the honest surface is: the harness MEASURES (pids.py reads transmission
-fluid temperature, current gear and commanded gear over any dongle) and
-DOCUMENTS (this file), and the write is done on GDS2/MDI2 or an equivalent
-aftermarket tool with GM guided functions. If a genuine GDS2 or J2534 capture
-of the DeviceControl sequence is ever obtained, it does not belong here as a
-``uds`` reset either -- uds_reset.execute() speaks 0x31/0x2E, not 0xAE, and
-would need a GMLAN executor first.
+Reasons 2, 3 and 4 have been overtaken by the GDS2 data extraction, and are
+kept below with what actually became of them, because a stale objection is
+worse than no objection -- somebody will act on it.
+
+  2. **"The CPID is not public."** No longer the situation. The CPID is 0x30
+     and the control packet is recovered, traceable field by field to offsets
+     in the dealer deliverable, and reproduced across five separately built
+     copies of it. See procedures.py and data/gds2_t76_tcm.json. What has NOT
+     changed is the principle underneath the objection: nothing here guesses at
+     a byte sequence whose job is to command clutches. The bytes are now read
+     rather than guessed, and they are still not sent.
+  3. **"It is gated behind SecurityAccess."** Stated too strongly. GDS2 sends
+     no 0x27 at all for this test: the security step exists in its state
+     machine but sits behind a flag that is 0 in every copy. So the claim that
+     "without it every request comes back NRC 0x33" is not supported. The
+     honest version is that the dealer tool does not offer a key, which is not
+     the same as the module not demanding one -- a live attempt may still meet
+     NRC 0x33, and there is no working seed/key algorithm in the deliverable to
+     answer with if it does. Unresolved, and only a car resolves it.
+  4. **"An ELM327 cannot hold the channel anyway."** Half wrong. The recovered
+     sequence does not use 0x28 DisableNormalCommunication; it is 0x10 in,
+     0x3E kept alive, 0x20 out, and both the control and its release are seven
+     bytes, which fits an ISO-TP single frame. None of that is beyond an
+     ELM327. What survives is narrower and real: nobody has measured whether a
+     Bluetooth ELM327's round-trip latency can keep 0x3E inside the module's
+     timeout for a routine that runs minutes.
+
+So the honest surface today is: the harness MEASURES (pids.py and tcm.py read
+fluid temperature, the shaft speeds, commanded gear and now the fast-learn
+status parameter over any dongle), DESCRIBES (procedures.py holds the full
+exchange as inert data behind three gates), and DOCUMENTS (this file). The
+write is still done on GDS2/MDI2 or an equivalent aftermarket tool with GM
+guided functions, and the harness still sends nothing.
 
 Mirror of android/.../obd/BrandResetData.kt (Vauxhall section) -- keep in sync.
 """
@@ -117,6 +133,15 @@ RESETS: List[dict] = [
             "limit lives in the calibration in this TCM. Take the window from "
             "the tool's own on-screen prompt for the VIN. The harness live "
             "values read fluid temperature so you can time the attempt.",
+            "The GDS2 data for this exact module says something different "
+            "again, and it is worth knowing which number is which. The "
+            "condition GDS2 checks before it will start is simply fluid above "
+            "84 C. The module's own calibration classifies below 86 C as "
+            "'below operating temperature' and above 126 C as 'above', which "
+            "makes its working window 86-126 C -- wider at the top than any "
+            "published figure. Neither of those is a workshop recommendation; "
+            "they are what the tool and the module test for. If they disagree "
+            "with the prompt in front of you, believe the prompt.",
             "Adapts learned here are not final. TCC (torque converter clutch) "
             "adapts in particular can take a few hundred miles to settle -- do "
             "not re-judge the car on the first drive out of the workshop.",
@@ -139,6 +164,15 @@ RESETS: List[dict] = [
             "from the reverse clutches.",
             "Bring transmission fluid temperature into the window the tool asks "
             "for. The routine will refuse to start outside it.",
+            "CHECK BEFORE YOU START, over the dongle, costing nothing: the "
+            "module publishes its own readiness on parameter 2823 (request "
+            "22 28 23) and the harness now decodes it through GDS2's own "
+            "17-state table. It will say 'Fast Learn Disabled' when it is "
+            "willing, and otherwise name what it is waiting for -- 'Brake Must "
+            "be Applied', 'Vehicle Must be in Park', 'Transmission Temperature "
+            "is Below Operating Temperature'. Reading it writes nothing. If it "
+            "reports a blocking condition, fix that before the tool is even "
+            "connected.",
             "RUN. Start the routine and follow the tool's on-screen operator "
             "instructions exactly -- the display drives the sequence.",
             "If fluid temperature climbs past the limit mid-routine it aborts. "
@@ -208,9 +242,14 @@ def perform(
     Every shipped entry is ``method: "procedure"``, so nothing here touches the
     car -- the response is the walkthrough. There is deliberately no ``uds``
     execution path: GM Global A's write-side service is GMW3110 DeviceControl
-    (0xAE), which uds_reset.execute() does not speak. Adding one means writing a
-    GMLAN executor and obtaining the CPID plus the security-access algorithm
-    first; until then, refusing is the correct behaviour.
+    (0xAE), which uds_reset.execute() does not speak.
+
+    ``confirm`` is accepted and ignored, and that is the point: there is no
+    value of it that makes this send anything. The recovered adaptive-learn
+    exchange lives in procedures.py as inert data behind its own gates, and
+    running it would need a GMLAN DeviceControl transport that this repository
+    does not have. Until that exists, refusing is the correct behaviour, and
+    refusing identically whether or not somebody ticked a box is part of it.
     """
     reset = _BY_ID.get(reset_id)
     if reset is None:
@@ -221,8 +260,10 @@ def perform(
         "message": (
             f"'{reset['name']}' is a documented procedure, not a dongle command -- "
             "follow the steps. GM Global A write functions run over GMW3110 "
-            "DeviceControl behind GM's security access, which no ELM327 can do; "
-            "the harness will not pretend otherwise."
+            "DeviceControl (0xAE), which this harness has no transport for. The "
+            "adaptive-learn control bytes are now known and are recorded in "
+            "procedures.py, unverified on any car and deliberately inert; "
+            "whether the module also demands security access is still open."
         ),
         "timestamp": _now(),
     }
