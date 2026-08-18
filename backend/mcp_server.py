@@ -49,6 +49,7 @@ from backend.profiles.vauxhall import scan as vauxhall_scan  # noqa: E402
 from backend.profiles.vauxhall import software as vauxhall_software  # noqa: E402
 from backend.profiles.vauxhall import tcm as vauxhall_tcm  # noqa: E402
 from backend.profiles.vauxhall import gearbox as vauxhall_gearbox  # noqa: E402
+from backend.profiles.vauxhall import procedures as vauxhall_procedures  # noqa: E402
 from backend.profiles.vw import pids as vw_pids  # noqa: E402
 from backend.profiles.vw import scan as vw_scan  # noqa: E402
 
@@ -917,6 +918,93 @@ def vauxhall_clear_module(
     if error is not None:
         return error
     return vauxhall_scan.clear(instance, mode, address)
+
+
+@mcp.tool()
+def vauxhall_adaptive_learn_preflight(
+    adapter_id: str | None = None, mode: str = "real",
+    scenario: str = "complete",
+) -> dict:
+    """Check whether the Astra K TCM would accept a Transmission Adaptive
+    Values Learn right now. Read-only -- service 0x22 only, nothing is sent.
+
+    Reads the live fluid temperature, the module's own 17-state readiness
+    parameter (22 28 23) and every precondition GDS2's own condition set
+    checks, then says what is still in the way. This is the step to run before
+    even discussing the learn: it costs nothing and it answers "is the car warm
+    enough and in the right state" with numbers.
+
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    mode="sim" reads a simulated TCM; scenario picks which one (complete, cold,
+        not-in-park, engine-off, not-ready, ...).
+    """
+    if mode == "sim":
+        return vauxhall_procedures.preflight(
+            None, "vauxhall-t76-adaptive-values-learn", mode, scenario
+        )
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_procedures.preflight(
+        instance, "vauxhall-t76-adaptive-values-learn", mode, scenario
+    )
+
+
+@mcp.tool()
+def vauxhall_adaptive_learn(
+    confirm: bool = False, temperature_ack: float | None = None,
+    adapter_id: str | None = None, mode: str = "real",
+    scenario: str = "complete",
+) -> dict:
+    """Run the Astra K T76 Transmission Adaptive Values Learn -- CHANGES THE CAR.
+
+    THIS HAS NEVER BEEN RUN ON A CAR. The GMW3110 DeviceControl frames were
+    recovered by static analysis of the GDS2 dealer database, independently
+    re-derived from raw file offsets and reproduced across five deliverables.
+    That is a confirmed static decode and it is not the same as evidence from a
+    car. Whether the module demands SecurityAccess (NRC 0x33), and whether a
+    Bluetooth ELM327 can hold TesterPresent for the length of the routine, are
+    both still open. Say so to the user before running it.
+
+    The failure that matters is an aborted learn, not a refused one: the
+    routine clears the gearbox's adaptive cells when it starts and only writes
+    new ones when it finishes, so an interrupted run leaves a worse gearbox
+    than it found. The harness releases the device control on every failure
+    path, but an interrupted learn still has to be run again to completion.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    temperature_ack: the live transmission fluid temperature in °C, as reported
+        by vauxhall_adaptive_learn_preflight. Required. It exists because the
+        dealer data's threshold has two defensible readings (84 °C converted,
+        44 °C raw); the harness gates on the conservative one and will not pick
+        it behind the user's back.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    mode="sim" runs the whole exchange against a simulated TCM with no car;
+        scenario picks the outcome to rehearse (complete, nrc33, module-abort,
+        keepalive-loss, exception, release-refused, ...).
+
+    The car must be on level ground with its wheels chocked, the park brake on
+    and a foot on the service brake: it is driven against its own brakes with
+    the engine running.
+    """
+    if confirm is not True:
+        return {"error": (
+            "Refused: this drives the gearbox's clutches and has never been "
+            "run on a car. Pass confirm=true only after the user agrees, and "
+            "after telling them it is unverified."
+        )}
+    if mode == "sim":
+        return vauxhall_procedures.execute(
+            None, "vauxhall-t76-adaptive-values-learn", True, mode,
+            temperature_ack, scenario,
+        )
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_procedures.execute(
+        instance, "vauxhall-t76-adaptive-values-learn", True, mode,
+        temperature_ack, scenario,
+    )
 
 
 # --------------------------------------------------------------------------- #

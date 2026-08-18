@@ -39,6 +39,14 @@ light up its routes:
     gearbox.py   analyze(adapter, mode)   TCM-focused diagnosis (ident +
                  faults + live + clutch map). Read-only.
     resets.py    list_resets(), perform(adapter, mode, reset_id, confirm)
+    procedures.py
+                 list_procedures(), preflight(adapter, procedure_id, mode),
+                 execute(adapter, procedure_id, confirm, mode, ...)
+                 -- a manufacturer routine the harness can actually RUN, as
+                 opposed to a reset it walks the operator through. Confirm-
+                 gated inside the profile, preconditions read live before
+                 anything is sent, and mode="sim" runs the whole exchange
+                 against a simulated module with no car attached
     service_history.py
                  catalogue(), build_argument(...)  the car's own service book
                  -- text only, no car contact; see the BMW one for why
@@ -129,6 +137,11 @@ def features(brand: str) -> dict:
         "gearbox": brand_module(brand, "gearbox") is not None
         and hasattr(brand_module(brand, "gearbox"), "analyze"),
         "resets": brand_module(brand, "resets") is not None,
+        # Manufacturer routines the harness runs itself rather than walking the
+        # operator through -- confirm-gated, precondition-gated, and with a
+        # simulation mode that exercises the whole exchange with no car.
+        "procedures": brand_module(brand, "procedures") is not None
+        and hasattr(brand_module(brand, "procedures"), "list_procedures"),
         # Building the car's own service-history entry (BMW/MINI iDrive).
         "serviceHistory": brand_module(brand, "service_history") is not None,
         # BMW's own EDIABAS job library driven from the harness (BMW/MINI).

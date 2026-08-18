@@ -18,7 +18,9 @@ decodes that this profile exists for.
 Run:  cd car-harness; .venv\\Scripts\\python.exe -m backend.tools.vauxhall_selftest
 """
 
+import json
 import sys
+import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +31,9 @@ from backend.obd import service as obd_service  # noqa: E402
 from backend.obd.elm327 import ObdError  # noqa: E402
 from backend.profiles.vauxhall import dealer_data  # noqa: E402
 from backend.profiles.vauxhall import gmlan  # noqa: E402
+from backend.profiles.vauxhall import gmlan_control as vx_gmlan_control  # noqa: E402
+from backend.profiles.vauxhall import learn as vx_learn  # noqa: E402
+from backend.profiles.vauxhall import sim_tcm as vx_sim_tcm  # noqa: E402
 from backend.profiles.vauxhall import pids as vx_pids  # noqa: E402
 from backend.profiles.vauxhall import procedures as vx_procedures  # noqa: E402
 from backend.profiles.vauxhall import resets as vx_resets  # noqa: E402
@@ -536,9 +541,13 @@ def main():
     check("Fast Learn names both published temperature windows",
           any("64-76" in c and "75-85" in c for c in fast["cautions"]), str(fast["cautions"]))
     run = vx_resets.perform(None, "real", "vauxhall-trans-adaptive-values-learn", confirm=True)
-    check("Fast Learn refuses to run even when confirmed",
+    check("the reset catalogue still refuses to run Fast Learn, confirmed or not",
           run["ok"] is False and run["runnable"] is False and
-          "DeviceControl" in run["message"], str(run.get("message")))
+          "documented procedure" in run["message"], str(run.get("message")))
+    check("the reset entry points at the runnable path instead of pretending "
+          "there isn't one",
+          "/api/vauxhall/procedure" in run["message"] and
+          "never been used on a car" in run["message"], str(run.get("message")))
     check("an unknown reset id is rejected",
           vx_resets.perform(None, "real", "nope", confirm=True)["ok"] is False)
 
@@ -592,16 +601,27 @@ def main():
     check("the procedure keeps the control frame tied to its own PID set",
           learn["module"]["pidSet"] == "0x05AC7CAC" and
           "cannot be carried across" in learn["module"]["pidSetWarning"])
-    for confirmed in (False, True):
-        run = vx_procedures.execute(ADAPTER, "vauxhall-t76-adaptive-values-learn",
-                                    confirm=confirmed)
-        check(f"the procedure sends nothing with confirm={confirmed}",
-              run["ok"] is False and run["runnable"] is False and
-              run["sent"] == [], str(run.get("message")))
-    check("confirming alone is not enough to unblock it",
-          len(vx_procedures.blocking_reasons(
-              "vauxhall-t76-adaptive-values-learn", confirm=True)) >= 1)
-    check("there is no GMLAN device control transport to send with",
+    run = vx_procedures.execute(ADAPTER, "vauxhall-t76-adaptive-values-learn",
+                                confirm=False)
+    check("the procedure sends nothing without an explicit confirmation",
+          run["ok"] is False and run["sent"] == [] and
+          any("confirmation" in r for r in run["blockedBy"]),
+          str(run.get("message")))
+    check("confirming clears the hard gate and nothing else",
+          vx_procedures.blocking_reasons(
+              "vauxhall-t76-adaptive-values-learn", confirm=True) == [],
+          "the live preconditions are learn.py's job, not a static list's")
+    check("the unverified flag warns rather than blocks, and still warns",
+          vx_procedures.describe(
+              "vauxhall-t76-adaptive-values-learn")["verified"] is False and
+          any("never been run on a car" in w
+              for w in vx_procedures.warnings(
+                  "vauxhall-t76-adaptive-values-learn")))
+    check("the warnings say what an interrupted learn leaves behind",
+          any("cleared and never relearned" in w for w in
+              vx_procedures.warnings("vauxhall-t76-adaptive-values-learn")))
+    check("gmlan.py itself is still read-only -- the write side lives in its "
+          "own module",
           not hasattr(gmlan, "device_control") and
           not hasattr(gmlan, "SVC_DEVICE_CONTROL"))
 
@@ -627,6 +647,329 @@ def main():
           not bad_frame_hits, str(bad_frame_hits))
     check("the safe probe is the null CPID release, not a gear command",
           learn["safeProbe"]["request"] == "AE 00")
+
+    # ------------------------------------------------- the executable learn
+    #
+    # These are the checks that decide whether this is safe to put on Steve's
+    # car. Every one of them runs against the simulated TCM in sim_tcm.py, on
+    # a virtual clock, so the whole set costs milliseconds and can be run as
+    # often as it takes.
+    #
+    # The recurring assertion is the same one every time and it is the only
+    # one that really matters: WHATEVER went wrong, the device control was
+    # released. An aborted learn leaves a gearbox with its adaptive cells
+    # cleared and never rewritten, which is worse than the car that arrived,
+    # so a release that only happens on the happy path is not a release.
+
+    def learn_run(scenario, **kwargs):
+        args = {"mode": "sim", "confirm": True, "temperature_ack": 92,
+                "scenario": scenario}
+        args.update(kwargs)
+        return vx_learn.run(None, **args)
+
+    def released_cleanly(result):
+        """The release frame AND both 0x20s went out, and the module took them."""
+        frames = result.get("sent") or []
+        return (
+            result.get("released") is True
+            and "AE 00 00 00 00 00 00" in frames
+            and frames.count("20") == 2
+        )
+
+    # --- the frames themselves, built rather than quoted ------------------
+    check("the start frame is byte-exact for PID set 0x05AC7CAC",
+          vx_learn.start_frame() == bytes.fromhex("AE30000000" "0400"),
+          vx_learn.start_frame().hex(" ").upper())
+    check("the release frame is the seven-byte Null CPID this car binds",
+          vx_learn.release_frame() == bytes.fromhex("AE00000000" "0000"),
+          vx_learn.release_frame().hex(" ").upper())
+    check("the procedure is bound to the PID set the frame belongs to",
+          vx_learn.PID_SET == "0x05AC7CAC" and
+          vx_learn.TCM_REQUEST_ID == 0x7E2 and
+          vx_learn.TCM_RESPONSE_ID == 0x7EA)
+
+    # The command byte is a property of the PID SET, not of CPID 0x30: the
+    # same reference name encodes Start as 8 elsewhere in the same dealer
+    # deliverable. Prove the value is looked up by feeding the builder a set
+    # that says 8 and watching the frame change rather than stay at 4.
+    other_set = json.loads(json.dumps(
+        dealer_data.device_control("8682_51909_3")))
+    other_set["pidSet"] = "0x0BADSET0"
+    other_set["write"]["states"] = [{"value": 8, "text": "Start"}]
+    other_set["commands"] = [{"value": 8, "text": "Start", "encoded": "0x08",
+                              "request": "AE 30 00 00 00 08 00"}]
+    original_load = dealer_data.load
+    original_control = dealer_data.device_control
+    dealer_data.device_control = lambda ref: (
+        other_set if ref == "8682_51909_3" else original_control(ref))
+    try:
+        alt = vx_gmlan_control.build_control_frame(
+            "8682_51909_3", "Start", "0x0BADSET0")
+        check("the Start byte is read from the PID set, not hard-coded",
+              alt == bytes.fromhex("AE300000000800"), alt.hex(" ").upper())
+        refused = False
+        try:
+            vx_gmlan_control.build_control_frame(
+                "8682_51909_3", "Start", "0x05AC7CAC")
+        except vx_gmlan_control.DeviceControlError:
+            refused = True
+        check("a control from the wrong PID set is refused, not adapted",
+              refused)
+    finally:
+        dealer_data.device_control = original_control
+        dealer_data.load = original_load
+
+    # --- the two things that must never happen ---------------------------
+    sim_car = vx_sim_tcm.SimulatedTcm("complete")
+    transcript = vx_gmlan_control.Transcript("selftest", clock=sim_car.clock)
+    transport = vx_gmlan_control.ControlTransport(
+        sim_car, 0x7E2, "0x05AC7CAC", transcript,
+        sleep=sim_car.sleep, clock=sim_car.clock)
+    for bad_confirm in (False, None, 1, "yes"):
+        raised = False
+        try:
+            transport.transmit_control(vx_learn.start_frame(), confirm=bad_confirm)
+        except vx_gmlan_control.NotConfirmed:
+            raised = True
+        check(f"$AE is refused with confirm={bad_confirm!r}", raised)
+    check("nothing reached the car during those attempts",
+          not any(f.startswith("AE") for f in sim_car.frames), str(sim_car.frames))
+
+    # The retracted probe frame: gear in the LOW nibble, which is an undefined
+    # state on a solenoid driver. Assembled here only to prove it is refused.
+    retracted = bytes([0xAE, 0x30, 0x80 | 0x01, 0, 0, 0, 0])
+    blocked = False
+    try:
+        transport.transmit_control(retracted, confirm=True)
+    except vx_gmlan_control.ForbiddenFrame:
+        blocked = True
+    check("the retracted gear probe frame is refused by the transport", blocked)
+    check("and it is not producible from the dealer data either",
+          retracted not in vx_gmlan_control.known_control_frames("0x05AC7CAC"))
+    invented = bytes([0xAE, 0x30, 0x00, 0x00, 0x00, 0x40, 0x00])
+    blocked = False
+    try:
+        transport.transmit_control(invented, confirm=True)
+    except vx_gmlan_control.ForbiddenFrame:
+        blocked = True
+    check("an invented control frame is refused even when confirmed", blocked)
+    check("still nothing reached the car",
+          not any(f.startswith("AE") for f in sim_car.frames), str(sim_car.frames))
+
+    # --- the happy path ---------------------------------------------------
+    good = learn_run("complete")
+    check("the simulated learn completes and reports the module's own state",
+          good["ok"] is True and good["outcome"] == "complete" and
+          good["status"]["name"] == "Fast Learn Complete", str(good.get("message")))
+    check("the completed run released the control", released_cleanly(good),
+          str(good.get("releaseSteps")))
+    # The preconditions are read before the diagnostic session is even asked
+    # for, so a refusal costs the module nothing at all.
+    check("the whole exchange went out in the recovered order",
+          all(f.startswith("22") for f in
+              good["sent"][:good["sent"].index("10 81")]) and
+          good["sent"].index("10 81")
+          < good["sent"].index("AE 30 00 00 00 04 00")
+          < good["sent"].index("AE 00 00 00 00 00 00")
+          < len(good["sent"]) - 1,
+          str(good["sent"][:6]))
+    check("TesterPresent was interleaved through the routine",
+          good["sent"].count("3E") >= 3 and
+          good["keepAlive"]["unacknowledged"] == 0, str(good.get("keepAlive")))
+    check("a completed run still says it has never been run on a car",
+          good["neverSeenOnACar"] is True and
+          "never been run on a car" in good["message"])
+    check("the operator is told to power the module down afterwards",
+          "power down" in good["message"])
+
+    # --- release on every failure path -----------------------------------
+    for scenario, outcome, why in (
+        ("exception", "failed", "an unexpected exception mid-routine"),
+        ("keepalive-loss", "keep-alive-lost", "keep-alive loss"),
+        ("module-abort", "aborted-by-module", "the module aborting the test"),
+        ("nrc33", "refused-by-module", "NRC 0x33"),
+        ("nrc22", "refused-by-module", "NRC 0x22"),
+        ("nrc31", "refused-by-module", "NRC 0x31"),
+    ):
+        result = learn_run(scenario)
+        check(f"the release still runs after {why}",
+              released_cleanly(result),
+              f"outcome={result.get('outcome')} released={result.get('released')}")
+        check(f"{why} is reported as '{outcome}', not as a crash",
+              result["outcome"] == outcome and result["ok"] is False,
+              str(result.get("outcome")))
+
+    # Operator abort: the abort flag is process-wide so a second request can
+    # stop a run that is already going.
+    ticks = {"n": 0}
+
+    def abort_on_third():
+        ticks["n"] += 1
+        return ticks["n"] >= 3
+
+    aborted = learn_run("complete", abort_check=abort_on_third)
+    check("the release still runs after an operator abort",
+          released_cleanly(aborted), str(aborted.get("released")))
+    check("an operator abort says the learn must be run again to completion",
+          aborted["outcome"] == "aborted-by-operator" and
+          "run the learn again to completion" in aborted["message"],
+          str(aborted.get("message")))
+    vx_learn.request_abort()
+    check("the process-wide abort flag is what a second request would set",
+          vx_learn.abort_requested() is True)
+    vx_learn.clear_abort()
+
+    # --- the NRCs get plain words, not just a number ---------------------
+    nrc33 = learn_run("nrc33")
+    check("NRC 0x33 is named as a security refusal in plain words",
+          nrc33["nrc"] == "33" and "SecurityAccess" in nrc33["message"] and
+          "Nothing was changed" in nrc33["message"], str(nrc33.get("message")))
+    nrc22 = learn_run("nrc22")
+    check("NRC 0x22 explains it is the module's own interlocks",
+          nrc22["nrc"] == "22" and "22 28 23" in nrc22["message"],
+          str(nrc22.get("message")))
+    nrc31 = learn_run("nrc31")
+    check("NRC 0x31 is reported as evidence against the static decode",
+          nrc31["nrc"] == "31" and "static decode" in nrc31["message"],
+          str(nrc31.get("message")))
+
+    # --- a release that itself fails is not reported as success ----------
+    stuck = learn_run("release-refused")
+    check("a failed release is reported loudly and the run is not ok",
+          stuck["ok"] is False and stuck["released"] is False and
+          "RELEASE DID NOT COMPLETE" in stuck["message"].upper(),
+          str(stuck.get("message")))
+
+    # --- preconditions refuse before anything is sent --------------------
+    for scenario, expect in (
+        ("cold", "Fluid temperature"),
+        ("not-in-park", "Internal Mode Switch"),
+        ("engine-off", "Engine Speed"),
+        ("not-ready", "Brake Must be Applied"),
+    ):
+        blocked_run = learn_run(scenario, temperature_ack=None)
+        check(f"a '{scenario}' car is refused having sent only 0x22 reads",
+              blocked_run["outcome"] == "blocked" and
+              all(f.startswith("22") for f in blocked_run["sent"]),
+              str(blocked_run.get("sent")))
+        check(f"and the refusal names what is wrong ({scenario})",
+              any(expect in reason for reason in blocked_run["blockedBy"]),
+              str(blocked_run.get("blockedBy")))
+        check(f"nothing is claimed to have been released for '{scenario}'",
+              blocked_run["released"] is None and
+              blocked_run["releaseSkipped"] is True)
+
+    cold = learn_run("cold", temperature_ack=48)
+    check("a cold car is refused even with the temperature acknowledged",
+          cold["outcome"] == "blocked" and
+          any("84 °C" in r for r in cold["blockedBy"]), str(cold["blockedBy"]))
+    check("the refusal names the alternative reading rather than hiding it",
+          any("44 °C" in r for r in cold["blockedBy"]) or
+          "44" in (cold["temperature"] or {}).get("ambiguity", ""),
+          str(cold["blockedBy"]))
+
+    # --- the temperature acknowledgement is a check, not a formality -----
+    no_ack = learn_run("complete", temperature_ack=None)
+    check("a run with no acknowledged temperature sends no control",
+          no_ack["outcome"] == "blocked" and
+          not any(f.startswith("AE") for f in no_ack["sent"]))
+    wrong_ack = learn_run("complete", temperature_ack=40)
+    check("an acknowledgement that disagrees with the live value is refused",
+          wrong_ack["outcome"] == "blocked" and
+          any("does not match" in r for r in wrong_ack["blockedBy"]),
+          str(wrong_ack.get("blockedBy")))
+
+    unconfirmed = learn_run("complete", confirm=False)
+    check("a whole run with confirm=False reaches the control and stops there",
+          unconfirmed["outcome"] == "not-confirmed" and
+          not any(f.startswith("AE") for f in unconfirmed["sent"]),
+          str(unconfirmed.get("sent")))
+
+    # --- the 500 ms is a named constant with its inference recorded ------
+    check("the release delay is a named constant, not a magic sleep",
+          vx_gmlan_control.RELEASE_DELAY_MS == 500 and
+          "inference" in vx_gmlan_control.RELEASE_DELAY_PLACEMENT)
+    check("and the transcript records that its placement is inferred",
+          any("inference" in e["note"] for e in good["transcript"]))
+
+    # --- the transcript -------------------------------------------------
+    check("every frame is in the transcript with a timestamp and a direction",
+          all(("t" in e and "dir" in e) for e in good["transcript"]) and
+          any(e["dir"] == "->" for e in good["transcript"]) and
+          any(e["dir"] == "<-" for e in good["transcript"]))
+    check("the transcript is monotonic in time",
+          all(good["transcript"][i]["t"] <= good["transcript"][i + 1]["t"]
+              for i in range(len(good["transcript"]) - 1)))
+    check("the transcript header says it has never been run on a car",
+          "NEVER RUN ON A CAR BEFORE" in good["worksheet"])
+    check("a simulated run is never written to captures/",
+          "savedTo" not in good and good["simulated"] is True)
+    check("a simulated run still returns its whole transcript to be watched",
+          len(good["transcript"]) > 20 and good["worksheet"].count("\n") > 20)
+
+    # A real run's transcript goes to captures/vauxhall/ -- that is the whole
+    # reason for having one, and it has to happen for a FAILED run too, since
+    # those are the ones worth reading afterwards. Driven here against a
+    # temporary directory so the check costs nothing and leaves nothing behind.
+    with tempfile.TemporaryDirectory() as tmp:
+        real_captures = vx_learn.CAPTURES_DIR
+        vx_learn.CAPTURES_DIR = Path(tmp) / "vauxhall"
+        try:
+            # The simulated TCM again, but with the sequence told this is a
+            # real run -- which is the only difference persistence turns on.
+            # The scenario is a keep-alive loss, because the transcripts worth
+            # having on disk are the ones from runs that went wrong.
+            car = vx_sim_tcm.SimulatedTcm("keepalive-loss")
+            as_real = vx_learn._sequence(
+                car, True, 92, lambda: False, simulated=False,
+                sleep=car.sleep, clock=car.clock)
+            written = list(Path(tmp).rglob("*.txt"))
+            check("a failed real run writes its transcript to captures/vauxhall/",
+                  len(written) == 1 and
+                  as_real.get("savedTo") == str(written[0]) and
+                  as_real["outcome"] == "keep-alive-lost",
+                  str(written))
+            check("the written transcript carries the frames and the timings",
+                  "AE 30 00 00 00 04 00" in written[0].read_text(encoding="utf-8")
+                  and "AE 00 00 00 00 00 00" in
+                  written[0].read_text(encoding="utf-8"))
+            before = len(written)
+            vx_learn.run(None, mode="sim", confirm=True, temperature_ack=92,
+                         scenario="keepalive-loss")
+            check("and a simulated run of the same scenario writes nothing",
+                  len(list(Path(tmp).rglob("*.txt"))) == before)
+        finally:
+            vx_learn.CAPTURES_DIR = real_captures
+
+    # --- the preflight sends nothing but 0x22 ---------------------------
+    pre = vx_learn.preflight(None, mode="sim")
+    check("the preflight is ready on a warm car in Park",
+          pre["ok"] is True and pre["readyToStart"] is True, str(pre["message"]))
+    check("the preflight sends only service 0x22",
+          all(e["frame"].startswith("22")
+              for e in pre["transcript"] if e["dir"] == "->"),
+          str([e["frame"] for e in pre["transcript"] if e["dir"] == "->"]))
+    check("the preflight prints the number the operator must acknowledge",
+          pre["temperature"]["celsius"] == 92.0 and
+          "92" in pre["acknowledgementRequired"])
+    cold_pre = vx_learn.preflight(None, mode="sim", scenario="cold")
+    check("the preflight refuses a cold car and says why",
+          cold_pre["readyToStart"] is False and cold_pre["blockedBy"],
+          str(cold_pre.get("blockedBy")))
+
+    # --- the simulator covers every path the sequence has ---------------
+    covered = {s["id"] for s in vx_sim_tcm.describe_scenarios()}
+    check("every simulation scenario is described for the operator",
+          covered == set(vx_sim_tcm.SimulatedTcm.SCENARIOS) and
+          all(s["what"] for s in vx_sim_tcm.describe_scenarios()))
+    for scenario in vx_sim_tcm.SimulatedTcm.SCENARIOS:
+        result = learn_run(scenario, temperature_ack=48
+                           if scenario == "cold" else 92)
+        ok = (result.get("outcome") in
+              ("complete", "blocked", "refused-by-module",
+               "aborted-by-module", "keep-alive-lost", "failed"))
+        check(f"scenario '{scenario}' runs end to end without crashing", ok,
+              str(result.get("outcome")))
 
     # -------------------------------------------------- software versions
     sw_session = SoftwareSession()
@@ -757,6 +1100,50 @@ def main():
           client.post("/api/vauxhall/clear", json={"mode": "sim"}).status_code == 400)
     r = client.get("/api/vauxhall/resets").json()
     check("API serves the reset catalogue", r.get("brand") == "vauxhall" and r.get("resets"))
+
+    # The runnable-procedure routes. The gate on the POST is the important
+    # one: an unconfirmed request must be a 400 before the profile is reached,
+    # not something the profile has to remember to refuse.
+    r = client.get("/api/vauxhall/procedures").json()
+    proc = (r.get("procedures") or [{}])[0]
+    check("API serves the runnable procedure catalogue",
+          proc.get("id") == "vauxhall-t76-adaptive-values-learn" and
+          proc.get("verified") is False and
+          "never been run on a car" in (proc.get("warning") or ""),
+          str(r)[:200])
+    check("the catalogue lists the simulation scenarios and the confirmations",
+          len(proc.get("simulationScenarios") or []) >= 10 and
+          any("temperatureAck" in c for c in proc.get("operatorConfirmations", [])))
+    r = client.get("/api/vauxhall/procedure-preflight?mode=sim").json()
+    check("API preflight is read-only and reports readiness",
+          r.get("ok") is True and r.get("readyToStart") is True, str(r.get("message")))
+    check("API refuses an unconfirmed procedure run",
+          client.post("/api/vauxhall/procedure", json={
+              "procedure_id": "vauxhall-t76-adaptive-values-learn",
+              "mode": "sim"}).status_code == 400)
+    check("API refuses a procedure run with no id",
+          client.post("/api/vauxhall/procedure", json={
+              "mode": "sim", "confirm": True}).status_code == 400)
+    r = client.post("/api/vauxhall/procedure", json={
+        "procedure_id": "vauxhall-t76-adaptive-values-learn",
+        "mode": "sim", "confirm": True, "temperature_ack": 92}).json()
+    check("API runs the simulated learn end to end",
+          r.get("ok") is True and r.get("released") is True and
+          "AE 30 00 00 00 04 00" in (r.get("sent") or []), str(r.get("message"))[:200])
+    check("the API result carries the transcript and the never-on-a-car flag",
+          r.get("neverSeenOnACar") is True and len(r.get("transcript") or []) > 20)
+    r = client.post("/api/vauxhall/procedure", json={
+        "procedure_id": "vauxhall-t76-adaptive-values-learn",
+        "mode": "sim", "confirm": True, "temperature_ack": 92,
+        "scenario": "nrc33"}).json()
+    check("API reports NRC 0x33 as an outcome rather than an error",
+          r.get("outcome") == "refused-by-module" and r.get("nrc") == "33" and
+          r.get("released") is True, str(r.get("message"))[:160])
+    check("API exposes an abort for a run in progress",
+          client.post("/api/vauxhall/procedure/abort").json().get("ok") is True)
+    vx_learn.clear_abort()
+    check("a brand with no procedures.py 404s the procedure routes",
+          client.get("/api/mazda/procedures").status_code == 404)
     profs = client.get("/api/profiles").json().get("profiles", [])
     vx = next((p for p in profs if p.get("id") == "vauxhall"), {})
     check("API profile carries features + panel",
@@ -769,7 +1156,21 @@ def main():
           all(hasattr(mcp_server, n) for n in
               ("vauxhall_scan_modules", "vauxhall_discover_modules",
                "vauxhall_live_values", "vauxhall_clear_module",
-               "vauxhall_software_versions", "vauxhall_gearbox_analyze")))
+               "vauxhall_software_versions", "vauxhall_gearbox_analyze",
+               "vauxhall_adaptive_learn_preflight", "vauxhall_adaptive_learn")))
+    check("the MCP learn tool refuses without confirm",
+          "error" in mcp_server.vauxhall_adaptive_learn(mode="sim"))
+    mcp_run = mcp_server.vauxhall_adaptive_learn(
+        confirm=True, temperature_ack=92, mode="sim")
+    check("the MCP learn tool runs the simulation and releases",
+          mcp_run.get("ok") is True and mcp_run.get("released") is True,
+          str(mcp_run.get("message"))[:160])
+    check("the MCP tool docstring warns it has never been run on a car",
+          "NEVER BEEN RUN ON A CAR" in
+          (mcp_server.vauxhall_adaptive_learn.__doc__ or "").upper())
+    check("the MCP preflight tool is read-only and works with no adapter",
+          mcp_server.vauxhall_adaptive_learn_preflight(
+              mode="sim").get("readyToStart") is True)
 
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     return 1 if FAIL else 0

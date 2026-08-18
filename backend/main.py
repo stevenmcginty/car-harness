@@ -836,6 +836,118 @@ async def run_reset(brand: str, request: Request) -> dict:
     )
 
 
+@app.get("/api/{brand}/procedures")
+def get_procedures(brand: str) -> dict:
+    """The brand's runnable manufacturer routines (no car needed to browse).
+
+    Different from /resets: a reset entry is a walkthrough the harness prints,
+    a procedure is an exchange the harness can put on the bus itself. The
+    catalogue carries the warning text, the operator confirmations each one
+    demands and the simulation scenarios it can be rehearsed against.
+    """
+    module = _brand_capability_or_404(brand, "procedures")
+    if not hasattr(module, "list_procedures"):
+        raise HTTPException(
+            status_code=404, detail=f"'{brand}' publishes no runnable procedures."
+        )
+    return module.list_procedures()
+
+
+@app.get("/api/{brand}/procedure-preflight")
+def procedure_preflight(
+    brand: str,
+    procedure: str | None = None,
+    adapter: str | None = None,
+    mode: str = "real",
+    scenario: str = "complete",
+) -> dict:
+    """Read everything one procedure's gate depends on, and send nothing.
+
+    Service 0x22 only. This is the step before deciding: it reports the live
+    values the preconditions are judged on, the module's own readiness, and
+    what is still in the way. Read-only, so it is a GET like every other read.
+    """
+    module = _brand_capability_or_404(brand, "procedures")
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    catalogue = module.list_procedures().get("procedures", [])
+    procedure = procedure or (catalogue[0]["id"] if catalogue else "")
+    instance = _obd_adapter_or_400(adapter, mode) if mode == "real" else None
+    return module.preflight(instance, procedure, mode, scenario)
+
+
+@app.post("/api/{brand}/procedure")
+async def run_procedure(brand: str, request: Request) -> dict:
+    """Run one manufacturer routine. CHANGES THE CAR.
+
+    Body: {"procedure_id": "...", "adapter": "...", "mode": "real"|"sim",
+    "confirm": true, "temperature_ack": 92, "scenario": "complete"}.
+
+    ``confirm`` is required and is not sticky -- it is passed through to the
+    frame that changes the car rather than stored anywhere. Individual
+    procedures may demand more (the Vauxhall adaptive learn also wants the live
+    fluid temperature acknowledged); the profile enforces those and says what
+    is missing. ``mode: "sim"`` runs the whole exchange against a simulated
+    module with no car attached, which is how the failure paths are meant to be
+    watched before anything is plugged in.
+    """
+    module = _brand_capability_or_404(brand, "procedures")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail='Send JSON {"procedure_id": "...", "mode": "real"|"sim", '
+                   '"confirm": true, "temperature_ack": 92}.',
+        )
+    body = body or {}
+    procedure_id = body.get("procedure_id")
+    if not procedure_id:
+        raise HTTPException(
+            status_code=400, detail='JSON body must include a "procedure_id".'
+        )
+    if body.get("confirm") is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="This routine changes the car. Send confirm: true.",
+        )
+    mode = body.get("mode") or "real"
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    instance = _obd_adapter_or_400(body.get("adapter"), mode) if mode == "real" else None
+    return await run_in_threadpool(
+        module.execute, instance, procedure_id, True, mode,
+        body.get("temperature_ack"), body.get("scenario") or "complete",
+    )
+
+
+@app.post("/api/{brand}/procedure/abort")
+def abort_procedure(brand: str) -> dict:
+    """Ask a procedure that is running in this process to stop and release.
+
+    A run takes minutes and the person standing next to the car has to be able
+    to stop it. Aborting is not the same as cancelling: the routine has already
+    cleared the gearbox's adaptive cells, so the harness abandons the run,
+    releases the device control and says plainly that the learn has to be run
+    again to completion.
+    """
+    module = _brand_capability_or_404(brand, "procedures")
+    if not hasattr(module, "request_abort"):
+        raise HTTPException(
+            status_code=404, detail=f"'{brand}' procedures cannot be aborted."
+        )
+    module.request_abort()
+    return {
+        "ok": True,
+        "message": (
+            "Abort requested. The run will stop at its next poll and the "
+            "device control will be released. The adaptive cells were cleared "
+            "when the routine started and have NOT been relearned -- run the "
+            "learn again to completion."
+        ),
+    }
+
+
 @app.get("/api/{brand}/service-history")
 def get_service_history(brand: str) -> dict:
     """The service-history catalogue: items, statuses, head units, limits.

@@ -210,6 +210,14 @@
                profile.json. Pressing one fills the fields above; it does not
                start the log, because the length is worth a second look. -->
           <div id="brand-log-presets" class="jobs-form" hidden></div>
+          <!-- A runnable manufacturer routine. In Simulate mode the whole
+               exchange runs against a simulated module, and the scenario
+               picker chooses which outcome to rehearse -- including every
+               failure path, which is the point of having it. -->
+          <label id="brand-procedure-fields" hidden>
+            <span class="jobs-label" id="brand-procedure-scenario-label">Simulation scenario</span>
+            <select id="brand-procedure-scenario" class="jobs-input" aria-label="Simulation scenario"></select>
+          </label>
         </div>
         <p id="brand-log-preset-note" class="status-message" hidden></p>
         <p id="brand-extras-message" class="status-message"></p>
@@ -217,6 +225,10 @@
         <div id="brand-extras-actions" class="jobs-form" hidden>
           <button id="brand-extras-copy" class="btn btn-secondary btn-small" type="button" hidden>Copy detail</button>
           <button id="brand-extras-download" class="btn btn-secondary btn-small" type="button" hidden>Download CSV</button>
+          <!-- A routine that drives clutches runs for minutes. The person
+               beside the car has to be able to stop it, and stopping it still
+               releases the device control. -->
+          <button id="brand-procedure-abort" class="btn btn-danger btn-small" type="button" hidden>Stop the routine</button>
         </div>
         <!-- Some reads produce a plain-text block meant to be copied out and
              compared against something else (the Vauxhall software-version

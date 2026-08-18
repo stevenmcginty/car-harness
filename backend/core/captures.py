@@ -27,6 +27,14 @@ CAPTURES_DIR = registry.PROJECT_ROOT / "captures"
 
 # brand -> the kinds of run worth keeping. Read-only results only: a fault
 # clear or a reset leaves no dataset value behind it.
+#
+# The Vauxhall adaptive-values learn is the one write whose run IS the dataset
+# value -- a frame-by-frame transcript of an exchange nobody has ever recorded.
+# It is deliberately not routed through here: it writes its own timestamped
+# text transcript from backend/profiles/vauxhall/learn.py, because what wants
+# keeping is the wire log rather than the result dictionary, and because it
+# must be written even when the run failed halfway. Rule 1 above still holds
+# there and is restated in that file: simulated runs are never saved.
 KINDS: dict[str, tuple[str, ...]] = {
     "jlr": ("scan", "discover", "sweep", "adblue-health", "drive-log"),
 }

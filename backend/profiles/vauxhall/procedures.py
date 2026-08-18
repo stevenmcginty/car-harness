@@ -1,4 +1,4 @@
-"""Astra K T76 gearbox procedures, as data. Nothing here runs.
+"""Astra K T76 gearbox procedures: the definition, and the gates on running it.
 
 WHAT THIS FILE IS FOR
 ---------------------
@@ -10,25 +10,40 @@ control packet were recovered by static analysis of the GDS2 dealer data (see
 dealer_data.py and ``data/gds2_t76_tcm.json``), and every field is traceable to
 a file offset.
 
-Answered is not the same as proven. What follows is therefore a *description*
-of the exchange, in a shape the harness can display now and could execute
-later, sitting behind three separate gates. It is not an implementation.
+Answered is not the same as proven, and that distinction is now the whole
+argument of this file. What follows is the *description* of the exchange -- the
+frames, the preconditions, the state table, the provenance of each field --
+which is the thing every other surface displays. The execution lives in
+learn.py and gmlan_control.py, and this module's job is to say what it is
+allowed to do.
 
-THE THREE GATES, AND WHY EACH ONE IS THERE
-------------------------------------------
-1. ``verified`` is False. The byte reconstruction has been checked
-   independently and it holds as a static decode, but no part of it has ever
-   been put on a car. Until it has, the definition refuses on its own flag.
-2. ``confirm`` must be passed explicitly. No function in this module emits
-   anything on a default call, and there is no default that means yes.
-3. There is no GMLAN device-control transport in this repository. gmlan.py
-   implements the read side only and says so. So even past gates 1 and 2 the
-   execute path has nothing to send with, and reports that rather than
-   improvising one.
+WHAT CHANGED, AND WHAT DELIBERATELY DID NOT
+-------------------------------------------
+This module used to hold three gates. One of them has gone, one has been
+downgraded on purpose, and one is untouched.
 
-Gate 3 is the load-bearing one and it is deliberate. Adding a $AE writer is a
-decision that should be taken on purpose, with a live car, a charger and
-somebody watching the gearbox -- not as a side effect of a data import.
+1. **Gone: "there is no transport."** There is one now -- gmlan_control.py
+   implements GMW3110 DeviceControl, and learn.py runs the sequence. That gate
+   was always meant to be removed deliberately rather than eroded, and this is
+   the deliberate removal: written on purpose, with the release owned by a
+   ``finally``, with a simulated module to rehearse against, and with every
+   failure path tested before anything was plugged in.
+
+2. **Downgraded: ``verified`` is still False, and now it warns rather than
+   refuses.** The byte reconstruction has been checked independently and holds
+   as a static decode. No part of it has ever been put on a car. Keeping the
+   flag as an absolute refusal would mean it could never be cleared, because
+   the only thing that can clear it is a run. So it is now a warning that every
+   operator-facing surface repeats, and ``execute`` returns it in the result of
+   every run. It flips to True when a real car has answered, and not before.
+
+3. **Untouched: ``confirm`` must be passed explicitly.** No function here or in
+   learn.py emits anything on a default call, there is no stored flag that
+   means yes, and the confirmation reaches the $AE transmit as an argument at
+   the call site rather than as session state. A second per-run confirmation
+   was added on top: the operator has to acknowledge the live fluid temperature
+   they can see, because the dealer data's threshold has two defensible
+   readings and the harness will not pick one behind their back.
 
 WHAT THE VERIFICATION PASS SETTLED, AND WHAT IT DID NOT
 -------------------------------------------------------
@@ -51,6 +66,13 @@ Not settled, and these are the ones that decide whether a live attempt works:
 * **Where the 500 ms delay sits.** The number is read from the data; whether
   it is applied before or after the trailing ``20`` was not established.
 
+None of those three has been settled by building the executable path, and it
+would be dishonest to imply otherwise. What the implementation does is refuse
+to be surprised by them: NRC 0x33 is an expected outcome reported in plain
+words rather than a crash, the keep-alive interval is measured and a late one
+aborts the run (which still releases), and the 500 ms sits in a named constant
+next to a comment saying its placement is an inference.
+
 THE PRECONDITIONS ARE DATA TOO
 ------------------------------
 GDS2 gates this test on a named condition set, ``Park/Neutral & Transmission
@@ -69,7 +91,7 @@ thing to poll rather than a timer.
 
 from typing import Optional
 
-from . import dealer_data
+from . import dealer_data, learn, sim_tcm
 
 # The parameter that reports what the routine is doing. This is the single most
 # useful thing recovered, because it is a plain read: it can be polled on any
@@ -84,8 +106,17 @@ STATUS_PARAMETER = {
     "states": dealer_data.states_for("8682_51909"),
     # The module will not start, or will abort, on anything outside these.
     "readyStates": (0, 1),
-    "runningStates": (11, 12, 14),
-    "completeStates": (1, 13),
+    "runningStates": (11, 12, 13, 14),
+    # Only state 1 means the routine finished. An earlier version of this list
+    # also counted 13, "Drive Calibration Test Complete", as finished. That was
+    # the wrong side to be wrong on: nothing in the data says the drive
+    # calibration is the LAST thing the routine does, the extraction report
+    # reads the exit condition as "poll until status = 1", and releasing the
+    # control at 13 while a reverse calibration was still to come would produce
+    # exactly the half-finished learn this whole procedure is careful about.
+    # So 13 is a progress state here and learn.py keeps polling through it.
+    "completeStates": (1,),
+    "driveCalibrationComplete": (13,),
     "abortStates": (15, 16),
 }
 
@@ -351,56 +382,148 @@ def describe(procedure_id: str) -> Optional[dict]:
     return PROCEDURES.get(procedure_id)
 
 
-def blocking_reasons(procedure_id: str, confirm: bool = False) -> list:
-    """Every reason this procedure will not run, in the order they are hit.
+def list_procedures() -> dict:
+    """The catalogue, for a surface that wants to browse without a car."""
+    return {
+        "brand": "vauxhall",
+        "procedures": [
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "verified": p.get("verified", False),
+                "module": p.get("module"),
+                "warning": UNVERIFIED_WARNING,
+                "simulationScenarios": sim_tcm.describe_scenarios(),
+                "preconditions": p.get("preconditions"),
+                "sequence": p.get("sequence"),
+                "afterwards": p.get("afterwards"),
+                "operatorConfirmations": OPERATOR_CONFIRMATIONS,
+            }
+            for p in PROCEDURES.values()
+        ],
+    }
 
-    Returned rather than raised so a caller can show the operator the whole
-    list at once instead of one obstacle at a time.
+
+UNVERIFIED_WARNING = (
+    "This exchange has never been run on a car. The frames are a static decode "
+    "of the GDS2 dealer database -- independently re-derived from raw file "
+    "offsets and reproduced byte for byte across five separately built "
+    "deliverables -- and that is the strongest evidence a static decode can "
+    "carry, but it is not the same kind of evidence as a car. Whether the "
+    "module demands SecurityAccess, and whether an ELM327 over Bluetooth can "
+    "hold the channel for the length of the routine, are both still open."
+)
+
+OPERATOR_CONFIRMATIONS = [
+    "confirm: true -- nothing sends a device control on a default call.",
+    "temperatureAck -- the live fluid temperature in °C, as read on screen. "
+    "The dealer condition's threshold has two defensible readings (84 °C "
+    "converted, 44 °C raw); the harness gates on the conservative one and asks "
+    "you to look at the number rather than picking it for you.",
+]
+
+
+def blocking_reasons(procedure_id: str, confirm: bool = False) -> list:
+    """Every HARD reason this procedure will not run.
+
+    Hard means: nothing past this list is checked, and no car is contacted.
+    The live preconditions -- fluid temperature, selector, engine speed, the
+    module's own 17-state readiness -- are deliberately NOT here, because they
+    can only be answered by reading the car, and reading them is learn.py's
+    first act. Returned rather than raised so a caller can show the operator
+    the whole list at once instead of one obstacle at a time.
     """
     proc = PROCEDURES.get(procedure_id)
     if proc is None:
         return [f"There is no procedure with id '{procedure_id}'."]
     reasons = []
-    if not proc.get("verified"):
-        reasons.append(
-            "The byte reconstruction is marked unverified. It is a confirmed "
-            "static decode of the dealer data, but no part of it has been put "
-            "on a car, and whether the module demands SecurityAccess is still "
-            "open."
-        )
     if not confirm:
         reasons.append(
             "No explicit confirmation was given. Nothing in this module sends "
             "anything on a default call."
         )
-    reasons.append(
-        "There is no GMLAN DeviceControl transport in this harness. gmlan.py "
-        "implements the read side only. Writing one is a deliberate decision "
-        "to be taken with a car, a charger and somebody watching the gearbox "
-        "-- not a side effect of importing dealer data."
-    )
     return reasons
 
 
-def execute(adapter: Optional[dict], procedure_id: str,
-            confirm: bool = False) -> dict:
-    """Refuse, and say exactly why.
+def warnings(procedure_id: str) -> list:
+    """What the operator must be shown before they confirm.
 
-    This is the only entry point that could ever send a device control, and it
-    currently cannot. It exists so that the refusal is a single auditable place
-    rather than an absence, and so that adding the transport later means
-    satisfying gates that are already written down.
+    Separate from blocking_reasons on purpose. A warning that blocks can never
+    be cleared by the only thing that could clear it, and a block that is only
+    a warning is not a block; conflating the two is how a safety gate quietly
+    becomes a dialog somebody clicks through.
+    """
+    proc = PROCEDURES.get(procedure_id)
+    if proc is None:
+        return []
+    out = []
+    if not proc.get("verified"):
+        out.append(UNVERIFIED_WARNING)
+    out.extend(proc.get("verification", {}).get("openQuestions", []))
+    out.append(
+        "If this routine starts and does not finish, the gearbox is left with "
+        "its adaptive cells cleared and never relearned -- worse than before. "
+        "The harness releases the control on every failure path, but an "
+        "interrupted learn still has to be run again to completion."
+    )
+    return out
+
+
+def execute(adapter: Optional[dict], procedure_id: str, confirm: bool = False,
+            mode: str = "real", temperature_ack=None,
+            scenario: str = "complete") -> dict:
+    """Run one procedure, or say exactly why it was not run.
+
+    The single auditable place a device control can be sent from. It checks the
+    hard gates itself, then hands over to learn.py, which reads the live
+    preconditions before it sends anything and owns the release on every path
+    out.
+
+    ``mode="sim"`` runs the whole exchange against the simulated TCM with no
+    car attached -- including each failure path, chosen with ``scenario``.
     """
     proc = PROCEDURES.get(procedure_id)
     reasons = blocking_reasons(procedure_id, confirm)
-    return {
-        "ok": False,
-        "runnable": False,
-        "sent": [],
-        "procedure": proc,
-        "blockedBy": reasons,
-        "message": (
-            f"'{proc['name']}' was not run. " + " ".join(reasons)
-            if proc else reasons[0]
-        ),
-    }
+    if proc is None or reasons:
+        return {
+            "ok": False,
+            "runnable": proc is not None,
+            "simulated": mode == "sim",
+            "sent": [],
+            "procedure": proc,
+            "blockedBy": reasons,
+            "warnings": warnings(procedure_id),
+            "message": (
+                f"'{proc['name']}' was not run. " + " ".join(reasons)
+                if proc else reasons[0]
+            ),
+        }
+
+    result = learn.run(
+        adapter, mode=mode, confirm=confirm, temperature_ack=temperature_ack,
+        scenario=scenario,
+    )
+    result["procedure"] = proc
+    result["warnings"] = warnings(procedure_id)
+    return result
+
+
+def request_abort() -> dict:
+    """Ask a run in progress to stop and release. See learn.py for why an
+    abort still releases -- and why an aborted learn is not a harmless
+    cancellation."""
+    learn.request_abort()
+    return {"ok": True}
+
+
+def preflight(adapter: Optional[dict], procedure_id: str, mode: str = "real",
+              scenario: str = "complete") -> dict:
+    """Read the preconditions and send nothing. The step before deciding."""
+    proc = PROCEDURES.get(procedure_id)
+    if proc is None:
+        return {"ok": False, "message": f"There is no procedure with id "
+                                        f"'{procedure_id}'."}
+    result = learn.preflight(adapter, mode=mode, scenario=scenario)
+    result["procedure"] = proc
+    result["warnings"] = warnings(procedure_id)
+    return result
