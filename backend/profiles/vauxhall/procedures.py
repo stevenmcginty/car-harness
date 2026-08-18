@@ -164,11 +164,23 @@ ADAPTIVE_VALUES_LEARN = {
             "object 0x0691F100; the comparisons are at 0x070DC1D4 onward."
         ),
         "note": (
-            "The comparison equations operate on the CONVERTED value, not the "
-            "raw byte. That is settled by the sibling condition that tests "
-            "X(0)=2 against a parameter whose conversion only ever outputs "
-            "0, 1 or 2, and corroborated by the coolant checks, whose "
-            "thresholds are sane as °C and nonsense as raw counts."
+            "The comparison equations are read as operating on the CONVERTED "
+            "value rather than the raw byte. Two things point that way: a "
+            "sibling condition tests X(0)=2 against a parameter whose "
+            "conversion only ever outputs 0, 1 or 2, which can only be the "
+            "converted output; and the engine-coolant conditions use 37 and "
+            "15, which are sane as °C and nonsense as raw counts under the "
+            "same -40 offset. This is an argued reading of the data, not a "
+            "line found in the runtime."
+        ),
+        "ifThatReadingIsWrong": (
+            "The fluid threshold would be a raw count instead, i.e. 44 °C "
+            "rather than 84 °C. That is the one number here worth being "
+            "careful about, because somebody could time a fast-learn attempt "
+            "by it. 84 °C is also the figure consistent with the module's own "
+            "86 °C classification boundary and with every published workshop "
+            "window, and 44 °C is consistent with none of them, which is the "
+            "third reason for preferring it."
         ),
         "checks": [
             _precondition(
