@@ -33,11 +33,26 @@ Two tiers, both read-only:
     answers on any reachable car, gathered here next to the gearbox values so
     a flare can be logged against rpm and road speed in one place.
 
-GENUINE GAP (research §4): nothing public exposes the TCM's clutch adaptive
-cells, line pressure, individual clutch slip or TCC slip. GM keeps those in the
-GDS2 parameter list, not in any open database. No DID is guessed for them --
-what a dealer reads on GDS2 to judge adapt health is simply not available at
-this port, and the profile says so rather than showing a plausible number.
+THE GAP THAT USED TO BE HERE
+---------------------------
+This header said that nothing public exposed the TCM's clutch adaptive cells,
+line pressure or TCC slip, that GM kept them in the GDS2 parameter list rather
+than any open database, and that the profile would rather show nothing than a
+plausible number. The last part still stands and always will. The first part
+does not: the GDS2 parameter list for this exact module has since been
+extracted (see dealer_data.py), and it names all of them.
+
+What it also showed is why sweeping for them failed. The thirteen `Steady
+State TAP` adapt cells are not service 0x22 parameters at all -- they are one
+GMLAN ReadDataByIdentifier block at identifier 0x50, one byte per cell. No
+amount of walking the 0x22 space was ever going to find them. `Calculated Line
+Pressure` (0x2862) and `TCC Slip Speed` (0x1991) are ordinary 0x22 reads that
+simply sat outside the range that had been swept.
+
+None of the three has yet answered on this car. They are read by
+tcm.read_adaptive_cells and tcm.SIGNALS respectively, graded `inferred` with
+source `dealer-data`, and this live pass still shows nothing for them -- a name
+out of a dealer file is provenance, not a measurement.
 """
 
 from datetime import datetime, timezone
@@ -443,10 +458,14 @@ def live(adapter: Optional[dict], mode: str = "real") -> dict:
             "ok": True, "simulated": False, "readings": readings,
             "message": (
                 headline
-                + f"{len(readings)} value(s) total. Clutch adapt cells, line pressure and "
-                "clutch slip are GDS2-only -- no public DID exposes them, so nothing is "
-                "shown for them rather than a guess. Read-only pass; nothing was changed "
-                "on the car."
+                + f"{len(readings)} value(s) total. Clutch adapt cells, line pressure "
+                "and converter slip are not shown here, but they are no longer "
+                "GDS2-only: the GDS2 data set names all three, and the adapt cells "
+                "turned out to be a GMLAN 0x1A block rather than the service 0x22 "
+                "parameters this pass reads. See tcm.read_adaptive_cells. Nothing is "
+                "shown for them here because nothing has yet read them off this car, "
+                "and a dealer-file name is not a measurement. Read-only pass; nothing "
+                "was changed on the car."
             ),
             "timestamp": _now(),
         }

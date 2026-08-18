@@ -3,8 +3,42 @@
 This is the ScanMyOpelCAN / GDS2 "Automatic Transmission" surface that a
 V-Peak can actually run: identify the TCM, read its calibration, read its
 faults with GM (not SAE-generic) names, read the live block, and turn that
-into a diagnosis. It does not flash and it does not run Fast Learn -- those
-need GDS2 + MDI/J2534. See resets.py.
+into a diagnosis. It does not flash, and it does not run Fast Learn.
+
+Why it does not run Fast Learn, stated precisely
+------------------------------------------------
+This passage used to say Fast Learn "needs GDS2 + MDI/J2534" and that a V-Peak
+cannot do 0xAE. That was true when the CPID and its control bytes were
+unknown. It is now only half true, and the half that changed is worth being
+exact about, because overstating it in either direction is a way to get this
+wrong.
+
+**What is now known.** The routine is GMW3110 DeviceControl (0xAE) on CPID
+0x30, and the control packet has been recovered by static analysis of the GDS2
+dealer data, with every field traceable to a file offset -- see procedures.py
+and data/gds2_t76_tcm.json. The frame was rebuilt independently and reproduced
+byte for byte in five separately built deliverables.
+
+**What that means for transport.** The request and its release are seven bytes
+each, which is exactly what fits an ISO-TP single frame, so no multi-frame
+handling and no flow control are involved. The session framing is 0x10, 0x3E
+and 0x20. Every one of those is inside what an ELM327 does unaided. So the
+transport objection, as it was written here, does not hold: this is not a
+J2534-only exchange.
+
+**What is still unproven, and it is the part that decides it.** First, whether
+the module demands SecurityAccess. GDS2 sends no 0x27 for this test, but that
+proves the dealer tool does not offer a key, not that the TCM will not ask for
+one -- a live attempt may still meet NRC 0x33, and the deliverable carries no
+working seed/key algorithm to answer with. Second, whether a Bluetooth ELM327
+can keep 0x3E TesterPresent inside the module's timeout for the length of a
+routine that runs for minutes; that latency has never been measured against
+this module.
+
+So the honest position is: the bytes are known and the transport is in reach,
+and the harness still does not send them, because two questions that can only
+be answered on a car are still open. procedures.py holds the definition behind
+three gates and explains each one. See also resets.py.
 
 Where the numbers and names come from
 -------------------------------------
@@ -26,9 +60,21 @@ Not invented, and not copied from the earlier OBDb-only attempt:
   prints after the dash (P0716-71 = actuator stuck).
 * **Protocol.** GMW3110 via Scapy's GMLAN contrib: faults 0xA9, ident 0x1A,
   live 0x22. Same dialect ScanMyOpelCAN uses over ELM327 on Astra K.
-* **What a V-Peak cannot do.** GDS2 DeviceControl 0xAE (Fast Learn, solenoid
-  cycling), SPS flash, clutch adaptive cells, commanded line pressure. Those
-  stay documented, not faked.
+* **GDS2 dealer data.** data/gds2_t76_tcm.json, extracted from the 2023.3
+  Opel/Vauxhall deliverable's module node for this exact TCM. It supplies GM's
+  own names, scalings and state tables for 189 parameters and 17 device
+  controls, each with the file offset it came from. Read through
+  dealer_data.py. The read half of that decode is confirmed against this car:
+  the file's fluid-temperature scaling is the one the harness already gets
+  right on 0x7E2.
+* **What a V-Peak cannot do.** SPS flash. That is the whole list now, and it is
+  shorter than it used to be. This entry previously also named the clutch
+  adaptive cells and commanded line pressure as out of reach; both were wrong,
+  and wrong about the transport rather than the data. The adapt cells are a
+  GMLAN 0x1A block at identifier 0x50 (tcm.py read_adaptive_cells), and
+  calculated line pressure is an ordinary 0x22 read on 0x2862. Neither has yet
+  answered on this car, so both are labelled dealer-data rather than verified.
+  Device control 0xAE is a separate question, covered above.
 
 Read-only. The only write in this profile is the confirm-gated fault clear.
 """
@@ -599,11 +645,18 @@ def analyze(adapter: Optional[dict], mode: str = "real") -> dict:
                 break
 
             live: List[dict] = []
+            adapts: Optional[dict] = None
             if chosen:
                 live = tcm_mod.read_transmission(client)
                 if not live:
                     from . import pids as vx_pids
                     live = vx_pids._read_obdb_transmission(client)
+                # The clutch adapt block. One extra request, read-only, and
+                # the answer decides a question this profile has carried
+                # unresolved since it was written: whether these cells are
+                # reachable over a dongle at all. A None here is a result,
+                # not a failure, and the message below says which happened.
+                adapts = tcm_mod.read_adaptive_cells(client)
         finally:
             client.restore()
 
@@ -633,13 +686,21 @@ def analyze(adapter: Optional[dict], mode: str = "real") -> dict:
                     "code": code, "name": name, "dialect": dialect or "unproven",
                     "error": error, "trace": trace},
             "ident": ident, "dtcs": dtcs, "live": live, "findings": findings,
+            "adaptiveCells": adapts,
             "readings": readings, "worksheet": worksheet,
             "message": (
                 (f"VIN {vin}. " if vin else "")
                 + f"TCM at 0x{req:03X} ({dialect or 'unproven'}). "
                 + f"{len(dtcs)} fault(s), {len(live)} live value(s). "
                 + f"{len(findings)} finding(s).{unread} "
-                "Read-only -- nothing was changed on the car."
+                + (f"Clutch adapt block answered with {len(adapts['cells'])} "
+                   "cell(s) -- names and scaling are from the GDS2 data set "
+                   "and have never been checked against this gearbox, so "
+                   "read them against the raw payload. "
+                   if adapts else
+                   "Clutch adapt block (GMLAN 1A 50) did not answer, so the "
+                   "GDS2 layout is unconfirmed on this car. ")
+                + "Read-only -- nothing was changed on the car."
             ),
             "timestamp": _now(),
         }
