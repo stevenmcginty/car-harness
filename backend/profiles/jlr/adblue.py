@@ -179,6 +179,7 @@ _AFTERTREATMENT_DECODES = {
     0x85: [("reagent_tank_level_pct", lambda b: _byte_at(b, 5, 2.55))],
     0x8B: [("dpf_regen_trigger_pct", lambda b: _byte_at(b, 2, 2.55))],
     0x78: [("egt_b1s1_c", lambda b: _temp10(_u16b(b, 0)))],
+    0x77: [("egr_commanded_pct", lambda b: _byte_at(b, 0, 2.55))],
 }
 
 

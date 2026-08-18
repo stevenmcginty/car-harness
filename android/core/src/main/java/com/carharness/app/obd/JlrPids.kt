@@ -103,16 +103,59 @@ object JlrPids {
      * data behind backend/profiles/jlr/data/external_pids.json (research:
      * docs/private/jlr-306dt-external-pid-research.md). Raw payloads only:
      * NOTHING here is decoded, because none of it is verified on the 3.0 V6.
-     * The drive log polls these alongside the OJG set so the first run on the
-     * car already answers "does 042C speak?".
+     * The drive log polls these alongside the OJG set.
+     *
+     * 2026-08-18 L494 sweep update: 042C answers NRC 31 on this 306DT PCM
+     * (dead here, kept for the other JLR diesels it was captured on); the
+     * L494 candidates below ANSWERED with data at idle — undecoded until a
+     * warm/loaded re-read shows which payload moves like soot/EGR/EGT.
      */
     val EXTERNAL_ENGINE_DIDS: List<Triple<Int, String, String>> = listOf(
         Triple(
             0x042C,
-            "DPF soot concentration",
-            "XF 2.2d forum capture + Car Scanner's JLR PID — unverified on 306DT",
+            "DPF soot concentration (dead on 306DT: NRC 31)",
+            "XF 2.2d forum capture + Car Scanner's JLR PID — refused on the L494 3.0d",
+        ),
+        Triple(
+            0xF40C,
+            "Aftertreatment candidate (raw 0A4E at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0x0430,
+            "Aftertreatment candidate (raw 025F at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0x0434,
+            "Aftertreatment candidate (raw 0002FADD at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0xF423,
+            "Aftertreatment candidate (raw 0B4A at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0xF463,
+            "Aftertreatment candidate (raw 02BC at idle)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
+        ),
+        Triple(
+            0xF485,
+            "Aftertreatment candidate (raw 0F0007000742000049A5)",
+            "L494 306DT sweep 2026-08-18 — live, undecoded",
         ),
     )
+
+    /**
+     * The DPF + EGR watch preset: the aftertreatment-shaped subset of the
+     * candidate list. Logging only these trims the tick so the sample rate
+     * rises — the point of a watch is shape-over-time, not breadth. The
+     * legislated Mode-01 set is read regardless (see AFTERTREATMENT_PIDS).
+     */
+    val DPF_EGR_WATCH_DIDS: List<Int> =
+        listOf(0xF40C, 0x0430, 0x0434, 0xF423, 0xF463, 0xF485)
 
     /**
      * The legislated Mode-01 aftertreatment set (SAE J1979DA formulas — a
@@ -128,5 +171,6 @@ object JlrPids {
         0x85 to "reagent_tank_level_pct",
         0x8B to "dpf_regen_trigger_pct",
         0x78 to "egt_b1s1_c",
+        0x77 to "egr_commanded_pct",
     )
 }

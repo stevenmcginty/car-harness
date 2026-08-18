@@ -87,6 +87,8 @@ object JlrAdBlue {
                 0x8B -> if (b.size > 2) out["dpf_regen_trigger_pct"] =
                     (b[2].toInt() and 0xFF) / 2.55
                 0x78 -> temp10(u16(b, 0))?.let { out["egt_b1s1_c"] = it }
+                0x77 -> if (b.isNotEmpty()) out["egr_commanded_pct"] =
+                    (b[0].toInt() and 0xFF) / 2.55
             }
         }
         return out
@@ -444,13 +446,14 @@ object JlrAdBlue {
         onProgress: (String) -> Unit = {},
         seconds: Long = 180,
         onSample: (DriveSample) -> Unit = {},
+        presetDids: List<Int>? = null,
     ): List<EnhancedReading> {
         if (simulated) {
             // Fake warm-up: rpm with raw DID payloads beside it, coolant +
             // voltage on the every-fifth-tick baseline, a non-answer recorded
             // as a gap.
             onProgress("SIMULATED — building the demo drive log…")
-            val didList = defaultDriveDids()
+            val didList = presetDids ?: defaultDriveDids()
             val samples = listOf(
                 DriveSample(
                     0.0, 810.0,
@@ -489,7 +492,7 @@ object JlrAdBlue {
             return logRows(summary, didList, samples)
         }
 
-        val didList = defaultDriveDids()
+        val didList = presetDids ?: defaultDriveDids()
         session.ensureProtocol()
         if (!JlrUds.protocolSupported(session)) {
             throw ObdException(

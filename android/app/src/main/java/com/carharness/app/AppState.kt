@@ -25,6 +25,7 @@ import com.carharness.app.obd.Dtc
 import com.carharness.app.obd.DtcRecord
 import com.carharness.app.obd.Elm327Session
 import com.carharness.app.obd.JlrAdBlue
+import com.carharness.app.obd.JlrPids
 import com.carharness.app.obd.LiveReading
 import com.carharness.app.obd.ObdController
 import com.carharness.app.obd.ObdTransport
@@ -501,6 +502,8 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     /** Drive-log length picker, seconds. A regen needs ~20 min (1500 s+). */
     var driveLogSeconds by mutableStateOf(180L)
+    /** DPF + EGR watch: log only the aftertreatment candidate subset. */
+    var driveLogDpfEgrOnly by mutableStateOf(false)
     private var driveLogWriter: BufferedWriter? = null
     private var driveLogDids: List<Int>? = null
     private var driveLogExtras: List<String>? = null
@@ -691,7 +694,10 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                     if (brand == "jlr" && action.id == "drivelog") {
                         startDriveLog()
                         try {
-                            ctrl.jlrAdblueDriveLog(onStep, driveLogSeconds, ::appendDriveSample)
+                            ctrl.jlrAdblueDriveLog(
+                                onStep, driveLogSeconds, ::appendDriveSample,
+                                if (driveLogDpfEgrOnly) JlrPids.DPF_EGR_WATCH_DIDS else null,
+                            )
                         } finally {
                             endDriveLog()
                         }

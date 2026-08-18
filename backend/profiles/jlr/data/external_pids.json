@@ -4,7 +4,8 @@
   "confidence": {
     "22042c_soot": "medium — two independent JLR-diesel provenances (XF 2.2d forum capture, Car Scanner's own JLR PID via ELM327-emulator log on an L322 4.4 TDV8); NOT yet read on the 3.0 V6; units label g/m^3 reads more like a percent soot load",
     "mode01_aftertreatment": "standard-defined formulas (SAE J1979DA via DashLogic) — legislated, not JLR-invented; per-car support on this ECU unknown until asked",
-    "dead_on_2_2d": "220417 / 220434 / 220598 / 22D922 all returned zero on the XF 2.2d — Ford Duratorq family, unlikely on the Lion V6; listed so nobody re-chases them blind"
+    "dead_on_2_2d": "220417 / 220434 / 220598 / 22D922 all returned zero on the XF 2.2d — Ford Duratorq family, unlikely on the Lion V6; listed so nobody re-chases them blind",
+    "l494_sweep_2026_08_18": "On-car sweep, VIN SALWA2EK8HA (HY32-14C204-PAE): 191 DIDs live (136 in 0300-05FF, 55 in F400-F4FF); 2100-21FF and 2200-22FF fully unimplemented (all NRC 31) — never sweep them again on this family; 042C refused NRC 31 (dead); the six candidates above answered raw at idle."
   },
   "sources": [
     "https://torque-bhp.com/community/main-forum/dpf-active-regeneration/ (22042C on a 2014 XF Sportbrake 2.2d, raw response 7E80562042C3CE6)",
@@ -57,6 +58,13 @@
       "unit": "°C",
       "formula": "(((256*B)+C)/10)-40, sensor pairs BC/DE/FG/HI",
       "provenance": "legislated J1979DA — support untested on 306DT"
+    },
+    {
+      "pid": "0x77",
+      "name": "egr_commanded_pct",
+      "unit": "%",
+      "formula": "(A*100)/255",
+      "provenance": "legislated J1979DA commanded EGR — support untested on 306DT"
     }
   ],
   "dids": [
@@ -65,10 +73,10 @@
       "module": "0x7E0",
       "name": "DPF soot concentration",
       "unit": "g/m^3 (label; probably % soot load)",
-      "formula": "(A*256+B)*100/65535",
-      "provenance": "XF 2.2d forum capture + Car Scanner's JLR PID — unverified on 306DT",
+      "formula": null,
+      "provenance": "XF 2.2d forum capture + Car Scanner's JLR PID — REFUSED (NRC 31) on the L494 306DT PCM 2026-08-18",
       "verified": false,
-      "notes": "The #1 aftertreatment candidate: two independent JLR-diesel provenances. Try this first on the car."
+      "notes": "Proven absent on the 3.0 V6 (L494, HY32-14C204-PAE): 22 F0 4C 2C answers 7F 22 31. Formula dropped so the drive log stops polling it; row kept so nobody re-chases it."
     },
     {
       "did": "D120",
@@ -93,12 +101,12 @@
     {
       "did": "0434",
       "module": "0x7E0",
-      "name": "Ford-family DPF candidate (dead on 2.2d)",
+      "name": "Aftertreatment candidate 0434 (raw 0002FADD at idle on L494)",
       "unit": "raw",
       "formula": null,
-      "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
+      "provenance": "Ford Duratorq set (dead on XF 2.2d) but ANSWERED on the L494 306DT 2026-08-18",
       "verified": false,
-      "notes": "Dead list."
+      "notes": "Live and undecoded on the 3.0 V6."
     },
     {
       "did": "0598",
@@ -119,6 +127,56 @@
       "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
       "verified": false,
       "notes": "Dead list. Sits OUTSIDE the shipped sweep ranges — sweep D900-D9FF if chasing it."
+    },
+    {
+      "did": "F40C",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate F40C (raw 0A4E at idle)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 — answered with data at idle",
+      "verified": false,
+      "notes": "Top aftertreatment candidate from the on-car sweep (car-sweep-20260818T111735Z.json). Decode by re-reading warm/loaded and watching the payload move."
+    },
+    {
+      "did": "0430",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate 0430 (raw 025F at idle)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 — answered with data at idle",
+      "verified": false,
+      "notes": "Live, undecoded."
+    },
+    {
+      "did": "F423",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate F423 (raw 0B4A at idle)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 — answered with data at idle",
+      "verified": false,
+      "notes": "Live, undecoded."
+    },
+    {
+      "did": "F463",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate F463 (raw 02BC at idle)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 — answered with data at idle",
+      "verified": false,
+      "notes": "Live, undecoded."
+    },
+    {
+      "did": "F485",
+      "module": "0x7E0",
+      "name": "Aftertreatment candidate F485 (raw 0F0007000742000049A5)",
+      "unit": "raw",
+      "formula": "raw",
+      "provenance": "L494 306DT sweep 2026-08-18 — answered with data at idle",
+      "verified": false,
+      "notes": "Multi-field, undecoded."
     }
   ]
 }

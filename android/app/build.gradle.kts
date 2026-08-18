@@ -16,8 +16,8 @@ android {
         // Bluetooth permissions) are already behind SDK_INT checks.
         minSdk = 21
         targetSdk = 35
-        versionCode = 23
-        versionName = "2.13"
+        versionCode = 24
+        versionName = "2.14"
     }
 
     buildTypes {

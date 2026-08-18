@@ -134,6 +134,24 @@ fun ModulesScreen(state: AppState) {
                             )
                         }
                     }
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Watch set", color = TextFaint, fontFamily = Barlow,
+                            fontSize = 12.sp,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        DurationChip(
+                            label = "Full candidate set",
+                            selected = !state.driveLogDpfEgrOnly,
+                            onClick = { state.driveLogDpfEgrOnly = false },
+                        )
+                        DurationChip(
+                            label = "DPF + EGR",
+                            selected = state.driveLogDpfEgrOnly,
+                            onClick = { state.driveLogDpfEgrOnly = true },
+                        )
+                    }
                 }
                 if ((state.modScanning || state.extrasBusy) && state.modProgress.isNotEmpty()) {
                     Spacer(Modifier.height(14.dp))

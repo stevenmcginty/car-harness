@@ -278,13 +278,16 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             JlrAdBlue.health(session, simulated, onProgress)
         }
 
-    /** Timed rpm + raw DID log through warm-up (default 3 minutes). Read-only. */
+    /** Timed rpm + raw DID log through warm-up (default 3 minutes). Read-only.
+     *  presetDids: null logs the full default set; the DPF+EGR watch preset
+     *  passes its trimmed list for a higher sample rate. */
     suspend fun jlrAdblueDriveLog(
         onProgress: (String) -> Unit,
         seconds: Long = 180,
         onSample: (JlrAdBlue.DriveSample) -> Unit = {},
+        presetDids: List<Int>? = null,
     ): List<EnhancedReading> = mutex.withLock {
-        JlrAdBlue.driveLog(session, simulated, onProgress, seconds, onSample)
+        JlrAdBlue.driveLog(session, simulated, onProgress, seconds, onSample, presetDids)
     }
 
     /** Porsche module scan (Porsche-own UDS/KWP-over-CAN, VAG-MLB reuse, K-line floor). Serialised. */
