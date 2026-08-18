@@ -113,8 +113,10 @@ class Builder(object):
         self.langs = langs
         self.text_cache = {}
         self.string_heads = set()
-        # visited bitmap over 4-byte aligned file positions
-        self.seen = bytearray((vat.size // 4 // 8) + 2)
+        # Visited bitmap, one bit per file byte. Object offsets are NOT always
+        # 4-byte aligned: the Opel/Vauxhall deliverables happen to be, the GM
+        # Global ones are 2-aligned, and nothing in the format promises either.
+        self.seen = bytearray((vat.size // 8) + 2)
         self.func_by_id = {}
         self.machine_state_func = {}   # (machine_off, state_no) -> func name
         self.typed = {}                # type id -> set of offsets, for the semantic pass
@@ -138,9 +140,8 @@ class Builder(object):
         return t
 
     def mark(self, off):
-        """True the first time an aligned offset is visited."""
-        i = off // 4
-        byte, bit = i // 8, 1 << (i % 8)
+        """True the first time this offset is visited."""
+        byte, bit = off // 8, 1 << (off % 8)
         if self.seen[byte] & bit:
             return False
         self.seen[byte] |= bit
@@ -370,7 +371,7 @@ class Builder(object):
         while head < len(queue):
             off = queue[head]
             head += 1
-            if off <= 0 or off % 4 or not v.ok(off, 24):
+            if off <= 0 or not v.ok(off, 24):
                 continue
             if not self.mark(off):
                 continue

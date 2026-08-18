@@ -70,3 +70,33 @@ Partially mined; see `captures/peugeot/diagbox-ep6-extraction.md`.
 
 - Worktree created, `tools/gds2/` restored from `cef7121`.
 - Header/table semantics cross-checked against the decompiled reader (above).
+- `build_gds2.py` written and committed (`138fe19`). First build of the 2023.3
+  Opel/Vauxhall deliverable validated against known truth: the Astra-K T76 TCM
+  node, test `110282_001` in four copies, PID `8442_6736` decoding to `22 19 40`
+  with `(X(0)*1)-40 degC`.
+- **Bug found and fixed: value objects are not always 4-byte aligned.** The
+  Opel/Vauxhall deliverables happen to be 4-aligned; the GM Global ones
+  (`d_gg2406`, `d_gmglobal351`) are 2-aligned. The first builder rejected any
+  unaligned offset and produced *zero* value objects for those two files while
+  reporting success on everything above the object graph. After the fix
+  `d_gg2406` yields 2.16 M objects, 446 k PIDs and 33 k tests. Nothing in the
+  format promises an alignment, so the builder no longer assumes one and the
+  visited bitmap is one bit per byte.
+- `build_sdd.py` written. Full corpus indexed: 54 platforms, 1,790 MDX files,
+  9,132 DIDs, 89,898 sub-fields, 45,105 enumerated states, 8,144 routines, 2,256
+  ECU addressing records, plus the plaintext DTC and ODST catalogues. 34 MB.
+  Cross-checks against `backend/profiles/jlr/data/sdd_dids.json` all agree; the
+  SCR routines live in `MDX_SCR.exml` with `ECU_NAME = Powertrain Control
+  Module`, which is why they are PCM routines despite the file name.
+- `build_diagbox.py` written: lenient parser for the SGML-ish `.s` diagnostic
+  trees plus record-pattern sweeps over the Firebird FDBs (whose page structure
+  is still not decoded).
+
+## Correction to the earlier DiagBox read
+
+In `DSD.FDB` a parameter row is laid out **name, inline French label, then the
+trailer carrying the DID, format and conversion**. The trailer follows the name it
+belongs to. Reading backwards from a DID pairs it with the *previous* row's name.
+Verified at 0x1C96C96A: `MP_PRESSION_HUILE_MOTEUR_BRUTE` is followed by
+`Pression d'huile moteur brute` and then by `D429 / UNM / FLOAT`, while the `D430`
+trailer that precedes the name belongs to the row before it.
