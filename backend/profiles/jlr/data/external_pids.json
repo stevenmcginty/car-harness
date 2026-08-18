@@ -4,7 +4,9 @@
   "confidence": {
     "22042c_soot": "medium — two independent JLR-diesel provenances (XF 2.2d forum capture, Car Scanner's own JLR PID via ELM327-emulator log on an L322 4.4 TDV8); NOT yet read on the 3.0 V6; units label g/m^3 reads more like a percent soot load",
     "mode01_aftertreatment": "standard-defined formulas (SAE J1979DA via DashLogic) — legislated, not JLR-invented; per-car support on this ECU unknown until asked",
-    "dead_on_2_2d": "220417 / 220434 / 220598 / 22D922 all returned zero on the XF 2.2d — Ford Duratorq family, unlikely on the Lion V6; listed so nobody re-chases them blind"
+    "dead_on_2_2d": "220417 / 220434 / 220598 / 22D922 all returned zero on the XF 2.2d — Ford Duratorq family, unlikely on the Lion V6; listed so nobody re-chases them blind",
+    "l494_sweep_2026_08_18": "On-car sweep, VIN SALWA2EK8HA (HY32-14C204-PAE): 191 DIDs live (136 in 0300-05FF, 55 in F400-F4FF); 2100-21FF and 2200-22FF returned NRC 31 across the swept range. 042C did NOT answer (dead on this calibration). 0417/0598/0434 all ANSWERED (they are NOT dead - the earlier 'dead on 2.2d' rows were wrong for this car).",
+    "sdd_169_cross_check": "SDD 169 dealer data decrypted and cross-checked (see data/sdd_dids.json). SDD confirms 042C is a real diesel-PCM DID (DPF soot g/l, differential-pressure inferred) though this PCM refuses it, and it decodes several live DIDs by name/scaling: 0396 service distance (km), F405 coolant (deg C, byte-40), 0479 stop-start counter, 0463 injector correction codes (64 bytes), and urea/SCR DIDs 05FA-05FD. SDD read frame for 042C is 22 04 2C."
   },
   "sources": [
     "https://torque-bhp.com/community/main-forum/dpf-active-regeneration/ (22042C on a 2014 XF Sportbrake 2.2d, raw response 7E80562042C3CE6)",
@@ -63,12 +65,12 @@
     {
       "did": "042C",
       "module": "0x7E0",
-      "name": "DPF soot concentration",
-      "unit": "g/m^3 (label; probably % soot load)",
-      "formula": "(A*256+B)*100/65535",
-      "provenance": "XF 2.2d forum capture + Car Scanner's JLR PID — unverified on 306DT",
+      "name": "DPF soot concentration (SDD: inferred from differential pressure)",
+      "unit": "g/l (SDD diesel-PCM definition)",
+      "formula": null,
+      "provenance": "SDD 169 MDX_PCM_D (0x042C, res 0.00152590219 g/l) - but REFUSED/no-answer on the L494 306DT PCM 2026-08-18",
       "verified": false,
-      "notes": "The #1 aftertreatment candidate: two independent JLR-diesel provenances. Try this first on the car."
+      "notes": "Real diesel-PCM DID per SDD 169 (DPF soot g/l, res 0.00152590219, from differential pressure) but this L494 calibration does NOT answer it. Read frame is 22 04 2C (NOT 22 F0 4C 2C). Formula nulled so the drive log stops polling a dead DID; SDD scaling kept here."
     },
     {
       "did": "D120",
@@ -83,12 +85,12 @@
     {
       "did": "0417",
       "module": "0x7E0",
-      "name": "Ford-family DPF candidate (dead on 2.2d)",
+      "name": "Live DID 0417 (was mislabelled a dead Ford candidate)",
       "unit": "raw",
-      "formula": null,
-      "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
+      "formula": "raw",
+      "provenance": "ANSWERED 00 on the L494 306DT 2026-08-18 (car-sweep-20260818T110917Z.json). Not dead.",
       "verified": false,
-      "notes": "Dead list: kept so the sweep's silence on these is expected, not a surprise."
+      "notes": "Corrected: previously listed as dead-on-2.2d; it answers on this car. Live, undecoded; not named in SDD."
     },
     {
       "did": "0434",
@@ -103,12 +105,12 @@
     {
       "did": "0598",
       "module": "0x7E0",
-      "name": "Ford-family DPF candidate (dead on 2.2d)",
+      "name": "Live DID 0598 (was mislabelled a dead Ford candidate)",
       "unit": "raw",
-      "formula": null,
-      "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
+      "formula": "raw",
+      "provenance": "ANSWERED 0039 on the L494 306DT 2026-08-18 (car-sweep-20260818T110917Z.json). Not dead.",
       "verified": false,
-      "notes": "Dead list."
+      "notes": "Corrected: previously listed as dead-on-2.2d; it answers on this car. Live, undecoded; not named in SDD."
     },
     {
       "did": "D922",
@@ -119,6 +121,46 @@
       "provenance": "cintakc Ford Duratorq set — returned 0.0 on the XF 2.2d",
       "verified": false,
       "notes": "Dead list. Sits OUTSIDE the shipped sweep ranges — sweep D900-D9FF if chasing it."
+    },
+    {
+      "did": "05FA",
+      "module": "0x7E0",
+      "name": "Current air volume in urea pressure lines",
+      "unit": "see SDD (byte_size 6; SDD gives no scaling tag)",
+      "formula": "raw",
+      "provenance": "SDD 169 MDX_PCM_D (diesel PCM) - name authoritative; ANSWERED live on L494 SALWA2EK8HA 2026-08-18 (payload 048A00000301)",
+      "verified": false,
+      "notes": "SCR/AdBlue reagent-system telemetry, on the PCM (0x7E0) - name is SDD-authoritative but scaling/units are NOT verified (polled raw). Confirms SCR is PCM-managed - there is no separate SCR ECU on L494."
+    },
+    {
+      "did": "05FB",
+      "module": "0x7E0",
+      "name": "Frozen cavity detection in urea tank",
+      "unit": "see SDD (byte_size 2; SDD gives no scaling tag)",
+      "formula": "raw",
+      "provenance": "SDD 169 MDX_PCM_D (diesel PCM) - name authoritative; ANSWERED live on L494 SALWA2EK8HA 2026-08-18 (payload 0FA0)",
+      "verified": false,
+      "notes": "SCR/AdBlue reagent-system telemetry, on the PCM (0x7E0) - name is SDD-authoritative but scaling/units are NOT verified (polled raw). Confirms SCR is PCM-managed - there is no separate SCR ECU on L494."
+    },
+    {
+      "did": "05FC",
+      "module": "0x7E0",
+      "name": "Total mass fluid injected by urea dosing system",
+      "unit": "see SDD (byte_size 4; SDD gives no scaling tag)",
+      "formula": "raw",
+      "provenance": "SDD 169 MDX_PCM_D (diesel PCM) - name authoritative; ANSWERED live on L494 SALWA2EK8HA 2026-08-18 (payload 00039CC5)",
+      "verified": false,
+      "notes": "SCR/AdBlue reagent-system telemetry, on the PCM (0x7E0) - name is SDD-authoritative but scaling/units are NOT verified (polled raw). Confirms SCR is PCM-managed - there is no separate SCR ECU on L494."
+    },
+    {
+      "did": "05FD",
+      "module": "0x7E0",
+      "name": "Total time of urea dosing value exceeding upper temperature threshold",
+      "unit": "see SDD (byte_size 2; SDD gives no scaling tag)",
+      "formula": "raw",
+      "provenance": "SDD 169 MDX_PCM_D (diesel PCM) - name authoritative; ANSWERED live on L494 SALWA2EK8HA 2026-08-18 (payload 0651)",
+      "verified": false,
+      "notes": "SCR/AdBlue reagent-system telemetry, on the PCM (0x7E0) - name is SDD-authoritative but scaling/units are NOT verified (polled raw). Confirms SCR is PCM-managed - there is no separate SCR ECU on L494."
     }
   ]
 }

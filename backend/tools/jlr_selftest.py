@@ -659,7 +659,7 @@ def main() -> int:
     check("external candidates carry provenance + verified=false",
           bool(ext)
           and all(e.get("provenance") and e.get("verified") is False for e in ext)
-          and any(e["did"] == "042C" for e in ext),
+          and any(e["did"] == "05FA" for e in ext),
           str(ext)[:120])
     check("health assessment matched the aftertreatment codes it actually read",
           set(hrep["assessment"]["matchedCodes"]) == {"P249D", "P2463"},
@@ -722,10 +722,13 @@ def main() -> int:
               isinstance(res.get("readings"), list) and bool(res["readings"])
               and isinstance(res.get("worksheet"), str) and bool(res["worksheet"]),
               f"{len(res.get('readings', []))} chips")
-    # The drive log's default DID set now includes the external candidate.
+    # The drive log's default DID set includes the live external candidates and
+    # excludes 042C -- SDD 169 names it (DPF soot g/l) but this L494 calibration
+    # does not answer it, so it is not polled (see data/external_pids.json).
     dsim = jlr_adblue.drive_log(None, "sim")
-    check("drive log default dids include external 042C",
-          "042C" in dsim.get("dids", []), str(dsim.get("dids")))
+    dsim_dids = dsim.get("dids", [])
+    check("drive log default dids include the live SCR/urea DIDs, not dead 042C",
+          "05FA" in dsim_dids and "042C" not in dsim_dids, str(dsim_dids))
 
     # --- MCP layer: the four new tools + honest no-adapter errors -----------
     from backend import mcp_server

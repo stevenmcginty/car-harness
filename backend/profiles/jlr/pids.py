@@ -89,6 +89,11 @@ JLR_DIDS: List[Tuple[int, int, str, str, Callable[[bytes], Optional[str]]]] = [
     (ENGINE, 0x03F2, "Engine oil volume (calculated)", "L", _byte(0.1, 0, dp=1, lo=0, hi=12)),
     (ENGINE, 0x033E, "Boost / manifold pressure", "kPa", _byte(1, 0, dp=0, lo=0, hi=350)),
     (ENGINE, 0x0520, "Charge air temp (post-intercooler)", "°C", _byte(1, 0, dp=0, lo=0, hi=150)),
+    # SDD-169-verified diesel-PCM DIDs (data/sdd_dids.json). Scaling is from the
+    # decrypted MDX_PCM_D tables and cross-checks against the L494 SALWA2EK8HA
+    # sweep (0396 answered 5AB6 -> 23222 km; F405 answered 6E -> 70 C).
+    (ENGINE, 0x0396, "Distance to next service", "km", _u16_scaled(1, 0, dp=0, lo=0, hi=65535)),
+    (ENGINE, 0xF405, "Engine coolant temperature (UDS DID)", "°C", _byte(1, -40, dp=0, lo=-40, hi=215)),
     (TRANS, 0x1E69, "Gearbox (ZF) oil temperature", "°C", _byte(1, -40, dp=0, lo=-40, hi=215)),
     (RDCM, 0x1E8A, "Rear e-diff oil temperature", "°C", _byte(1, -40, dp=0, lo=-40, hi=215)),
 ]
