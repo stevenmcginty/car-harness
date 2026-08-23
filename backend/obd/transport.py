@@ -156,11 +156,45 @@ class BleTransport:
             pass
 
 
+class RemotePhoneTransport:
+    """The dongle link is held by the phone in the car, which relays raw ELM
+    bytes over its WebSocket (see remote_link.py). To every consumer above us
+    -- session, livefeed, brand profiles -- this is just another dongle."""
+
+    def __init__(self):
+        from backend.obd.remote_link import hub
+
+        self._hub = hub
+
+    def open(self) -> dict:
+        if not self._hub.connected:
+            raise TransportError(
+                "No phone relay is connected. Open the Car Harness app in the "
+                "car and switch on Relay."
+            )
+        return self._hub.status()
+
+    def exchange(self, data: bytes, timeout: float) -> bytes:
+        from backend.obd.remote_link import RelayError
+
+        try:
+            return self._hub.exchange(data, timeout)
+        except RelayError as exc:
+            raise TransportError(str(exc))
+
+    def close(self):
+        pass  # never hang up on the phone; the relay outlives any one session
+
+
 def transport_for_adapter(adapter: dict):
     """Build the right transport for a saved adapter-instance dict. Raises
     TransportError for adapter types that can't speak generic OBD-II."""
     type_id = (adapter or {}).get("typeId") or ""
     config = (adapter or {}).get("config") or {}
+
+    if type_id == "elm327-remote":
+        return RemotePhoneTransport()
+
 
     if type_id in ("elm327-serial", "elm327-bluetooth"):
         port = str(config.get("port") or "").strip()

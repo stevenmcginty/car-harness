@@ -10,6 +10,7 @@ import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.SocketTimeoutException
 import java.net.URL
+import java.net.URLEncoder
 
 data class DesktopServer(val name: String, val host: String, val port: Int)
 
@@ -29,6 +30,24 @@ class HarnessClient(context: Context) {
     fun unpair() {
         prefs.edit().clear().apply()
     }
+
+    /**
+     * The Relay-mode WebSocket URL for this paired desktop, token and all.
+     *
+     * Two ways home and the port tells them apart: on the LAN it's the plain
+     * ws:// on 8765, and through a Cloudflare tunnel it's wss:// on 443 with no
+     * port suffix at all. Empty when there's no desktop to relay to.
+     */
+    fun relayUrl(deviceName: String): String {
+        val h = host()
+        if (h.isEmpty()) return ""
+        val p = port()
+        val base = if (p == 443) "wss://$h" else "ws://$h:$p"
+        return base + "/api/remote/ws?token=" + enc(token()) + "&name=" + enc(deviceName)
+    }
+
+    private fun enc(value: String): String =
+        URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
     /** Broadcast CARHARNESS_DISCOVER and collect replies for ~2.5s. */
     fun discover(): List<DesktopServer> {

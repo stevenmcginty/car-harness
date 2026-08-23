@@ -17,6 +17,8 @@ handlers wrap their blocking calls in run_in_threadpool -- one slow BLE
 connect must never freeze the whole API.
 """
 
+import asyncio
+import json
 import mimetypes
 import re
 import shutil
@@ -30,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect  # noqa: E402
 from fastapi.concurrency import run_in_threadpool  # noqa: E402
 from fastapi.responses import JSONResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
@@ -43,6 +45,7 @@ from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import freeze, livefeed  # noqa: E402
 from backend.obd import raw as obd_raw  # noqa: E402
 from backend.obd import service as obd_service  # noqa: E402
+from backend.obd.remote_link import RelayError, hub as relay_hub  # noqa: E402
 
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
@@ -512,6 +515,42 @@ def pair_remove(device_id: str) -> dict:
 @app.get("/api/ping")
 def ping() -> dict:
     return {"app": "car-harness", "version": app.version}
+
+
+# --------------------------------------------------------------------------- #
+# Phone relay: the phone in the car holds the dongle link and pipes raw ELM
+# bytes here over one WebSocket, so this desktop can diagnose the far car as
+# if the dongle were plugged into it. The auth middleware only covers HTTP --
+# websockets never pass through it -- so this endpoint checks the token itself.
+# --------------------------------------------------------------------------- #
+@app.get("/api/remote/status")
+def remote_relay_status() -> dict:
+    return relay_hub.status()
+
+
+@app.websocket("/api/remote/ws")
+async def remote_relay_ws(websocket: WebSocket, token: str = "", name: str = ""):
+    client = websocket.client.host if websocket.client else ""
+    if client not in _LOCAL_CLIENTS:
+        # token_valid touches paired_devices.json -- keep it off the loop.
+        if not await run_in_threadpool(pairing.token_valid, token):
+            await websocket.close(code=4401)
+            return
+    await websocket.accept()
+    try:
+        relay_hub.attach(websocket, name, asyncio.get_running_loop())
+    except RelayError as exc:
+        await websocket.send_text(json.dumps({"type": "error", "detail": str(exc)}))
+        await websocket.close(code=4409)
+        return
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            relay_hub.on_text(msg)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        relay_hub.detach(websocket)
 
 
 # --------------------------------------------------------------------------- #

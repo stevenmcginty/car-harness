@@ -37,6 +37,7 @@ import com.carharness.app.obd.ScanResult
 import com.carharness.app.obd.UdsScanReport
 import com.carharness.app.obd.VehicleIdentity
 import com.carharness.app.obd.WifiTransport
+import com.carharness.app.relay.RelayService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,6 +58,9 @@ sealed class ConnState {
     data class Connected(val label: String, val firmware: String, val voltage: String) : ConnState()
     data class Error(val message: String) : ConnState()
 }
+
+/** Shown wherever a phone-side action is refused because Relay owns the ELM. */
+const val RELAY_BUSY = "Relay is on — the desktop is driving the dongle."
 
 data class AdapterRow(val id: String, val name: String, val typeId: String)
 data class ModuleRow(val id: String, val name: String, val profile: String, val builtin: Boolean)
@@ -90,6 +94,9 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     var transportChoice by mutableStateOf("demo") // demo | ble | bt | wifi
     var connState by mutableStateOf<ConnState>(ConnState.Idle)
     private var session: Elm327Session? = null
+    /** The live byte pipe under [session] — kept because Relay mode borrows it
+     *  whole, below the ELM driver. Null whenever nothing is connected. */
+    private var liveTransport: ObdTransport? = null
     var controller: ObdController? = null
         private set
 
@@ -226,6 +233,7 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
                 s.open()
                 val voltage = s.voltage()
                 session = s
+                liveTransport = t
                 controller = ObdController(s, simulated = kind == "demo")
                 if (t is BleTransport) {
                     // Surface a mid-session BLE drop instead of showing
@@ -300,10 +308,14 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
             ?: throw IllegalStateException("Bluetooth is off.")
 
     fun disconnect() {
+        // The relay is holding this exact dongle; letting it run on into a
+        // closed transport would leave the desktop waiting on a dead link.
+        stopRelay()
         liveOn = false
         liveJob?.cancel()
         liveJob = null
         controller = null
+        liveTransport = null
         val s = session
         session = null
         if (s != null) {
@@ -384,6 +396,10 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     }
 
     fun setLive(on: Boolean) {
+        if (on && relayOn) {
+            liveError = RELAY_BUSY
+            return
+        }
         liveOn = on
         liveJob?.cancel()
         liveJob = null
@@ -422,6 +438,10 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     var faultError by mutableStateOf("")
 
     fun runScan() {
+        if (relayOn) {
+            faultError = RELAY_BUSY
+            return
+        }
         val ctrl = controller ?: run {
             faultError = "Connect to the car first — the button on Home does it for you."
             return
@@ -447,6 +467,10 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     }
 
     fun runClear() {
+        if (relayOn) {
+            faultError = RELAY_BUSY
+            return
+        }
         val ctrl = controller ?: return
         if (clearing) return
         setLive(false) // don't make the clear fight the dashboard for the ELM
@@ -614,6 +638,10 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     }
 
     fun runModuleScan() {
+        if (relayOn) {
+            modError = RELAY_BUSY
+            return
+        }
         val ctrl = controller ?: run {
             modError = "Connect to the car first — the button on Home does it for you."
             return
@@ -651,6 +679,10 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     }
 
     fun runModuleClear(address: Int) {
+        if (relayOn) {
+            modError = RELAY_BUSY
+            return
+        }
         val ctrl = controller ?: return
         val report = modReport ?: return
         val brand = Brands.byId(report.brand) ?: return
@@ -688,6 +720,11 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
             extrasSource = action.id
             extrasBrand = moduleBrand
             modError = ""
+            return
+        }
+        // Everything past here touches the ELM, which the relay owns.
+        if (relayOn) {
+            modError = RELAY_BUSY
             return
         }
         val ctrl = controller ?: run {
@@ -764,6 +801,10 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
     /** Run one UDS service reset over the connected dongle. Confirm-gated by UI. */
     fun runReset(reset: ServiceReset) {
         if (!reset.uds) return // procedures are display-only; UI shows the steps
+        if (relayOn) {
+            resetMessage = RELAY_BUSY
+            return
+        }
         val ctrl = controller ?: run {
             resetMessage = "Connect to the car first — the button on Home does it for you."
             return
@@ -834,6 +875,10 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     fun runFullScan() {
         if (jobRunning) return
+        if (relayOn) {
+            faultError = RELAY_BUSY
+            return
+        }
         jobRunning = true
         jobDone = false
         jobNeedsSetup = false
@@ -1003,6 +1048,62 @@ class AppState(private val context: Context, private val scope: CoroutineScope) 
 
     init {
         desktopPaired = harness.paired
+    }
+
+    // ------------- relay mode: this phone becomes the desktop's dongle -------
+    // The laptop is at home and the car is here. Relay hands the live dongle
+    // link to a foreground service that pipes raw ELM bytes over one WebSocket
+    // (see relay/RelayService.kt), so every tool on the PC — brand profiles,
+    // MCP, the lot — runs against THIS car. For as long as it's on the desktop
+    // is the only thing driving the dongle: an ELM327 has no request ids, so
+    // the phone's own scans and dashboard are gated off for the duration.
+    var relayOn by mutableStateOf(false)
+        private set
+    var relayStatus by mutableStateOf("")
+        private set
+
+    /** True when Relay can even be offered: a dongle here, a desktop there.
+     *  Both halves are Compose state, so the switch un-greys the moment the
+     *  link comes up rather than on the next unrelated recomposition. */
+    fun canRelay(): Boolean = connState is ConnState.Connected && desktopPaired
+
+    fun startRelay() {
+        if (relayOn) return
+        val dongle = liveTransport ?: run {
+            relayStatus = "Connect to the dongle first — the button on Home does it."
+            return
+        }
+        val url = harness.relayUrl(android.os.Build.MODEL ?: "Phone")
+        if (url.isEmpty()) {
+            relayStatus = "Pair with the desktop first."
+            return
+        }
+        setLive(false) // the desktop is about to own the ELM; stop polling it
+        RelayService.transport = dongle
+        RelayService.onStatus = { text ->
+            scope.launch(Dispatchers.Main) { relayStatus = text }
+        }
+        RelayService.onStopped = {
+            scope.launch(Dispatchers.Main) { stopRelay() }
+        }
+        relayOn = true
+        relayStatus = "Starting…"
+        RelayService.start(
+            context,
+            url,
+            harness.serverName().ifEmpty { harness.host() },
+            (connState as? ConnState.Connected)?.label ?: dongle.label,
+        )
+    }
+
+    fun stopRelay() {
+        if (!relayOn && !RelayService.running) return
+        relayOn = false
+        relayStatus = ""
+        RelayService.onStatus = null
+        RelayService.onStopped = null
+        RelayService.transport = null
+        RelayService.stop(context)
     }
 
     fun discoverDesktops() {

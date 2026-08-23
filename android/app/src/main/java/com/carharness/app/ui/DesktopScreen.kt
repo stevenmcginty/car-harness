@@ -144,6 +144,54 @@ fun DesktopScreen(state: AppState) {
             }
 
             item {
+                SectionCard(accent = state.relayOn) {
+                    PanelTitle("Relay this car to the desktop")
+                    Text(
+                        "Leave the phone in the car on the dongle and the PC at home does " +
+                            "the diagnosing — every brand profile and tool it has, run " +
+                            "against this car. Keep the app open; a notification says it's " +
+                            "relaying.",
+                        color = TextMuted, fontFamily = Barlow,
+                        fontSize = 12.sp, lineHeight = 17.sp,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(
+                            checked = state.relayOn,
+                            onCheckedChange = {
+                                if (it) state.startRelay() else state.stopRelay()
+                            },
+                            enabled = state.relayOn || state.canRelay(),
+                            colors = harnessSwitchColors(),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        if (state.relayOn) PulseDot(Accent) else StatusDot(TextFaint)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (state.relayOn) "Relay is ON" else "Relay is off",
+                            color = if (state.relayOn) Accent else TextMuted,
+                            fontFamily = Barlow, fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                    val note = when {
+                        state.relayStatus.isNotEmpty() -> state.relayStatus
+                        state.relayOn -> "Starting…"
+                        !state.canRelay() ->
+                            "Connect to a dongle on Home first — then Relay can hand it over."
+                        else -> "The desktop drives the dongle while this is on; " +
+                            "the phone's own scans wait."
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        note,
+                        color = if (state.relayOn) TextMuted else TextFaint,
+                        fontFamily = Mono, fontSize = 11.sp, lineHeight = 16.sp,
+                    )
+                }
+            }
+
+            item {
                 SectionCard {
                     PanelTitle("Scan via the desktop's adapters")
                     Text(

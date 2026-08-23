@@ -15,6 +15,7 @@ from typing import List, Optional
 from backend.adapters.custom import CustomAdapter
 from backend.adapters.elm327_ble import Elm327BleAdapter
 from backend.adapters.elm327_bluetooth import Elm327BluetoothAdapter
+from backend.adapters.elm327_remote import Elm327RemoteAdapter
 from backend.adapters.elm327_serial import Elm327SerialAdapter
 from backend.adapters.elm327_wifi import Elm327WifiAdapter
 from backend.adapters.enet_doip import EnetDoipAdapter
@@ -32,6 +33,7 @@ _TYPES = [
     Elm327BluetoothAdapter,
     Elm327BleAdapter,
     Elm327WifiAdapter,
+    Elm327RemoteAdapter,
     J2534Adapter,
     CustomAdapter,
 ]
