@@ -39,7 +39,7 @@ from fastapi.staticfiles import StaticFiles  # noqa: E402
 from serial.tools import list_ports  # noqa: E402
 
 from backend.adapters import registry as adapter_registry  # noqa: E402
-from backend.core import brands, captures, interfaces, pairing, registry  # noqa: E402
+from backend.core import brands, captures, interfaces, jobs, pairing, registry  # noqa: E402
 from backend.core import vin as vin_decode  # noqa: E402
 from backend.core.models import ConnectionStatus  # noqa: E402
 from backend.obd import freeze, livefeed  # noqa: E402
@@ -554,6 +554,58 @@ async def remote_relay_ws(websocket: WebSocket, token: str = "", name: str = "")
 
 
 # --------------------------------------------------------------------------- #
+# Background jobs.
+#
+# Some diagnostics are not a request/response -- a rough-running drive log runs
+# for ten minutes while the operator drives. That cannot sit inside one HTTP
+# request (it would time out, and a dropped connection would lose the whole
+# run), and it cannot be handed to a separate process either: the phone relay
+# lives in THIS process as a module-level singleton, so a capture that wants
+# the far car has to run on a worker thread here. Start it, then poll.
+#
+# Registered before the {brand} routes so "jobs" can never be read as a brand.
+# --------------------------------------------------------------------------- #
+@app.get("/api/jobs")
+def jobs_list(limit: int = 20) -> dict:
+    return {"jobs": jobs.list_jobs(limit)}
+
+
+@app.get("/api/jobs/{job_id}")
+def jobs_status(job_id: str, partial: bool = False) -> dict:
+    """The job's state and, once finished, its result.
+
+    The sample list is left out by default: a ten-minute capture holds several
+    hundred samples and every one carries its raw bytes, so a poller asking
+    "are we there yet" every second should not drag that back each time. Use
+    /partial to stream new samples, or partial=true for the lot."""
+    status = jobs.status(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job '{job_id}'.")
+    if not partial:
+        status = {k: v for k, v in status.items() if k != "partial"}
+    return status
+
+
+@app.get("/api/jobs/{job_id}/partial")
+def jobs_partial(job_id: str, since: int = 0) -> dict:
+    """Samples from index `since` onward, so a watcher can follow a capture
+    live without re-fetching what it already has."""
+    chunk = jobs.partial(job_id, since)
+    if chunk is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job '{job_id}'.")
+    return chunk
+
+
+@app.post("/api/jobs/{job_id}/stop")
+def jobs_stop(job_id: str) -> dict:
+    """Ask a job to stop. Cooperative -- it finishes its current read and
+    returns everything captured so far, which is kept, not discarded."""
+    if not jobs.stop(job_id):
+        raise HTTPException(status_code=404, detail=f"Unknown job '{job_id}'.")
+    return {"ok": True, "jobId": job_id}
+
+
+# --------------------------------------------------------------------------- #
 # Manufacturer routes -- GENERIC over backend/profiles/<brand>/.
 #
 # Registered LAST among /api routes so every literal path above (obd, pair,
@@ -713,6 +765,56 @@ def brand_scan(brand: str, adapter: str | None = None, mode: str = "real") -> di
     if mode not in ("real", "sim"):
         raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
     return _stamp_capture(brand, "scan", module.scan(mode), None)
+
+
+@app.get("/api/{brand}/misfire/identify")
+def brand_misfire_identify(brand: str, adapter: str | None = None,
+                           mode: str = "real") -> dict:
+    """Which engine is actually fitted, before any capture is worth starting.
+
+    The SLK's DID table differs between the M271 turbo four and the M276 V6,
+    so a drive log aimed at the wrong one reads silence and wastes the trip."""
+    module = _brand_capability_or_404(brand, "misfire")
+    instance = _obd_adapter_or_400(adapter, mode)
+    return _stamp_capture(brand, "misfire-identify",
+                          module.identify(instance, mode), instance)
+
+
+@app.post("/api/{brand}/misfire/capture")
+def brand_misfire_capture(brand: str, adapter: str | None = None,
+                          seconds: float = 600.0, ecu: str | None = None,
+                          mode: str = "real") -> dict:
+    """Start the rough-running drive log and return a job id immediately.
+
+    Returns before the car has been touched, on purpose: the operator is about
+    to drive for ten minutes and nothing should be waiting on an open socket.
+    Poll /api/jobs/<id> for state, /api/jobs/<id>/partial for samples as they
+    land, and POST /api/jobs/<id>/stop to end it early keeping everything
+    captured so far."""
+    module = _brand_capability_or_404(brand, "misfire")
+    instance = _obd_adapter_or_400(adapter, mode)
+    if not 1.0 <= seconds <= 3600.0:
+        raise HTTPException(
+            status_code=400, detail="seconds must be between 1 and 3600.")
+
+    def run(progress, should_stop):
+        result = module.capture(instance, seconds, ecu, mode,
+                                on_sample=progress, should_stop=should_stop)
+        return _stamp_capture(brand, "misfire", result, instance)
+
+    job_id = jobs.start("misfire-capture", run,
+                        label=f"{brand} misfire drive log, {int(seconds)}s")
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "seconds": seconds,
+        "poll": f"/api/jobs/{job_id}",
+        "samples": f"/api/jobs/{job_id}/partial",
+        "message": (
+            f"Capture started for {int(seconds)}s. Drive the car -- nothing "
+            "here is waiting on you. Samples stream to the partial endpoint "
+            "as they land, and stopping early keeps what was already read."),
+    }
 
 
 @app.get("/api/{brand}/software")
