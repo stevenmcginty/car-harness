@@ -16,7 +16,11 @@ turns that mined table into a working instrument:
                   every 5th tick adds coolant, oil temp, voltage, load, MAF,
                   fuel pressures and mixture adaptations. Every decoded value
                   is stored WITH its raw bytes so a wrong scaling can be
-                  re-read later without driving the car again.
+                  re-read later without driving the car again. Samples can be
+                  handed out tick by tick (on_sample) and the drive stopped
+                  early (should_stop), because a 10-minute capture run down
+                  a phone relay wants watching while it happens rather than
+                  read once it is over.
     assess()   -- the step-5 reading: WHICH counter climbed, WHEN (cold vs
                   warm), and whether trims or rail pressure moved with it.
 
@@ -35,7 +39,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic, sleep
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from backend.obd import service as obd_service
 from backend.obd.elm327 import ObdError
@@ -48,7 +52,16 @@ DATA_PATH = Path(__file__).resolve().parent / "data" / "xentry_dids.json"
 KNOWN_PATH = Path(__file__).resolve().parent / "data" / "slk_rough_running.json"
 
 _SLOW_EVERY = 5        # slow-group read every Nth tick
-_DEAD_TICKS = 25       # consecutive all-silent ticks before giving up
+
+# Give up on a wall clock, not on a tick count. A tick is however long the
+# reads took, so it is not a unit of time at all once the dongle is in the car
+# on the end of a phone relay: a cell-tower handover can swallow several
+# seconds, and counting ticks would end a customer's drive capture at minute 4
+# without telling anyone until they stopped driving. 90s of nothing whatsoever
+# is a dropped adapter or a switched-off ignition; anything shorter is the link
+# breathing and the capture waits it out.
+_DEAD_SECONDS = 90.0
+_MIN_GAP_S = 2.0       # shorter silences are ordinary jitter, not a hole
 
 
 def _load(path: Path) -> dict:
@@ -268,17 +281,48 @@ def identify(adapter: Optional[dict], mode: str = "real") -> dict:
                 "message": str(exc), "timestamp": _now()}
 
 
-def _capture_client(client: Elm327UdsClient, seconds: float,
-                    ecu_key: str) -> dict:
-    """The step-4 timeline against an open client. Read-only."""
+def _capture_client(client: Elm327UdsClient, seconds: float, ecu_key: str,
+                    on_sample: Optional[Callable[[dict], None]] = None,
+                    should_stop: Optional[Callable[[], bool]] = None) -> dict:
+    """The step-4 timeline against an open client. Read-only.
+
+    on_sample(sample), if given, is handed each tick the moment it lands, so a
+    background job can show the drive live and keep everything already read
+    even if the run never finishes. It is deliberately fenced off: a progress
+    consumer that throws is its own problem, and must never cost Steve the
+    drive he just did. should_stop(), if given, ends the loop cleanly and
+    returns everything collected so far.
+
+    Silences are recorded rather than fatal. A stretch of ticks where nothing
+    at all answered becomes a gap {from, to, seconds} -- `from` is the first
+    silent tick and `to` the tick that answered again (or the last tick, if
+    the capture ended still silent). Only stretches of _MIN_GAP_S or longer
+    are worth telling the operator about.
+    """
     plan = None
     samples: List[dict] = []
+    gaps: List[dict] = []
     started = monotonic()
-    dead = 0
+    last_alive = started      # monotonic stamp of the last tick that answered
+    gap_from = None           # sample-time the current silence started at
     tick = 0
+    stopped = False
+    gave_up = False
+
+    def close_gap(to_t: float) -> None:
+        if gap_from is None:
+            return
+        length = round(to_t - gap_from, 2)
+        if length >= _MIN_GAP_S:
+            gaps.append({"from": gap_from, "to": round(to_t, 2),
+                         "seconds": length})
+
     while True:
         if plan is None:
             plan = _build_plan(ecu_key)
+        if should_stop is not None and should_stop():
+            stopped = True
+            break
         sample = {"t": round(monotonic() - started, 2)}
         alive = False
         for entry in plan["fast"]:
@@ -295,17 +339,32 @@ def _capture_client(client: Elm327UdsClient, seconds: float,
                 sample[f"{key}_raw"] = raw
                 alive = alive or value is not None
         samples.append(sample)
+        if on_sample is not None:
+            try:
+                on_sample(sample)
+            except Exception:
+                pass    # see the docstring: the drive data outranks the viewer
         tick += 1
-        if monotonic() - started >= seconds:
-            break
+        now = monotonic()
         if alive:
-            dead = 0
-        else:
-            dead += 1
-            if dead >= _DEAD_TICKS:
+            close_gap(sample["t"])
+            gap_from = None
+            last_alive = now
+        elif gap_from is None:
+            gap_from = sample["t"]
+        if now - started >= seconds:
+            break
+        if not alive:
+            if now - last_alive >= _DEAD_SECONDS:
+                gave_up = True
                 break
-            sleep(0.2)
-    return {"plan": plan, "samples": samples}
+            sleep(0.2)      # a dead bus must not spin the CPU or flood a relay
+
+    if gap_from is not None and samples:
+        close_gap(samples[-1]["t"])
+    return {"plan": plan, "samples": samples, "gaps": gaps,
+            "deadSeconds": round(float(sum(g["seconds"] for g in gaps)), 2),
+            "stopped": stopped, "gave_up": gave_up}
 
 
 def assess(samples: List[dict], ecu_key: Optional[str]) -> dict:
@@ -412,10 +471,17 @@ def assess(samples: List[dict], ecu_key: Optional[str]) -> dict:
         rail_key = _entry_key(plan["rail"][0])
         rail_pts = [(s["t"], s[rail_key]) for s in samples
                     if s.get(rail_key) is not None]
+        # The running total only counts the cylinders this car actually
+        # answered on, and only ticks where every one of them answered. A
+        # relay gap leaves Nones, and folding those to zero would read as the
+        # counters having RESET -- which drags the midpoint this compares
+        # against and can invent a pressure sag out of a lost connection.
+        live_keys = [k for k in (_entry_key(e) for _, e in plan["cyls"])
+                     if any(s.get(k) is not None for s in samples)]
         misf_total = []
         for s in samples:
-            tot = sum((s.get(_entry_key(e)) or 0) for _, e in plan["cyls"])
-            misf_total.append((s["t"], tot))
+            if live_keys and all(s.get(k) is not None for k in live_keys):
+                misf_total.append((s["t"], sum(s[k] for k in live_keys)))
         if len(rail_pts) > 4 and misf_total:
             mid_rail = sorted(v for _, v in rail_pts)[len(rail_pts) // 2]
             low_half = [t for t, m in misf_total
@@ -490,7 +556,9 @@ def known_issues(ecu_key: Optional[str] = None) -> dict:
 
 
 def capture(adapter: Optional[dict], seconds: float = 300.0,
-            ecu: Optional[str] = None, mode: str = "real") -> dict:
+            ecu: Optional[str] = None, mode: str = "real",
+            on_sample: Optional[Callable[[dict], None]] = None,
+            should_stop: Optional[Callable[[], bool]] = None) -> dict:
     """slk.md step 4: the rough-running drive log.
 
     Plug in with the ignition ON and start this BEFORE the drive profile:
@@ -500,10 +568,16 @@ def capture(adapter: Optional[dict], seconds: float = 300.0,
     tick adds the slow channels (coolant, oil temp, voltages, pressures,
     adaptations). Values stay graded `candidate` until they answer here.
     Read-only throughout.
+
+    on_sample(sample) sees each tick as it lands and should_stop() ends the
+    drive early -- both optional, and neither changes what is read from the
+    car. The result carries "gaps" and "deadSeconds" so a reader can tell a
+    clean run from one that spent half the drive off the air.
     """
     if mode == "sim":
         return {
-            "ok": True, "simulated": True, "samples": [],
+            "ok": True, "simulated": True, "samples": [], "gaps": [],
+            "deadSeconds": 0.0,
             "assessment": assess([], ecu), "ecu": ecu,
             "message": "SIMULATED -- no real car connected.", "timestamp": _now(),
         }
@@ -533,12 +607,16 @@ def capture(adapter: Optional[dict], seconds: float = 300.0,
                             "and pass --ecu explicitly."),
                         "timestamp": _now(),
                     }
-            result = _capture_client(client, min(seconds, 3600.0), chosen)
+            result = _capture_client(client, min(seconds, 3600.0), chosen,
+                                     on_sample=on_sample,
+                                     should_stop=should_stop)
         finally:
             client.restore()
 
         plan = result["plan"]
         samples = result["samples"]
+        gaps = result["gaps"]
+        dead_s = result["deadSeconds"]
         rpms = [s[_entry_key(plan["fast"][0])] for s in samples
                 if s.get(_entry_key(plan["fast"][0])) is not None]
         elapsed = samples[-1]["t"] if samples else 0.0
@@ -552,10 +630,21 @@ def capture(adapter: Optional[dict], seconds: float = 300.0,
             "rate_per_s": round(len(samples) / elapsed, 2) if elapsed else None,
             "rpm_range": [min(rpms), max(rpms)] if rpms else None,
             "samples": samples,
+            "gaps": gaps,
+            "deadSeconds": dead_s,
+            "stoppedEarly": result["stopped"],
             "assessment": assessment,
             "message": (
                 f"Captured {len(samples)} tick(s) over {elapsed:.0f}s on {chosen}. "
                 + (f"rpm spanned {min(rpms):.0f}-{max(rpms):.0f}. " if rpms else "")
+                + (f"{len(gaps)} link gap(s) totalling {dead_s:.0f}s -- the car "
+                   "answered nothing through those, so the timeline has holes; "
+                   "the samples either side are still good. " if gaps else "")
+                + ("Stopped early on request -- everything read up to that "
+                   "point is here. " if result["stopped"] else "")
+                + (f"WARNING: the capture gave up -- nothing answered for "
+                   f"{_DEAD_SECONDS:.0f}s (adapter, ignition or relay dropped "
+                   "for good, not a handover). " if result["gave_up"] else "")
                 + f"Verdict: {assessment['verdict']}."
                 + (" Rev the engine / include a cold window -- nothing moved "
                    "enough to judge." if assessment["verdict"] == "quiet_or_insufficient_data" else "")),
