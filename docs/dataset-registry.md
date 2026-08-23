@@ -214,7 +214,67 @@ named inside GPC but their content is not in this installer.
 
 ---
 
-## 4. Corpora referenced elsewhere but not indexed here
+## 4. Mercedes XENTRY Diagnostics OpenShell 26.6.4
+
+**Location** `C:\Users\steve\Desktop\mercedes\` — 18.7 GB zip (`XENTRY_Diagnostics_OpenShell_26.6.4.zip`,
+downloaded 2026-08-22, CRC-verified) plus derived trees beside it:
+`extracted\` (~19 GB, every payload MSI flattened as `MediaN__{guid}__name.msi`),
+`xdos\antrieb\` and `xdos\caesar_{cbf,cff,ccf}\` (administratively-installed
+payloads), `mined\` (parsed CBFs as JSON).
+
+**What it is** The Mercedes dealer diagnostic application, full passenger-car
+data set: XENTRY (XD-Daten-PKW), DAS legacy trees, SDFlash, Caesar CBF/CFF/CCF
+containers. Relevant to the SLK R172 rough-running job
+(`captures/mercedes/slk.md`).
+
+**How it was opened** No installer was run. The zip's central directory was
+listed directly; each GUID-named MSI identified by its `ProductName` property
+via Windows Installer COM; the needed packages unpacked with
+`msiexec /a ... /qn TARGETDIR=...`. Package→GUID map recoverable by rerunning
+that COM sweep over `extracted\`.
+
+**What is mined** Only the two engine ECUs the SLK job needs, from the Caesar
+layer:
+
+- `SIM271DE20.CBF` → `mined\SIM271DE20.json` (511 MB) — M271 EVO CGI turbo,
+  SLK200/250. UDS, 500 kbit, 0x7E0/0x7E8.
+- `MED177.CBF` → `mined\MED177.json` (1.1 GB) — M276 DE35 V6, SLK350 (CBF also
+  carries M278 variants).
+
+Parser: `docs/private/mercedes-data/OpenVehicleDiag/CBFParser` (Rust; built
+with rustup 1.98). Curated rough-running channel list (misfire counters,
+injection times/adaptations, mixture adaptations, fuel pressures, camshaft
+positions — 85 DIDs with scaling) is in
+`backend/profiles/mercedes/data/xentry_dids.json`, built by
+`tools/dealer_index/build_xentry_slk.py`.
+
+**What was built on it** `backend/profiles/mercedes/misfire.py` turns that
+table into the SLK rough-running instrument (`captures/mercedes/slk.md`
+steps 0/4/5): variant identify, the timestamped misfire drive-log capture
+(decoded live, raw bytes kept beside every value) and the signature
+assessment. CLI: `backend/tools/mercedes_misfire_session.py` (runs land in
+`captures/mercedes/runs/`); report: `backend/tools/mercedes_misfire_report.py`
+(self-contained HTML into `captures/reports/`). The online known-issue
+research both engines are judged against lives in
+`backend/profiles/mercedes/data/slk_rough_running.json` (each row carries its
+sources; Mercedes LI07.70-P-059951 intercooler-condensation misfires on model
+172 is in there).
+
+**What is not mined — the honest gaps**
+
+- The XENTRY `.gmf` guided-diagnosis trees (Istwerte/Pruefungen per ECU) are
+  GMF2 **encrypted** binaries; decryption lives inside the XENTRY runtime and
+  was not reversed. Everything above comes from the Caesar layer instead.
+- Only 2 of ~70 CBFs are parsed. The other engine/transmission/body CBFs sit
+  in `xdos\caesar_cbf\Xentry\MB_PKW\Caesar\cbf\` (incl. `SIM271KE20.CBF`,
+  `SIM271KECNG.CBF` for older M271 Kompressor cars).
+- DAS legacy trees, SDFlash flash data, Thesaurus, SMRX packages: untouched.
+- Nothing is car-verified yet: every DID in `xentry_dids.json` is graded
+  `candidate`; steps 0–2 of the SLK plan promote them.
+
+---
+
+## 5. Corpora referenced elsewhere but not indexed here
 
 | Corpus | Where | Why not |
 |---|---|---|

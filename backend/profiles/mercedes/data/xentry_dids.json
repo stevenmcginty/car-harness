@@ -1,0 +1,1650 @@
+{
+ "title": "Mercedes SLK R172 petrol - XENTRY engine-ECU actual values (rough-running capture)",
+ "provenance": {
+  "package": "XENTRY_Diagnostics_OpenShell_26.6.4.zip (InstallShield wrapper, downloaded 2026-08-22, CRC-verified)",
+  "how_opened": "zip central directory -> per-GUID MSI payloads extracted to C:/Users/steve/Desktop/mercedes/extracted (msiexec administrative install) -> Caesar packages unpacked -> CBFs parsed statically",
+  "parser": "docs/private/mercedes-data/OpenVehicleDiag/CBFParser (built with rustup 1.98, release)",
+  "source_files": {
+   "SIM271DE20": "xdos/caesar_cbf/Xentry/MB_PKW/Caesar/cbf/SIM271DE20.CBF -> mined/SIM271DE20.json",
+   "MED177": "xdos/caesar_cbf/Xentry/MB_PKW/Caesar/cbf/MED177.CBF -> mined/MED177.json"
+  },
+  "cross_reference": "XENTRY gmf trees reference these ECUs under MB_PKW/Steuergeraete/Antrieb/Benzin/{SIM271DE,MED177}_ODX; MED177 simulation xml confirms UDS on HSCAN 500k, 0x7E0/0x7E8"
+ },
+ "notes": [
+  "Grading: every entry is 'candidate'. Nothing here has answered on a car yet; steps 0-2 of captures/mercedes/slk.md promote entries to verified by adding a live_<vin> key exactly like backend/profiles/jlr/data/sdd_dids.json.",
+  "Byte/bit offsets are relative to the positive-response payload AFTER the 62 <DID> header bytes.",
+  "SIM271DE20 exposes no explicit per-cylinder injector quantity deviation; per-cylinder injection time (TI_1_HOM) is the closest channel. MED177 does expose true per-cylinder injector adaptations (6570..).",
+  "MED177 CBF covers several variants; which DIDs answer depends on the car's actual variant (step 0 of the plan identifies it).",
+  "The GMF2 guided-diagnosis trees are encrypted and NOT mined; everything here comes from the Caesar layer.",
+  "Raw-corpora locations and the not-mined list live in docs/dataset-registry.md."
+ ],
+ "sim271de20_m271_turbo": {
+  "ecu": "SIM271DE20",
+  "title": "SIM271 DE20 - M271 EVO CGI turbo 4-cyl (SLK200/SLK250)",
+  "connections": [
+   {
+    "baud": 500000,
+    "request_id": "0x7e0",
+    "response_id": "0x7e8",
+    "protocol": "UDS"
+   }
+  ],
+  "dids": [
+   {
+    "did": "2000",
+    "request": "22 20 00",
+    "name": "Engine speed",
+    "source_name": "Automatisch generierter DOP N",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "1/min",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.0,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2001",
+    "request": "22 20 01",
+    "name": "Relative load",
+    "source_name": "Automatisch generierter DOP LOAD",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "%",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.781255,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2007",
+    "request": "22 20 07",
+    "name": "Air mass (MAF)",
+    "source_name": "Automatisch generierter DOP MAF_KGH_MES",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "kg/h",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.03125,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2009",
+    "request": "22 20 09",
+    "name": "O2 sensor bank 1 upstream, raw sensor voltage",
+    "source_name": "Automatisch generierter DOP VLS_UP[1]",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.00488281,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2012",
+    "request": "22 20 12",
+    "name": "O2 sensor bank 1 downstream, raw sensor voltage",
+    "source_name": "Automatisch generierter DOP VLS_DOWN[1]",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.00488281,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2013",
+    "request": "22 20 13",
+    "name": "Coolant temperature",
+    "source_name": "Automatisch generierter DOP TCO",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°C",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.75,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2014",
+    "request": "22 20 14",
+    "name": "Intake air temperature (pre-throttle)",
+    "source_name": "Automatisch generierter DOP TIA",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°C",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.75,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2018",
+    "request": "22 20 18",
+    "name": "Manifold absolute pressure",
+    "source_name": "Automatisch generierter DOP MAP_MES",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "hPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.0829175,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "201A",
+    "request": "22 20 1A",
+    "name": "System voltage (measured)",
+    "source_name": "Automatisch generierter DOP VB_MES",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.0293255,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2046",
+    "request": "22 20 46",
+    "name": "Lambda upstream catalyst, engineering value",
+    "source_name": "Automatisch generierter DOP LAMB_LS_UP[1]",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.000976563,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2070",
+    "request": "22 20 70",
+    "name": "Fuel pressure sensor, raw voltage",
+    "source_name": "Automatisch generierter DOP VP_FUP_MES",
+    "family": "fuel_pressure",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.000152588,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2071",
+    "request": "22 20 71",
+    "name": "Low-pressure fuel pressure (engineering)",
+    "source_name": "Automatisch generierter DOP FUP",
+    "family": "fuel_pressure",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "hPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 5.30672,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2095",
+    "request": "22 20 95",
+    "name": "Oil temperature",
+    "source_name": "Automatisch generierter DOP TOIL",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°C",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.0,
+     "offset": -40.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2098",
+    "request": "22 20 98",
+    "name": "Low-pressure fuel pressure at electric fuel pump",
+    "source_name": "Automatisch generierter DOP FUP_EFP",
+    "family": "fuel_pressure",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "hPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 2.65336,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6011",
+    "request": "22 60 11",
+    "name": "Misfire counter cylinder 1",
+    "source_name": "Automatisch generierter DOP MIS_CTR_B[0]",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.0,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6013",
+    "request": "22 60 13",
+    "name": "Misfire counter cylinder 2",
+    "source_name": "Automatisch generierter DOP MIS_CTR_B[1]",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.0,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6014",
+    "request": "22 60 14",
+    "name": "Misfire counter cylinder 3",
+    "source_name": "Automatisch generierter DOP MIS_CTR_B[2]",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.0,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6012",
+    "request": "22 60 12",
+    "name": "Misfire counter cylinder 4",
+    "source_name": "Automatisch generierter DOP MIS_CTR_B[3]",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.0,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "4050",
+    "request": "22 40 50",
+    "name": "Injection time cylinder 1",
+    "source_name": "Automatisch generierter DOP TI_1_HOM[0]",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "ms",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.004,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "4051",
+    "request": "22 40 51",
+    "name": "Injection time cylinder 2",
+    "source_name": "Automatisch generierter DOP TI_1_HOM[3]",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "ms",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.004,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "4052",
+    "request": "22 40 52",
+    "name": "Injection time cylinder 3",
+    "source_name": "Automatisch generierter DOP TI_1_HOM[1]",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "ms",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.004,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "4053",
+    "request": "22 40 53",
+    "name": "Injection time cylinder 4",
+    "source_name": "Automatisch generierter DOP TI_1_HOM[2]",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "ms",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.004,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6041",
+    "request": "22 60 41",
+    "name": "Ignition angle knock correction cylinder 1",
+    "source_name": "Automatisch generierter DOP IGA_CYL_KNK[0]",
+    "family": "ignition",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°CRK",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.375,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6043",
+    "request": "22 60 43",
+    "name": "Ignition angle knock correction cylinder 2",
+    "source_name": "Automatisch generierter DOP IGA_CYL_KNK[1]",
+    "family": "ignition",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°CRK",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.375,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6044",
+    "request": "22 60 44",
+    "name": "Ignition angle knock correction cylinder 3",
+    "source_name": "Automatisch generierter DOP IGA_CYL_KNK[2]",
+    "family": "ignition",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°CRK",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.375,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6042",
+    "request": "22 60 42",
+    "name": "Ignition angle knock correction cylinder 4",
+    "source_name": "Automatisch generierter DOP IGA_CYL_KNK[3]",
+    "family": "ignition",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°CRK",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.375,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2100",
+    "request": "22 21 00",
+    "name": "Knock sensor signal voltage cylinder 1",
+    "source_name": "Automatisch generierter DOP KNKS[0]",
+    "family": "ignition",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 7.62939e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2102",
+    "request": "22 21 02",
+    "name": "Knock sensor signal voltage cylinder 2",
+    "source_name": "Automatisch generierter DOP KNKS[1]",
+    "family": "ignition",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 7.62939e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2103",
+    "request": "22 21 03",
+    "name": "Knock sensor signal voltage cylinder 3",
+    "source_name": "Automatisch generierter DOP KNKS[2]",
+    "family": "ignition",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 7.62939e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "2101",
+    "request": "22 21 01",
+    "name": "Knock sensor signal voltage cylinder 4",
+    "source_name": "Automatisch generierter DOP KNKS[3]",
+    "family": "ignition",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 7.62939e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6103",
+    "request": "22 61 03",
+    "name": "Mixture adaptation, lower range (long-term)",
+    "source_name": "Automatisch generierter DOP FAC_L_RNG_LAM_AD[1]",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "%",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.00152588,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6105",
+    "request": "22 61 05",
+    "name": "Mixture adaptation, upper range (long-term)",
+    "source_name": "Automatisch generierter DOP FAC_H_RNG_LAM_AD[1]",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "%",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.00152588,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "6132",
+    "request": "22 61 32",
+    "name": "Mixture control closed-loop correction (short-term)",
+    "source_name": "Automatisch generierter DOP LAM_MV",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "%",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.00152588,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "4010",
+    "request": "22 40 10",
+    "name": "Camshaft exhaust-side position (actual)",
+    "source_name": "Automatisch generierter DOP CAM_AV_IVVT_EX[1]",
+    "family": "camshaft",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°",
+    "conversion": {
+     "type": "linear",
+     "multiplier": -0.375,
+     "offset": -40.125
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "4012",
+    "request": "22 40 12",
+    "name": "Camshaft intake-side position (actual)",
+    "source_name": "Automatisch generierter DOP CAM_AV_IVVT_IN[1]",
+    "family": "camshaft",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.375,
+     "offset": 60.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   },
+   {
+    "did": "4036",
+    "request": "22 40 36",
+    "name": "Quantity-control-valve pressure adaptation",
+    "source_name": "Mengensteuerventil Adaptionswert der Druckadaption: FAC_AD_VCV[1]",
+    "family": "fuel_pressure",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 6.10352e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M80700"
+   }
+  ]
+ },
+ "med177_m276_v6": {
+  "ecu": "MED177",
+  "title": "MED177 - M276 DE35 V6 (SLK350); CBF also carries M278 variants",
+  "connections": [
+   {
+    "baud": 500000,
+    "request_id": "0x7e0",
+    "response_id": "0x7e8",
+    "protocol": "UDS"
+   },
+   {
+    "baud": 800000,
+    "request_id": "0x7e0",
+    "response_id": "0x7e8",
+    "protocol": "UDS"
+   }
+  ],
+  "dids": [
+   {
+    "did": "2000",
+    "request": "22 20 00",
+    "name": "Engine speed",
+    "source_name": "Kurbelwellendrehzahl(1)",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "1/min",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.25,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2001",
+    "request": "22 20 01",
+    "name": "Relative load",
+    "source_name": "Last(1)",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "%",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.023438,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2009",
+    "request": "22 20 09",
+    "name": "O2 sensor bank 1 upstream, raw voltage",
+    "source_name": "Spannung O2-Regelsonde Bank 1 Rohwert (DE: Frontkat)",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.004883,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2008",
+    "request": "22 20 08",
+    "name": "O2 sensor bank 2 upstream, raw voltage",
+    "source_name": "Spannung O2-Regelsonde Bank 2 Rohwert (DE: Frontkat)",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "V",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.004883,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2013",
+    "request": "22 20 13",
+    "name": "Coolant temperature",
+    "source_name": "Kuehlmitteltemperatur gefiltert u. mit Ersatzwertbehandlung",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°C",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.75,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2014",
+    "request": "22 20 14",
+    "name": "Intake air temperature pre-throttle",
+    "source_name": "Ansauglufttemperatur in HFM bzw. vor DK mit Ersatzwertbehandlung",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°C",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.75,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "201C",
+    "request": "22 20 1C",
+    "name": "Intake air temperature in manifold",
+    "source_name": "Ansauglufttemperatur im Saugrohr",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°C",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.75,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2018",
+    "request": "22 20 18",
+    "name": "Manifold absolute pressure",
+    "source_name": "Saugrohrdruck(1)",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "hPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.078125,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2040",
+    "request": "22 20 40",
+    "name": "Ambient pressure",
+    "source_name": "Umgebungsdruck(1)",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "hPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.039063,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2046",
+    "request": "22 20 46",
+    "name": "Lambda upstream catalyst bank 1",
+    "source_name": "Lambda vor Kat (DE: Frontkat) Istwert Bank 1",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.000244,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2047",
+    "request": "22 20 47",
+    "name": "Lambda upstream catalyst bank 2",
+    "source_name": "Lambda vor Kat (DE: Frontkat) Istwert Bank 2",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.000244,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "206F",
+    "request": "22 20 6F",
+    "name": "Rail pressure actual, filtered (high pressure)",
+    "source_name": "Raildruck Istwert mit Filterung u. Ersatzwertbehandlung",
+    "family": "fuel_pressure",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "MPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.0005,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2071",
+    "request": "22 20 71",
+    "name": "Rail pressure after fuel pump (HP pump outlet)",
+    "source_name": "Raildruck Istwert nach Kraftstoffpumpe",
+    "family": "fuel_pressure",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "MPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.0005,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2098",
+    "request": "22 20 98",
+    "name": "Fuel pressure before fuel pump (low pressure)",
+    "source_name": "Kraftstoffdruck vor Kraftstoffpumpe(1)",
+    "family": "fuel_pressure",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "kPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.1,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2077",
+    "request": "22 20 77",
+    "name": "Charge-air pressure P2 before throttle, corrected",
+    "source_name": "Ladedrucksensor P2 vor Drosselklappe mit Korrekturwert aus Nachlauf",
+    "family": "charge_pressure",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "hPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.078125,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "207A",
+    "request": "22 20 7A",
+    "name": "Charge-air pressure P2 before throttle, corrected (alt)",
+    "source_name": "Ladedrucksensor P2 vor Drosselklappe mit Korrekturwert aus Nachlauf",
+    "family": "charge_pressure",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "hPa",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.078125,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "2095",
+    "request": "22 20 95",
+    "name": "Oil temperature",
+    "source_name": "Temperatursensor Oel(1)",
+    "family": "baseline",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 8,
+    "byte_size": 1,
+    "unit": "°C",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.75,
+     "offset": -48.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6011",
+    "request": "22 60 11",
+    "name": "Misfire counter cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Zylinder",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6012",
+    "request": "22 60 12",
+    "name": "Misfire counter cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Zylinder",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6013",
+    "request": "22 60 13",
+    "name": "Misfire counter cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Zylinder",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6014",
+    "request": "22 60 14",
+    "name": "Misfire counter cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Zylinder",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6015",
+    "request": "22 60 15",
+    "name": "Misfire counter cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Zylinder",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6016",
+    "request": "22 60 16",
+    "name": "Misfire counter cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Zylinder",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6017",
+    "request": "22 60 17",
+    "name": "Misfire counter cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Zylinder",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M278LA_VC7_0_Serie"
+   },
+   {
+    "did": "6018",
+    "request": "22 60 18",
+    "name": "Misfire counter cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Zylinder",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M278LA_VC7_0_Serie"
+   },
+   {
+    "did": "65A0",
+    "request": "22 65 A0",
+    "name": "Misfire counter homogeneous mode cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Homogen Zylinder 1",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC10"
+   },
+   {
+    "did": "65B0",
+    "request": "22 65 B0",
+    "name": "Misfire counter stratified mode cylinder",
+    "source_name": "ZÃžndaussetzerzÃĪhler Schicht Zylinder 1",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "unknown"
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC10"
+   },
+   {
+    "did": "6570",
+    "request": "22 65 70",
+    "name": "Injector small-quantity adaptation cylinder",
+    "source_name": "Piezoinjektoren Kleinmengenadaptionswerte Zylinder 1",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.52588e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC9"
+   },
+   {
+    "did": "6571",
+    "request": "22 65 71",
+    "name": "Injector small-quantity adaptation cylinder 2",
+    "source_name": "Piezoinjektoren Kleinmengenadaptionswerte Zylinder 2",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.52588e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC9"
+   },
+   {
+    "did": "6572",
+    "request": "22 65 72",
+    "name": "Injector small-quantity adaptation cylinder 3",
+    "source_name": "Piezoinjektoren Kleinmengenadaptionswerte Zylinder 3",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.52588e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC9"
+   },
+   {
+    "did": "6573",
+    "request": "22 65 73",
+    "name": "Injector small-quantity adaptation cylinder 4",
+    "source_name": "Piezoinjektoren Kleinmengenadaptionswerte Zylinder 4",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.52588e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC9"
+   },
+   {
+    "did": "6574",
+    "request": "22 65 74",
+    "name": "Injector small-quantity adaptation cylinder 5",
+    "source_name": "Piezoinjektoren Kleinmengenadaptionswerte Zylinder 5",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.52588e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC9"
+   },
+   {
+    "did": "6575",
+    "request": "22 65 75",
+    "name": "Injector small-quantity adaptation cylinder 6",
+    "source_name": "Piezoinjektoren Kleinmengenadaptionswerte Zylinder 6",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.52588e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC9"
+   },
+   {
+    "did": "6576",
+    "request": "22 65 76",
+    "name": "Injector small-quantity adaptation cylinder 7",
+    "source_name": "Piezoinjektoren Kleinmengenadaptionswerte Zylinder 7",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.52588e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M278LA_VC9"
+   },
+   {
+    "did": "6577",
+    "request": "22 65 77",
+    "name": "Injector small-quantity adaptation cylinder 8",
+    "source_name": "Piezoinjektoren Kleinmengenadaptionswerte Zylinder 8",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 1.52588e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M278LA_VC9"
+   },
+   {
+    "did": "6550",
+    "request": "22 65 50",
+    "name": "Piezo injector stroke-correction compensation factor cylinder 1",
+    "source_name": "Piezoinjektoren Hubkorrektur_Kompensationsfaktor Zylinder 1",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 3.05176e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC10"
+   },
+   {
+    "did": "6560",
+    "request": "22 65 60",
+    "name": "Piezo injector charge-control actuating variable cylinder 1",
+    "source_name": "Piezoinjektoren Ladungsregelung StellgrÃķÃe Zylinder 1",
+    "family": "injector",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.000488281,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC10"
+   },
+   {
+    "did": "6105",
+    "request": "22 61 05",
+    "name": "Multiplicative mixture adaptation factor bank 1 (part load)",
+    "source_name": "Multiplikativer Gemischadaptionsfaktor Bank 1 (Teillast)(1)",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 3.05176e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6106",
+    "request": "22 61 06",
+    "name": "Multiplicative mixture adaptation factor bank 2 (part load)",
+    "source_name": "Multiplikativer Gemischadaptionsfaktor Bank 2(1)",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 3.05176e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6109",
+    "request": "22 61 09",
+    "name": "Temperature-dependent mixture adaptation factor bank 1",
+    "source_name": "TemperaturabhÃĪngige Gemischadaptionsfaktor Bank 1(1)",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 3.1e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6110",
+    "request": "22 61 10",
+    "name": "Temperature-dependent mixture adaptation factor bank 2",
+    "source_name": "TemperaturabhÃĪngige Gemischadaptionsfaktor Bank 2(1)",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 3.1e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6111",
+    "request": "22 61 11",
+    "name": "Mixture adaptation short-test result bank 1",
+    "source_name": "Gemischadaption Kurztest Ergebnis Bank 1(1)",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 3.1e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "6112",
+    "request": "22 61 12",
+    "name": "Mixture adaptation short-test result bank 2",
+    "source_name": "Gemischadaption Kurztest Ergebnis Bank 2(1)",
+    "family": "mixture",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 3.1e-05,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "4010",
+    "request": "22 40 10",
+    "name": "Camshaft exhaust bank 1 position",
+    "source_name": "Nockenwellen Auslass Bank 1(1)",
+    "family": "camshaft",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "°",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.007813,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "4011",
+    "request": "22 40 11",
+    "name": "Camshaft exhaust bank 2 position",
+    "source_name": "Nockenwellen Auslass Bank 2(1)",
+    "family": "camshaft",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "°",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.007813,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "4012",
+    "request": "22 40 12",
+    "name": "Camshaft intake bank 1 position",
+    "source_name": "Nockenwellen Einlass Bank 1(1)",
+    "family": "camshaft",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "°",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.007813,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "4013",
+    "request": "22 40 13",
+    "name": "Camshaft intake bank 2 position",
+    "source_name": "Nockenwellen Einlass Bank 2(1)",
+    "family": "camshaft",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "°",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.007813,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "4064",
+    "request": "22 40 64",
+    "name": "Camshaft reference adaptation angle difference intake right",
+    "source_name": "Nockenwellenreferenzadaption Winkeldifferenz Einlass Rechts(1)",
+    "family": "camshaft",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "°",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.021973,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   },
+   {
+    "did": "606D",
+    "request": "22 60 6D",
+    "name": "Rough-run (Laufunruhe) fuel-on adaptation test value",
+    "source_name": "Fuel On Adaption Laufunruhe Testgroesse(1)",
+    "family": "misfire",
+    "byte_offset": 3,
+    "bit_offset": 0,
+    "length_bits": 16,
+    "byte_size": 2,
+    "unit": "(Umdr./sec)^2",
+    "conversion": {
+     "type": "linear",
+     "multiplier": 0.006316,
+     "offset": 0.0
+    },
+    "grade": "candidate",
+    "variant_seen": "M276_VC7_0_Serie"
+   }
+  ]
+ }
+}

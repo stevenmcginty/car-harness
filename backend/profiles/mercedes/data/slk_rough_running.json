@@ -1,0 +1,156 @@
+{
+  "title": "SLK R172 petrol rough running -- known-issue reference (online research, 2026-08-23)",
+  "provenance": {
+    "compiled": "2026-08-23",
+    "method": "web research on M271 EVO and M276 rough-running/misfire complaints, Mercedes technical instructions and workshop guides; every claim carries its source",
+    "grade": "reference-only: these are OTHER cars' failure statistics, not this car's diagnosis. The live capture decides; this file only suggests what to look for."
+  },
+  "engines": {
+    "sim271de20_m271_turbo": {
+      "name": "M271 EVO DE18 LA turbo CGI 4-cyl (SLK200/250, 271.8)",
+      "ecu": "SIM271DE20 (N3/10)"
+    },
+    "med177_m276_v6": {
+      "name": "M276 DE35 3.5 V6 (SLK350)",
+      "ecu": "MED177"
+    }
+  },
+  "issues": [
+    {
+      "id": "m271-intercooler-condensation-misfire",
+      "engines": ["sim271de20_m271_turbo"],
+      "name": "Intercooler condensation misfire (Mercedes LI07.70-P-059951)",
+      "symptoms": "CEL with P030100-P030400 during or after long steady drives in high humidity (>70%); intermittent; reduced power under full throttle.",
+      "dtc_hints": ["P0301", "P0302", "P0303", "P0304"],
+      "signature_hint": "Misfires appear on ONE cylinder after sustained load/humidity, no hardware fault found on plugs/coils. Model 172 is explicitly in the LI's validity.",
+      "fix": "Only if XENTRY guided tests direct it: updated charge-air cooler A0995003501. Mercedes' own guidance first says: verify setting conditions, erase, release without parts.",
+      "sources": [
+        "https://static.oemdtc.com/NHTSA-PDFs/MC-10135781-9999.pdf (LI07.70-P-059951 v3, validity model 204 + 172 with M271 EVO 271.8)",
+        "https://static.oemdtc.com/NHTSA-PDFs/MC-10135652-9999.pdf (P0301/P0304 SIM271DE20 investigation LI)"
+      ]
+    },
+    {
+      "id": "m271-cam-solenoid-oil-leak",
+      "engines": ["sim271de20_m271_turbo"],
+      "name": "Camshaft adjuster solenoid O-rings leak oil into the plug wells (Y49/1, Y49/2)",
+      "symptoms": "Rough idle, misfires P0301-P0304, cam phasing codes P0011/P0014, oil smell, oil residue in spark plug wells fouling coil bases. Often misdiagnosed as coils.",
+      "dtc_hints": ["P0300", "P0301", "P0302", "P0303", "P0304", "P0011", "P0014"],
+      "signature_hint": "One-two adjacent cylinders climbing; camshaft position DIDs (4010/4012) drifting off target; visual oil in plug wells confirms without any scanner.",
+      "fix": "Replace both solenoid O-rings (+ solenoids if scored), oil-stop loom kit A2711502733 x2, clean/replace fouled coils and plugs.",
+      "sources": [
+        "https://en.mercedesassistance.com/m271-engine-mercedes/",
+        "https://autofiles.com/blog/common-mercedes-m271-engine-failures-reasons-and-consequences/"
+      ]
+    },
+    {
+      "id": "m271-timing-chain",
+      "engines": ["sim271de20_m271_turbo"],
+      "name": "Single-row timing chain stretch / guide wear",
+      "symptoms": "Cold-start rattle clearing in 30-60s, rough idle, P0016/P0017/P0341. Act immediately on rattle.",
+      "dtc_hints": ["P0016", "P0017", "P0341"],
+      "signature_hint": "Camshaft actual-vs-target deviation (DIDs 4010/4012) large or slow to settle after start; misfires random rather than one hole.",
+      "fix": "Chain, tensioner, guides + inspect adjuster sprockets (their teeth wear with the chain).",
+      "sources": [
+        "https://en.mercedesassistance.com/m271-engine-mercedes/",
+        "https://orbimotors.com/news/m271-engine-reliability-and-most-common-problems/"
+      ]
+    },
+    {
+      "id": "m271-di-carbon",
+      "engines": ["sim271de20_m271_turbo"],
+      "name": "Intake-valve carbon buildup (direct injection)",
+      "symptoms": "Rough idle on cold start clearing after 2-3 min warm-up, hesitation 1500-2500 rpm, P0300 random, elevated trims.",
+      "dtc_hints": ["P0300"],
+      "signature_hint": "Misfire counters climb mostly while cold (coolant < 60 C) and stop when warm; mixture adaptations drifted positive (lean).",
+      "fix": "Walnut-blast intake valves (~60k miles interval on DI engines); the Kompressor never suffers this, the EVO does.",
+      "sources": [
+        "https://en.mercedesassistance.com/m271-engine-mercedes/",
+        "https://8020automotive.com/the-4-most-common-mercedes-m276-engine-problems/ (same DI mechanism)"
+      ]
+    },
+    {
+      "id": "m271-pcv",
+      "engines": ["sim271de20_m271_turbo"],
+      "name": "PCV / crankcase breather membrane failure",
+      "symptoms": "Rough idle, misfires, whistling at the oil cap, white smoke, oil in plug wells without cam-leak source, lean trims P0171.",
+      "dtc_hints": ["P0171", "P0300"],
+      "signature_hint": "Positive trim drift with misfires spread across cylinders; strong vacuum at the filler cap.",
+      "fix": "Replace PCV membrane/valve assembly (e.g. A2661530059 family per forum reports).",
+      "sources": [
+        "https://www.benzworld.org/threads/m271-cgi-c180-2011-pcv-valve-replacement.3151265/",
+        "https://en.mercedesassistance.com/m271-engine-mercedes/"
+      ]
+    },
+    {
+      "id": "m271-injectors-boosthose",
+      "engines": ["sim271de20_m271_turbo"],
+      "name": "Piezo injector faults / boost hose cracking (EVO-specific)",
+      "symptoms": "Injectors: rough idle, P0201-P0204, hard cold start, limp. Hoses: hissing under load, P0299 underboost, power loss above 3000 rpm.",
+      "dtc_hints": ["P0201", "P0202", "P0203", "P0204", "P0299"],
+      "signature_hint": "Per-cylinder injection times (4050-4053) diverging on one hole points at its injector; underboost shows as MAP lower than expected for rpm.",
+      "fix": "Piezo injectors MUST be coded to the ECU after replacement; replace the full charge-pipe set, not one section.",
+      "sources": [
+        "https://en.mercedesassistance.com/m271-engine-mercedes/"
+      ]
+    },
+    {
+      "id": "m276-cam-magnet-oil-leak",
+      "engines": ["med177_m276_v6"],
+      "name": "Camshaft magnet O-rings leak oil into the plug wells (six solenoids)",
+      "symptoms": "Misfires P0301-P0306, oil smell warm, oil-contaminated plug wells and coil bases, oil residue tracking from rear cam connectors.",
+      "dtc_hints": ["P0300", "P0301", "P0302", "P0303", "P0304", "P0305", "P0306"],
+      "signature_hint": "The climbing cylinders correspond to oil-fouled wells (bank-side clustering near the rear cam connectors).",
+      "fix": "All six O-ring seals inspected/replaced, harness cleaned, fouled coils/plugs replaced.",
+      "sources": [
+        "https://en.mercedesassistance.com/m276-engine-mercedes/"
+      ]
+    },
+    {
+      "id": "m276-tensioner-checkvalve",
+      "engines": ["med177_m276_v6"],
+      "name": "Timing chain tensioner check-valve bleed-down (early DE35, TSB)",
+      "symptoms": "Rattle on startup for a few seconds, sometimes P0016/P0017 or cam-adjuster codes P002177/P001885 if an adjuster pin has skipped.",
+      "dtc_hints": ["P0016", "P0017", "P002177", "P001885"],
+      "signature_hint": "Camshaft position deviations (4010-4013) right after start that settle once oil pressure builds; pressed-on cam tone wheels can loosen -- check for hard start + rough running together.",
+      "fix": "Check valves in tensioner oil supply + revised tensioners (pre-serial 276.8xx.30.000790); adjuster replacement if a pin skipped.",
+      "sources": [
+        "https://8020automotive.com/mercedes-m276-timing-chain-rattle/",
+        "https://automotivetechinfo.com/2022/03/mercedes-benz-m276-tour-tips-tricks/ (tone wheels)",
+        "https://www.603mtech.com/post/understanding-camshaft-adjuster-failure-on-m276-and-m278-engines"
+      ]
+    },
+    {
+      "id": "m276-hpfp",
+      "engines": ["med177_m276_v6"],
+      "name": "High-pressure fuel pump wear",
+      "symptoms": "Stuttering/hesitation, rough idle, misfires, power loss, fuel-pressure codes.",
+      "dtc_hints": ["P0087", "P0300"],
+      "signature_hint": "Rail pressure (206F/2071) sagging below its normal band exactly while misfire counters climb -- this is the pump-vs-ignition separator.",
+      "fix": "HPFP replacement; three-lobe cam-driven pump on the right intake camshaft.",
+      "sources": [
+        "https://8020automotive.com/the-4-most-common-mercedes-m276-engine-problems/",
+        "https://automotivetechinfo.com/2022/03/mercedes-benz-m276-tour-tips-tricks/"
+      ]
+    },
+    {
+      "id": "m276-carbon-breather",
+      "engines": ["med177_m276_v6"],
+      "name": "Intake-valve carbon buildup + breather oil ingestion (DI V6)",
+      "symptoms": "Rough cold idle, P0300 random, LTFT both banks drifting +10% or more; severe cases oil-fouled plugs from breather ingestion.",
+      "dtc_hints": ["P0300"],
+      "signature_hint": "Misfires concentrated in the cold window; multiplicative adaptations (6105/6106) above ~1.05 or trims positive on BOTH banks.",
+      "fix": "Walnut blast all 12 intake valves (~60k miles); trace the breather path before blaming coils.",
+      "sources": [
+        "https://en.mercedesassistance.com/m276-engine-mercedes/",
+        "https://automotivetechinfo.com/2022/03/mercedes-benz-m276-tour-tips-tricks/"
+      ]
+    }
+  ],
+  "bands": {
+    "misfire_delta_significant": 15,
+    "misfire_leader_margin": 10,
+    "trim_pct_note_threshold": 8.0,
+    "cold_coolant_c": 60.0,
+    "note": "Counters are cumulative-per-drive-cycle values; a handful of counts over a whole run is normal. The bands are working thresholds for THIS workflow, to be re-tuned after the first real capture."
+  }
+}

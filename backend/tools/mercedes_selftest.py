@@ -574,6 +574,147 @@ def main() -> int:
     check("API rejects unknown-brand snapshot for mercedes (no snapshot.py)",
           tc.get("/api/mercedes/snapshot?mode=sim").status_code == 404)
 
+    # --- misfire capture: the SLK rough-running workflow (slk.md step 4) ----
+    from backend.profiles.mercedes import misfire as mb_misfire
+
+    class FakeMisfireCar:
+        """A SIM271DE20-flavoured engine ECU: answers the UDS 0x22 reads the
+        mined dealer table asks -- ident, the SIM-only marker (2100), rpm,
+        lambda, coolant and misfire counters that climb on cylinder 2 only.
+        The MED-only markers (6015+) stay silent, so identification must land
+        on sim271de20_m271_turbo. Response = request + 8."""
+
+        PRESENT = {ENGINE}
+
+        def __init__(self):
+            self.reads = {}
+
+        def resp_id(self, tx):
+            return tx + 8 if tx in self.PRESENT else None
+
+        def _counter(self, did, base, climb_per_read):
+            n = self.reads.get(did, 0)
+            self.reads[did] = n + 1
+            return base + n * climb_per_read
+
+        def handle(self, tx, req):
+            resp = self.resp_id(tx)
+            if not req or tx not in self.PRESENT:
+                return (resp, None)
+            if req[0] == 0x3E:
+                return (resp, bytes([0x7E, 0x00]))
+            if req[0] != 0x22 or len(req) < 3:
+                return (resp, None)
+            did = (req[1] << 8) | req[2]
+            def u16(value):
+                # 62 <did hi> <did lo> <data hi> <data lo> -- the mined decode
+                # reads big-endian from byte offset 3, the first data byte.
+                return bytes([0x62, req[1], req[2],
+                              (value >> 8) & 0xFF, value & 0xFF])
+            if did == 0xF190:
+                return (resp, bytes([0x62, 0xF1, 0x90]) + FAKE_VIN.encode())
+            if did == 0x2100:                       # SIM-only marker
+                return (resp, u16(0x0100))
+            if did == 0x2000:                       # engine speed ~750
+                return (resp, u16(750))
+            if did == 0x2046:                       # lambda ~1.00 (1/1024)
+                return (resp, u16(0x0400))
+            if did == 0x2013:                       # coolant: raw*0.75-48 = 25 C
+                return (resp, bytes([0x62, req[1], req[2], 97]))
+            if did in (0x6011, 0x6012, 0x6013, 0x6014):   # counters
+                climb = 20 if did == 0x6012 else 0  # 6012 is cyl 4 on the SIM
+                return (resp, u16(self._counter(did, 0, climb)))
+            return (resp, None)
+
+    car = FakeMisfireCar()
+    session = FakeElmSession(car)
+    client = Elm327UdsClient(session, id_map)
+    client.begin()
+
+    ident = mb_misfire._identify_client(client)
+    check("misfire identify picks SIM271DE20 on the marker split",
+          ident["ecu"] == "sim271de20_m271_turbo", str(ident["sim_markers"]))
+    check("misfire identify reads VIN via F190", ident["vin"] == FAKE_VIN)
+    check("misfire identify names the engine",
+          "M271" in (ident.get("engine") or ""), str(ident.get("engine")))
+
+    result = mb_misfire._capture_client(client, seconds=0.0,
+                                        ecu_key="sim271de20_m271_turbo")
+    # Two passes so every counter has a before/after -- the fake car's
+    # cylinder-4 counter climbs 4 counts per read.
+    result["samples"] += mb_misfire._capture_client(
+        client, seconds=0.0, ecu_key="sim271de20_m271_turbo")["samples"]
+    samples = result["samples"]
+    plan = result["plan"]
+    cyl_map = {e["did"]: e["_key"] for _, e in plan["cyls"]}
+    check("capture plan maps SIM cylinders by name (6012 -> cyl4)",
+          cyl_map.get("6012") == "cyl4", str(cyl_map))
+    check("capture ran ticks with decoded rpm",
+          bool(samples) and samples[0].get("rpm") == 750.0,
+          str(samples[0] if samples else {}))
+    check("capture decodes lambda to about 1.0",
+          abs((samples[-1].get("did_2046") or 0) - 1.0) < 0.01,
+          str(samples[-1].get("did_2046")))
+    check("capture keeps raw bytes beside every decoded value",
+          all(isinstance(s.get("rpm_raw"), str)
+              for s in samples), "")
+    live_verdict = mb_misfire.assess(samples, "sim271de20_m271_turbo")
+    check("assess reads the fake car's climbing counter as cyl4 alone",
+          live_verdict["verdict"] == "single_cylinder"
+          and live_verdict["leaders"] == [4], str(live_verdict["deltas"]))
+
+    # Cylinder 2 climbs alone -> single_cylinder verdict naming that hole.
+    synth = []
+    for i in range(40):
+        s = {"t": float(i), "rpm": 750.0}
+        for k in ("cyl1", "cyl2", "cyl3", "cyl4"):
+            s[k] = 0.0
+        if i >= 10:
+            s["cyl2"] = float(i - 9) * 4
+        synth.append(s)
+    verdict = mb_misfire.assess(synth, "sim271de20_m271_turbo")
+    check("assess calls a lone climbing hole single_cylinder on cyl2",
+          verdict["verdict"] == "single_cylinder"
+          and verdict["leaders"] == [2], str(verdict["deltas"]))
+    even = []
+    for i in range(40):
+        s = {"t": float(i), "rpm": 750.0}
+        for k in ("cyl1", "cyl2", "cyl3", "cyl4"):
+            s[k] = float(i) * 2
+        even.append(s)
+    verdict_even = mb_misfire.assess(even, "sim271de20_m271_turbo")
+    check("assess calls an even climb fuelling/air, not one hole",
+          verdict_even["verdict"] == "all_cylinders_evenly",
+          verdict_even["verdict"])
+    quiet = mb_misfire.assess(
+        [{"t": 0.0, "rpm": 750.0, **{k: 0.0 for k in
+         ("cyl1", "cyl2", "cyl3", "cyl4")}}],
+        "sim271de20_m271_turbo")
+    check("assess says quiet when nothing climbed",
+          quiet["verdict"] == "quiet_or_insufficient_data", quiet["verdict"])
+    check("assess refuses without an identified ECU",
+          mb_misfire.assess(synth, None)["verdict"] == "no_ecu_identified")
+
+    known_all = mb_misfire.known_issues()["issues"]
+    known_sim = mb_misfire.known_issues("sim271de20_m271_turbo")["issues"]
+    check("known-issues reference loads and filters by engine",
+          len(known_sim) >= 4 and len(known_sim) < len(known_all),
+          f"{len(known_sim)}/{len(known_all)}")
+    check("every known issue carries at least one source link",
+          all(i.get("sources") for i in known_all))
+    matched = verdict.get("known_issues_matched") or \
+        mb_misfire.match_known_issues("single_cylinder",
+                                      "sim271de20_m271_turbo", [2])
+    check("a single-cylinder signature ranks an issue for that pattern",
+          any(m["match_score"] > 0 for m in matched), str(matched[:1]))
+
+    sim_ident = mb_misfire.identify(None, "sim")
+    sim_cap = mb_misfire.capture(None, 30, mode="sim")
+    check("identify/capture sim modes label themselves SIMULATED",
+          sim_ident.get("simulated") and sim_cap.get("simulated"))
+
+    print()
+
     print()
     print("  sim-scan message: " + rscan.get("message", ""))
     print()
@@ -582,8 +723,9 @@ def main() -> int:
         return 1
     print("SELF-TEST PASSED: Mercedes engine+TCM table, UDS mask ladder + session "
           "escalation, KWP2000-over-CAN fallback, engine OBD fallback + DoIP note, "
-          "E-Class hybrid live tier, ATF live extra, reset catalogue and brand "
-          "routes all good.")
+          "E-Class hybrid live tier, ATF live extra, reset catalogue, brand "
+          "routes and the SLK rough-running identify/capture/assess workflow "
+          "all good.")
     return 0
 
 

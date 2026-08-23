@@ -39,6 +39,7 @@ from backend.profiles.jlr import sweep as jlr_sweep  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
+from backend.profiles.mercedes import misfire as mercedes_misfire  # noqa: E402
 from backend.profiles.mercedes import pids as mercedes_pids  # noqa: E402
 from backend.profiles.mercedes import scan as mercedes_scan  # noqa: E402
 from backend.profiles.peugeot import oil as peugeot_oil  # noqa: E402
@@ -686,6 +687,69 @@ def mercedes_clear_module(
     if error is not None:
         return error
     return mercedes_scan.clear(instance, mode, address)
+
+
+@mcp.tool()
+def mercedes_slk_identify(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Identify which engine a Mercedes SLK R172 (or similar M271/M276 car) has.
+
+    slk.md step 0: reads the engine ECU's ident DIDs (VIN, part numbers) on
+    0x7E0 and probes one SIM271DE20-only marker DID vs the MED177-only markers,
+    so the rough-running capture knows which mined dealer-DID table applies --
+    M271 EVO turbo 4-cyl (SLK200/250) or M276 V6 (SLK350). Read-only.
+    Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mercedes_misfire.identify(instance, mode)
+
+
+@mcp.tool()
+def mercedes_slk_misfire_capture(
+    seconds: float = 300.0, ecu: str | None = None,
+    adapter_id: str | None = None, mode: str = "real",
+) -> dict:
+    """Capture the SLK rough-running drive log over a generic OBD dongle (read-only).
+
+    captures/mercedes/slk.md step 4. Start this BEFORE the drive profile:
+    cold start + untouched idle 3 min -> warm idle 2 min -> hold ~2000 rpm ->
+    hold ~3000 rpm (-> road loop if load-dependent). Every tick logs rpm, the
+    per-cylinder misfire counters and upstream lambda; every 5th tick adds
+    coolant, oil temp, voltage, load, MAF, fuel pressures and adaptations --
+    all from XENTRY-mined dealer DIDs (graded candidate until they answer).
+    Returns the assessment: which cylinder climbed, cold-vs-warm split, trim
+    drift, rail-pressure sag, matched known issues. Read-only.
+
+    seconds: capture length 30-3600. ecu: omit to auto-identify, or
+        "sim271de20_m271_turbo" / "med177_m276_v6" to skip that step.
+    adapter_id: a configured ELM327 adapter instance; required for real mode.
+    """
+    if ecu is not None and ecu not in (
+            "sim271de20_m271_turbo", "med177_m276_v6"):
+        return {"error": "ecu must be sim271de20_m271_turbo or med177_m276_v6."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mercedes_misfire.capture(instance, seconds, ecu, mode)
+
+
+@mcp.tool()
+def mercedes_slk_known_issues(ecu: str | None = None) -> dict:
+    """The researched rough-running known-issues reference for the SLK engines.
+
+    What online sources (Mercedes technical instructions, workshop guides,
+    owner forums -- each row carries its links) document for M271 EVO and
+    M276 rough running/misfires, with the live-data signature hint each one
+    would show in mercedes_slk_misfire_capture output. A reading aid ranked
+    against a capture -- never a diagnosis on its own.
+
+    ecu: filter to "sim271de20_m271_turbo" or "med177_m276_v6"; omit for both.
+    """
+    return mercedes_misfire.known_issues(ecu)
 
 
 # --------------------------------------------------------------------------- #
