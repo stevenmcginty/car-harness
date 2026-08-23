@@ -51,6 +51,7 @@ ENGINE = 0x7E0
 DATA_PATH = Path(__file__).resolve().parent / "data" / "xentry_dids.json"
 KNOWN_PATH = Path(__file__).resolve().parent / "data" / "slk_rough_running.json"
 
+_BURST_SECONDS = 20.0   # cam positions every tick this long after first fire
 _SLOW_EVERY = 5        # slow-group read every Nth tick
 
 # Give up on a wall clock, not on a tick count. A tick is however long the
@@ -129,7 +130,10 @@ def _build_plan(ecu_key: str) -> dict:
     rpm["_key"] = "rpm"
     lam = next((dict(e) for e in ecu["dids"] if e["did"] == "2046"), None)
     stft = next((dict(e) for e in ecu["dids"] if e["did"] == "6132"), None)
-    fast = [rpm] + [dict(e) for _, e in cyls] \
+    smooth = [dict(e) for e in by_family.get("smooth_running", [])]
+    for e in smooth:
+        e["_key"] = f"did_{e['did'].lower()}"
+    fast = [rpm] + [dict(e) for _, e in cyls] + smooth \
         + ([lam] if lam else []) + ([stft] if stft else [])
 
     slow = []
@@ -144,25 +148,40 @@ def _build_plan(ecu_key: str) -> dict:
 
     rail = [e for e in slow if e["family"] == "fuel_pressure"
             and e["did"] in ("206F", "2071")]
+    # burst -- camshaft actual positions, read EVERY tick for the first
+    # _BURST_SECONDS after the engine fires. The SLK's cold-start roughness and
+    # chain rattle (2026-08-23) live in those seconds, where a bled-down
+    # tensioner shows as cam error that snaps to target as oil pressure builds;
+    # the 30 s slow cadence never sees it.
+    burst = [e for e in slow if e["family"] == "camshaft"]
     return {"ecu": ecu_key, "fast": fast, "slow": slow, "cyls": cyls,
-            "rail": rail, "title": ecu["title"]}
+            "rail": rail, "burst": burst, "title": ecu["title"]}
 
 
 def decode_entry(entry: dict, reply: Optional[bytes]) -> Optional[float]:
     """Mined scaling -> engineering value, None if short/negative/silent.
 
     Every mined entry sits at byte offset 3 of the positive reply -- the first
-    data byte after `62 <DID hi> <DID lo>` -- big-endian, linear conversion.
+    data byte after `62 <DID hi> <DID lo>` -- little-endian (confirmed on-car), linear conversion.
     """
     if not reply or len(reply) < 3 or reply[0] != 0x62:
         return None
     off, size = entry["byte_offset"], entry["byte_size"]
     if len(reply) < off + size:
         return None
-    raw = 0
-    for b in reply[off:off + size]:
-        raw = (raw << 8) | b
+    # Confirmed on the car 2026-08-23 (SLK R172, SIM271DE20): multi-byte
+    # values arrive LITTLE-endian (rpm FD 04 = 1277, MAP BC 2E = 992 mbar at
+    # key-on) and the mixture family is signed two's complement (trims FE FF =
+    # -2 counts = -0.3 %). Camshaft deviations are signed single bytes.
+    raw = int.from_bytes(reply[off:off + size], "little")
+    signed = (entry.get("family") == "mixture"
+              or (entry.get("family") == "camshaft" and size == 1))  # PWM duty is unsigned
+    if signed and raw >= 1 << (8 * size - 1):
+        raw -= 1 << (8 * size)
     conv = entry["conversion"]
+    if conv.get("type") == "float32" and size == 4:
+        import struct
+        return round(struct.unpack("<f", reply[off:off + 4])[0], 6)
     if conv.get("type") != "linear":
         return float(raw)   # 'unknown' conversions pass the raw count through
     return round(raw * conv["multiplier"] + conv["offset"], 4)
@@ -308,6 +327,7 @@ def _capture_client(client: Elm327UdsClient, seconds: float, ecu_key: str,
     tick = 0
     stopped = False
     gave_up = False
+    first_fire_t = None       # sample-time rpm first read non-zero
 
     def close_gap(to_t: float) -> None:
         if gap_from is None:
@@ -331,8 +351,21 @@ def _capture_client(client: Elm327UdsClient, seconds: float, ecu_key: str,
             sample[key] = value
             sample[f"{key}_raw"] = raw
             alive = alive or value is not None
+        if sample.get("rpm") and first_fire_t is None:
+            first_fire_t = sample["t"]
+        in_burst = (first_fire_t is not None
+                    and sample["t"] - first_fire_t <= _BURST_SECONDS)
+        if in_burst:
+            for entry in plan.get("burst", []):
+                key = _entry_key(entry)
+                raw, value = _read_entry(client, entry, timeout=1.0)
+                sample[key] = value
+                sample[f"{key}_raw"] = raw
+                alive = alive or value is not None
         if tick % _SLOW_EVERY == 0:
             for entry in plan["slow"]:
+                if in_burst and entry in plan.get("burst", []):
+                    continue    # already read this tick
                 key = _entry_key(entry)
                 raw, value = _read_entry(client, entry, timeout=1.0)
                 sample[key] = value
@@ -367,6 +400,18 @@ def _capture_client(client: Elm327UdsClient, seconds: float, ecu_key: str,
             "stopped": stopped, "gave_up": gave_up}
 
 
+def _accumulated(series) -> float:
+    """Total misfires logged over a (t, count) series. The SIM271DE20 clears
+    its per-cylinder counters once warm (seen on the SLK: cyl 4 read 7 for
+    40 s after a cold start, then 0), so last-minus-first would hide a cold
+    spike -- sum only the positive steps and ignore resets."""
+    total = 0.0
+    for (_, a), (_, b) in zip(series, series[1:]):
+        if b > a:
+            total += b - a
+    return total + max(0.0, series[0][1])
+
+
 def assess(samples: List[dict], ecu_key: Optional[str]) -> dict:
     """slk.md step 5: which counter climbed, when, and what moved with it."""
     bands = KNOWN.get("bands", {})
@@ -389,7 +434,7 @@ def assess(samples: List[dict], ecu_key: Optional[str]) -> dict:
         series = [(s["t"], s[key]) for s in samples
                   if s.get(key) is not None]
         if len(series) >= 2:
-            deltas[cyl] = series[-1][1] - series[0][1]
+            deltas[cyl] = _accumulated(series)
             first_last[cyl] = (series[0][1], series[-1][1])
 
     verdict = "quiet_or_insufficient_data"
@@ -433,7 +478,7 @@ def assess(samples: List[dict], ecu_key: Optional[str]) -> dict:
                 pts = [(s["t"], s[key]) for s in samples
                        if s.get(key) is not None and s["t"] <= t_cut]
                 if len(pts) >= 2:
-                    out[cyl] = pts[-1][1] - pts[0][1]
+                    out[cyl] = _accumulated(pts)
             return out
         cold_gain = sum(max(0, v) for v in gain_before(cold_t).values())
         warm_gain = sum(max(0, v) for v in deltas.values()) - cold_gain

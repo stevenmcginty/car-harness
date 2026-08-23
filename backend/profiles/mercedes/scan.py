@@ -316,6 +316,17 @@ def _read_dtcs(client: Elm327UdsClient, req_id: int, trace: List[str]) -> List[d
                 trace.append(f"19 02 after session -> {_nrc_text(exc2)}")
         return _read_dtcs_kwp(client, req_id, trace)
     except (ObdError, TransportError):
+        # Silence, not a refusal. Seen on the SLK R172 SIM271DE20 (2026-08-23):
+        # it answers 22 xxxx in the default session but stays mute on 19 02
+        # until 10 03 is opened -- so give the extended session one try
+        # before assuming a KWP-era module.
+        if _open_extended(client, req_id, trace):
+            try:
+                return _read_dtcs_uds(client, req_id, trace)
+            except uds.UdsNegativeResponse as exc2:
+                trace.append(f"19 02 after session -> {_nrc_text(exc2)}")
+            except (ObdError, TransportError):
+                trace.append("19 02 after session -> no answer")
         return _read_dtcs_kwp(client, req_id, trace)
 
 
@@ -385,9 +396,7 @@ def scan(adapter: Optional[dict], mode: str = "real") -> dict:
                 try:
                     mod["ident"] = _read_ident(client, req_id, trace)
                     mod["dtcs"] = _read_dtcs(client, req_id, trace)
-                except uds.UdsNegativeResponse as exc:
-                    mod["error"] = str(exc)
-                except (ObdError, TransportError) as exc:
+                except (uds.UdsNegativeResponse, ObdError, TransportError) as exc:
                     if via_standard_obd:
                         # Engine on the plain OBD channel may not speak UDS/KWP
                         # fault services -- generic Mode 03 codes still do.
