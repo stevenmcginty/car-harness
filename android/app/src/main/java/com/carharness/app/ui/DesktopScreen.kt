@@ -90,14 +90,17 @@ fun DesktopScreen(state: AppState) {
                         OutlinedTextField(
                             value = state.manualHost,
                             onValueChange = { state.manualHost = it },
-                            label = { Text("PC address (if not found)") },
+                            label = { Text("PC address or tunnel host") },
                             modifier = Modifier.width(220.dp),
                             singleLine = true,
                             colors = harnessFieldColors(),
                         )
                         PrimaryButton(
                             "Pair",
-                            onClick = { state.pairWith(state.manualHost.trim(), 8765) },
+                            onClick = {
+                                val (h, p) = parseHostPort(state.manualHost)
+                                state.pairWith(h, p)
+                            },
                             enabled = state.manualHost.isNotBlank() && !state.pairBusy,
                         )
                     }
@@ -287,4 +290,30 @@ fun DesktopScreen(state: AppState) {
         item { UpdateCard() }
         item { Spacer(Modifier.height(12.dp)) }
     }
+}
+
+
+/**
+ * Read a desktop address the user typed by hand.
+ *
+ * Two shapes reach us. On the LAN it's a bare IP -- "192.168.4.45" -- and the
+ * harness answers plain HTTP on 8765. Through a tunnel it's a hostname that
+ * only speaks TLS on 443, so "https://foo.trycloudflare.com" (or an explicit
+ * ":443") has to come back as port 443; HarnessClient reads that port as its
+ * cue to switch to https:// and wss://. An explicit port always wins.
+ */
+internal fun parseHostPort(raw: String): Pair<String, Int> {
+    var text = raw.trim()
+    val https = text.startsWith("https://", ignoreCase = true)
+    text = text.removePrefix("https://").removePrefix("HTTPS://")
+        .removePrefix("http://").removePrefix("HTTP://")
+    text = text.substringBefore('/').substringBefore('?').trim()
+    val colon = text.lastIndexOf(':')
+    if (colon > 0) {
+        val port = text.substring(colon + 1).toIntOrNull()
+        if (port != null && port in 1..65535) {
+            return Pair(text.substring(0, colon), port)
+        }
+    }
+    return Pair(text, if (https) 443 else 8765)
 }

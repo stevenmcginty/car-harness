@@ -144,7 +144,10 @@ class HarnessClient(context: Context) {
         auth: Boolean = true,
     ): String {
         if (host.isEmpty()) throw IOException("Not paired with a desktop yet.")
-        val conn = URL("http://$host:$port$path").openConnection() as HttpURLConnection
+        // Port 443 means a TLS tunnel: https:// and no port suffix. Anything
+        // else is the plain-HTTP harness on the LAN. Same rule as relayUrl().
+        val base = if (port == 443) "https://$host" else "http://$host:$port"
+        val conn = URL(base + path).openConnection() as HttpURLConnection
         conn.requestMethod = method
         conn.connectTimeout = 5000
         conn.readTimeout = 60000
