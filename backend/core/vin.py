@@ -47,6 +47,9 @@ WMI_MAKES = {
     "ZFA": "Fiat", "ZFC": "Fiat", "ZAR": "Alfa Romeo", "ZLA": "Lancia",
     # Jaguar Land Rover
     "SAJ": "Jaguar", "SAL": "Land Rover",
+    # Ford (WF0 = Ford of Europe; MAJ = Ford Thailand, where the T6 Ranger is built)
+    "WF0": "Ford", "MAJ": "Ford", "1FA": "Ford", "1FT": "Ford", "1FM": "Ford",
+    "2FM": "Ford", "3FA": "Ford", "6FP": "Ford",
     # Mazda
     "JMZ": "Mazda", "JM1": "Mazda", "JM7": "Mazda", "JM0": "Mazda",
     "4F2": "Mazda", "4F4": "Mazda",
@@ -66,6 +69,7 @@ MAKE_PROFILES = {
     "Fiat": ["fiat"], "Alfa Romeo": ["fiat"], "Lancia": ["fiat"],
     "Jaguar": ["jlr"], "Land Rover": ["jlr"],
     "Mazda": ["mazda"],
+    "Ford": ["ford"],
 }
 
 # Profiles that only work over a native Ethernet cable (DoIP/HSFZ).

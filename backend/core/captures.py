@@ -37,6 +37,7 @@ CAPTURES_DIR = registry.PROJECT_ROOT / "captures"
 # there and is restated in that file: simulated runs are never saved.
 KINDS: dict[str, tuple[str, ...]] = {
     "jlr": ("scan", "discover", "sweep", "adblue-health", "drive-log"),
+    "ford": ("scan", "live", "health"),
 }
 
 

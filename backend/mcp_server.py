@@ -30,6 +30,8 @@ from backend.profiles.bmw import cbs as bmw_cbs  # noqa: E402
 from backend.profiles.bmw import scan as bmw_scan  # noqa: E402
 from backend.profiles.fiat import pids as fiat_pids  # noqa: E402
 from backend.profiles.fiat import scan as fiat_scan  # noqa: E402
+from backend.profiles.ford import pids as ford_pids  # noqa: E402
+from backend.profiles.ford import scan as ford_scan  # noqa: E402
 from backend.profiles.jlr import adblue as jlr_adblue  # noqa: E402
 from backend.profiles.jlr import dealer_data as jlr_dealer_data_mod  # noqa: E402
 from backend.profiles.jlr import discover as jlr_discover  # noqa: E402
@@ -353,6 +355,70 @@ def mazda_clear_module(
     if error is not None:
         return error
     return mazda_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Ford module scan over a generic OBD dongle (HS-CAN, UDS) -- Ranger T6 P375
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def ford_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a Ford's module fault memory over a generic OBD-II dongle (read-only).
+
+    Walks the Ford global module map on HS-CAN (PCM 0x7E0, TCM 0x7E1, ABS 0x760,
+    BCM 0x726, IPC 0x720, RCM 0x737, PSCM 0x730, APIM 0x7D0, ...) and reads each
+    responding module's UDS fault codes + identification (F190 VIN, F188/F111/
+    F113/F124 part numbers). Built for the 2018 Ranger T6 3.2 Duratorq auto.
+    Ignition must be ON. Works over the phone relay adapter (elm327-remote).
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    Note: MS-CAN body modules need a switchable adapter and are not reachable
+    through a standard OBD dongle.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return ford_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def ford_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read Ford IDS-table (mode-22) live values from the PCM over a dongle.
+
+    One read-only pass over the DIDs Ford's own IDS 133.01 MDX tables define
+    for the P375 Ranger diesel PCM: rail pressure control deviation (050D),
+    soot load / DPF test / soot-in-oil (057B/0380/0508 -- delete evidence on a
+    DPF-deleted truck), pilot correction (FD00), and the Bosch 0xDExx
+    adjustment blocks (IMA, EGR, throttle, learn counters). Every reading keeps
+    its raw hex beside the decode. Unanswered DIDs are skipped. Ignition ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode. mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return ford_pids.live(instance, mode)
+
+
+@mcp.tool()
+def ford_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on Ford modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    address: hex diagnostic address like "0x7E0" (the PCM); omit to clear every
+        HS-CAN module that answers. Faults return if the cause is still there.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return ford_scan.clear(instance, mode, address)
 
 
 # --------------------------------------------------------------------------- #

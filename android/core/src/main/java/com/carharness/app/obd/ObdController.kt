@@ -191,6 +191,22 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             MazdaCan.snapshot(session, onProgress)
         }
 
+    /** Ford HS-CAN module scan (11-bit UDS). Serialised with everything else. */
+    suspend fun fordScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        FordUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one Ford module's fault memory; returns that module's fresh DTCs. */
+    suspend fun fordClear(address: Int): List<UdsDtc> = mutex.withLock {
+        FordUds.clearDtcs(session, address)
+    }
+
+    /** One pass over the Ford enhanced (mode-22) values from the IDS tables. */
+    suspend fun fordEnhanced(onProgress: (String) -> Unit): List<EnhancedReading> =
+        mutex.withLock {
+            FordUds.readEnhanced(session, onProgress)
+        }
+
     /** Peugeot / PSA module scan (per-module UDS id pairs). Serialised. */
     suspend fun peugeotScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
         PeugeotUds.scan(session, simulated, onProgress)

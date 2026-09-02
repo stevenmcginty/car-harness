@@ -1,0 +1,28 @@
+{
+  "id": "ford",
+  "name": "Ford",
+  "transport": "elm327",
+  "description": "Ford over a generic OBD-II dongle (HS-CAN, UDS). Tuned for the Ranger T6 (P375) 3.2 Duratorq diesel with the 6R80 auto, using the decrypted IDS 133.01 MDX DID tables. Reads modules on the HS-CAN bus only -- body modules on MS-CAN need a switchable adapter.",
+  "probe": "profile.py",
+  "adapters": [
+    "elm327-ble",
+    "elm327-wifi",
+    "elm327-serial",
+    "elm327-bluetooth",
+    "elm327-remote"
+  ],
+  "panel": {
+    "title": "All modules (OBD dongle)",
+    "hint": "Module scan for CAN-era Fords (≈2008+) over the ordinary OBD dongle — each HS-CAN module's own fault memory, deeper than generic OBD-II. Pick the adapter top-right, ignition ON, then scan. Body modules on MS-CAN need a switchable adapter — they won't show here.",
+    "scanBusy": "Walking the HS-CAN modules through the dongle… (absent addresses time out quietly)",
+    "actions": [
+      {
+        "id": "live",
+        "label": "Live extras",
+        "busy": "Asking the PCM for the IDS-table values…",
+        "title": "Ford live extras",
+        "hint": "Reads the Ranger 3.2 PCM values from Ford's own IDS tables — rail pressure control, soot load, injector and EGR adjustments — raw hex kept beside every decode."
+      }
+    ]
+  }
+}

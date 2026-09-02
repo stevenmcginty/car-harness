@@ -1,0 +1,5376 @@
+{
+ "title": "Ford Ranger T6 P375 3.2 Duratorq - IDS 133.01 MDX PCM data identifiers",
+ "provenance": {
+  "package": "IDS-133.01_Full.exe (InstallShield, data2.cab) decrypted with E:/car/ford/decrypt_ids.py",
+  "source_files": {
+   "MDX_PCM_D": "XML/P375/MDX_PCM_D_MDX_PCM_D.xml",
+   "MDX_PCM": "XML/P375/MDX_PCM_MDX_PCM.xml"
+  },
+  "counts": {
+   "MDX_PCM_D": 22,
+   "MDX_PCM": 257
+  },
+  "protocol": "HS-CAN 500 kbit, ISO 15765; PCM 0x7E0/0x7E8, TCM 0x7E1/0x7E9; UDS 0x22 read, 0x2E write in session 03"
+ },
+ "notes": [
+  "Grading: every entry is 'candidate'. Nothing here has answered on a car yet.",
+  "Bit offsets are relative to the positive-response payload AFTER the 62 <DID> header bytes.",
+  "The truck is DPF-deleted and remapped: soot DIDs (057B, 0380, 0508) are delete evidence, not health data.",
+  "F1xx identity DIDs and F40D are ISO-standard; they are listed in families even when the MDX tables omit them."
+ ],
+ "families": {
+  "identity": {
+   "in_table": [
+    "F190",
+    "F188"
+   ],
+   "not_in_table": [
+    "F189",
+    "F195",
+    "F197"
+   ]
+  },
+  "delete_check": {
+   "in_table": [
+    "057B",
+    "0380",
+    "0508",
+    "FD00"
+   ],
+   "not_in_table": []
+  },
+  "fuel_pressure": {
+   "in_table": [
+    "050D"
+   ],
+   "not_in_table": []
+  },
+  "adjustment": {
+   "in_table": [
+    "DE01",
+    "DE03",
+    "DE04",
+    "DE0A",
+    "DE0F"
+   ],
+   "not_in_table": []
+  },
+  "vehicle": {
+   "in_table": [
+    "F40D"
+   ],
+   "not_in_table": []
+  }
+ },
+ "dids": {
+  "0380": {
+   "name": "DPF Test Result",
+   "byte_size": 2,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "DPF Test Result",
+     "lsb": 0,
+     "msb": 15,
+     "data_type": "unsigned",
+     "resolution": 8,
+     "offset": 0,
+     "units": "Int",
+     "range": [
+      0,
+      2
+     ]
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "04EE": {
+   "name": "Determine PLV reset supported",
+   "byte_size": 3,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "0508": {
+   "name": "Soot in oil estimate",
+   "byte_size": 2,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "Soot in oil estimate",
+     "lsb": 0,
+     "msb": 15,
+     "data_type": "unsigned",
+     "resolution": 8,
+     "offset": 0,
+     "units": "Milligrams",
+     "range": [
+      0,
+      524280
+     ]
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "0509": {
+   "name": "Sludge in oil estimate",
+   "byte_size": 2,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "Sludge in oil estimate",
+     "lsb": 0,
+     "msb": 15,
+     "data_type": "unsigned",
+     "resolution": 8,
+     "offset": 0,
+     "units": "Milligrams",
+     "range": [
+      0,
+      524280
+     ]
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "050D": {
+   "name": "Fuel rail pressure control",
+   "byte_size": 2,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "Fuel rail pressure control",
+     "lsb": 0,
+     "msb": 15,
+     "data_type": "signed",
+     "resolution": 0.0078125,
+     "offset": 0,
+     "units": "MPa",
+     "range": [
+      -255,
+      255
+     ]
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "0514": {
+   "name": "Injector QR Code - Cylinder 1 (Injector 1)",
+   "byte_size": 8,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Bytes 0-7: Cylinder 1 Injector QR code",
+     "lsb": 0,
+     "msb": 63,
+     "data_type": "bcd"
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "0515": {
+   "name": "Injector QR Code - Cylinder 2 (Injector 4)",
+   "byte_size": 8,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Bytes 0-7: Cylinder 2 Injector QR code",
+     "lsb": 0,
+     "msb": 63,
+     "data_type": "bcd"
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "0516": {
+   "name": "Injector QR Code - Cylinder 3 (Injector 2)",
+   "byte_size": 8,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Bytes 0-7: Cylinder 3 Injector QR code",
+     "lsb": 0,
+     "msb": 63,
+     "data_type": "bcd"
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "0517": {
+   "name": "Injector QR Code - Cylinder 4 (Injector 3)",
+   "byte_size": 8,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Bytes 0-7: Cylinder 4 Injector QR code",
+     "lsb": 0,
+     "msb": 63,
+     "data_type": "bcd"
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "0518": {
+   "name": "Injector QR Codes for all Cylinders",
+   "byte_size": 32,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Bytes 0-7: Cylinder 1 Injector QR code",
+     "lsb": 0,
+     "msb": 63,
+     "data_type": "bcd"
+    },
+    {
+     "name": "Bytes 8-15: Cylinder 2 Injector QR code",
+     "lsb": 64,
+     "msb": 127,
+     "data_type": "bcd"
+    },
+    {
+     "name": "Bytes 16-23: Cylinder 3 Injector QR code",
+     "lsb": 128,
+     "msb": 191,
+     "data_type": "bcd"
+    },
+    {
+     "name": "Bytes 24-31: Cylinder 4 Injector QR code",
+     "lsb": 192,
+     "msb": 255,
+     "data_type": "bcd"
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "0519": {
+   "name": "Distance accumulated since last oil change",
+   "byte_size": 2,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "Distance accumulated since last oil change",
+     "lsb": 0,
+     "msb": 15,
+     "data_type": "signed",
+     "resolution": 4,
+     "offset": 0,
+     "units": "Km",
+     "range": [
+      0,
+      262140
+     ]
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "051A": {
+   "name": "Pump learning status",
+   "byte_size": 1,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Pump learning status",
+     "lsb": 0,
+     "msb": 7,
+     "data_type": "enumerated"
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "057B": {
+   "name": "Soot Load",
+   "byte_size": 2,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "0968": {
+   "name": "Powertrain PID 01",
+   "byte_size": 2,
+   "did_type": "bitmapped",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Engine shutdown invoked due to low fuel level (current status)",
+     "lsb": 0,
+     "msb": 0,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Simulated misfire invoked due to low fuel level (current status)",
+     "lsb": 1,
+     "msb": 1,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Simulated misfire invoked due to low fuel level (historical status)",
+     "lsb": 2,
+     "msb": 2,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Engine shutdown invoked due to low fuel level (historical status)",
+     "lsb": 3,
+     "msb": 3,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Not used",
+     "lsb": 4,
+     "msb": 4,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Soot in oil telltale (indicates soot in oil)",
+     "lsb": 5,
+     "msb": 5,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Not used",
+     "lsb": 6,
+     "msb": 6,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Not used",
+     "lsb": 7,
+     "msb": 7,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Alternator warning lamp commanded state",
+     "lsb": 8,
+     "msb": 8,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Not used",
+     "lsb": 9,
+     "msb": 9,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Variable geometry turbocharger (VGT) output fault detection",
+     "lsb": 10,
+     "msb": 10,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Not used",
+     "lsb": 11,
+     "msb": 11,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Crank shaft reference signal (CSRS) output fault detection",
+     "lsb": 12,
+     "msb": 12,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Not used",
+     "lsb": 13,
+     "msb": 13,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Not used",
+     "lsb": 14,
+     "msb": 14,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Not used",
+     "lsb": 15,
+     "msb": 15,
+     "data_type": "enumerated"
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "09D9": {
+   "name": "Current vehicle speed limit",
+   "byte_size": 4,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "Max speed limit range",
+     "lsb": 0,
+     "msb": 7,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "KPH",
+     "range": [
+      0,
+      255
+     ]
+    },
+    {
+     "name": "Min speed limit range",
+     "lsb": 8,
+     "msb": 15,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "KPH",
+     "range": [
+      0,
+      255
+     ]
+    },
+    {
+     "name": "Speed limit set in CarConfig",
+     "lsb": 16,
+     "msb": 23,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "KPH",
+     "range": [
+      0,
+      255
+     ]
+    },
+    {
+     "name": "Actual speed limit",
+     "lsb": 24,
+     "msb": 31,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "KPH",
+     "range": [
+      0,
+      255
+     ]
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "16C1": {
+   "name": "Fuel level status",
+   "byte_size": 2,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2F",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "DE00": {
+   "name": "Particulate filter values",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Function identifier",
+     "lsb": 424,
+     "msb": 431,
+     "data_type": null
+    },
+    {
+     "name": "Distance covered since the last particulate filter replacement",
+     "lsb": 408,
+     "msb": 423,
+     "data_type": null
+    },
+    {
+     "name": "Soot mass",
+     "lsb": 392,
+     "msb": 407,
+     "data_type": null
+    },
+    {
+     "name": "Continuously simulated soot mass",
+     "lsb": 376,
+     "msb": 391,
+     "data_type": null
+    },
+    {
+     "name": "Operating time of the particulate filter",
+     "lsb": 344,
+     "msb": 375,
+     "data_type": null
+    },
+    {
+     "name": "Integrated oil ash factor",
+     "lsb": 312,
+     "msb": 343,
+     "data_type": null
+    },
+    {
+     "name": "Distance covered since the last replacement of emission/relevant components",
+     "lsb": 280,
+     "msb": 311,
+     "data_type": null
+    },
+    {
+     "name": "Fuel consumption since the last particulate filter replacement",
+     "lsb": 248,
+     "msb": 279,
+     "data_type": null
+    },
+    {
+     "name": "fuel consumption since last successful regeneration",
+     "lsb": 232,
+     "msb": 247,
+     "data_type": null
+    },
+    {
+     "name": "Time of the last successful regeneration",
+     "lsb": 200,
+     "msb": 231,
+     "data_type": null
+    },
+    {
+     "name": "Distance since the last successful regeneration",
+     "lsb": 168,
+     "msb": 199,
+     "data_type": null
+    },
+    {
+     "name": "Status of interrupted regeneration",
+     "lsb": 160,
+     "msb": 167,
+     "data_type": null
+    },
+    {
+     "name": "Remaining time of the regeneration demand from the counter blocks",
+     "lsb": 128,
+     "msb": 159,
+     "data_type": null
+    },
+    {
+     "name": "Number of successful regeneration",
+     "lsb": 112,
+     "msb": 127,
+     "data_type": null
+    },
+    {
+     "name": "Number of demanded regeneration",
+     "lsb": 96,
+     "msb": 111,
+     "data_type": null
+    },
+    {
+     "name": "Current value of differential pressure offset",
+     "lsb": 80,
+     "msb": 95,
+     "data_type": null
+    },
+    {
+     "name": "Previous value of differential pressure offset",
+     "lsb": 64,
+     "msb": 79,
+     "data_type": null
+    },
+    {
+     "name": "Dummy value as 0x00 need to be send by Tester",
+     "lsb": 48,
+     "msb": 63,
+     "data_type": null
+    },
+    {
+     "name": "Dummy value as 0x00 need to be send by Tester",
+     "lsb": 32,
+     "msb": 47,
+     "data_type": null
+    },
+    {
+     "name": "Padding to 54 bytes",
+     "lsb": 0,
+     "msb": 31,
+     "data_type": null
+    }
+   ],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE01": {
+   "name": "Injector Quantity Adjustment (IMA) values",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Cylinder 1 Injector Quantity Adjustment (IMA) value",
+     "lsb": 192,
+     "msb": 255,
+     "data_type": "bcd"
+    },
+    {
+     "name": "Cylinder 2 Injector Quantity Adjustment (IMA) value",
+     "lsb": 128,
+     "msb": 191,
+     "data_type": "bcd"
+    },
+    {
+     "name": "Cylinder 3 Injector Quantity Adjustment (IMA) value",
+     "lsb": 64,
+     "msb": 127,
+     "data_type": "bcd"
+    },
+    {
+     "name": "Cylinder 4 Injector Quantity Adjustment (IMA) value",
+     "lsb": 0,
+     "msb": 63,
+     "data_type": "bcd"
+    }
+   ],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE02": {
+   "name": "High Pressure Unit adjustment values",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE03": {
+   "name": "Exhaust Gas Recirculation valve adjustment value",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE04": {
+   "name": "Throttle Valve Actuator adjustment value",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE05": {
+   "name": "AC purge time",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE06": {
+   "name": "Fuel Filter data",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE07": {
+   "name": "LSU adjustment value",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE08": {
+   "name": "LSU - EGSys adjustment value",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE09": {
+   "name": "FMO adjustment value",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE0A": {
+   "name": "FanCtl season counter",
+   "byte_size": 0,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE0B": {
+   "name": "Block offset for starting torque adjustment value",
+   "byte_size": 0,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE0C": {
+   "name": "Low idle engine speed adjustment",
+   "byte_size": 0,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE0D": {
+   "name": "Torque limitation adjustment value",
+   "byte_size": 0,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE0E": {
+   "name": "Read current value of GSH switch",
+   "byte_size": 0,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE0F": {
+   "name": "Learn cycle counter for each rail pressure calibration point of energising time calibration",
+   "byte_size": 0,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE10": {
+   "name": "Filtered effective energising time difference for each cylinder in energising time calibration",
+   "byte_size": 0,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE11": {
+   "name": "Cylinder specific release of energising time calibration correction",
+   "byte_size": 0,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE12": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE13": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE14": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE15": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE16": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 181,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": null,
+     "lsb": 1416,
+     "msb": 1447,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1384,
+     "msb": 1415,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1352,
+     "msb": 1383,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1320,
+     "msb": 1351,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1288,
+     "msb": 1319,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1256,
+     "msb": 1287,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1224,
+     "msb": 1255,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1192,
+     "msb": 1223,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1160,
+     "msb": 1191,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1128,
+     "msb": 1159,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1064,
+     "msb": 1127,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1032,
+     "msb": 1063,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 1000,
+     "msb": 1031,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 968,
+     "msb": 999,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 936,
+     "msb": 967,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 904,
+     "msb": 935,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 872,
+     "msb": 903,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 840,
+     "msb": 871,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 808,
+     "msb": 839,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 776,
+     "msb": 807,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 744,
+     "msb": 775,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 712,
+     "msb": 743,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 680,
+     "msb": 711,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 648,
+     "msb": 679,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 616,
+     "msb": 647,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 584,
+     "msb": 615,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 552,
+     "msb": 583,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 520,
+     "msb": 551,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 488,
+     "msb": 519,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 456,
+     "msb": 487,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 424,
+     "msb": 455,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 392,
+     "msb": 423,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 360,
+     "msb": 391,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 328,
+     "msb": 359,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 296,
+     "msb": 327,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 264,
+     "msb": 295,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 232,
+     "msb": 263,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 200,
+     "msb": 231,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 168,
+     "msb": 199,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 136,
+     "msb": 167,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 104,
+     "msb": 135,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 72,
+     "msb": 103,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 40,
+     "msb": 71,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 8,
+     "msb": 39,
+     "data_type": "unsigned"
+    },
+    {
+     "name": null,
+     "lsb": 7,
+     "msb": 0,
+     "data_type": "unsigned"
+    }
+   ],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE17": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE18": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE19": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE1A": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE1B": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE1C": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE1D": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE1E": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE1F": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE20": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE21": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE22": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE23": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE24": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE25": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE26": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE27": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE28": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE29": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE2A": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE2B": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE2C": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE2D": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE2E": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE2F": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE30": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE31": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE32": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE33": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE34": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE35": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE36": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE37": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE38": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE39": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE3A": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE3B": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE3C": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE3D": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE3E": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE3F": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE40": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE41": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE42": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE43": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE44": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE45": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE46": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE47": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE48": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE49": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE4A": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE4B": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE4C": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE4D": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE4E": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE4F": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE50": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE51": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE52": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE53": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE54": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE55": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE56": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE57": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE58": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE59": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE5A": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE5B": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE5C": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE5D": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE5E": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE5F": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE60": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE61": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE62": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE63": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE64": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE65": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE66": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE67": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE68": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE69": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE6A": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE6B": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE6C": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE6D": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE6E": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE6F": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE70": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE71": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE72": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE73": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE74": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE75": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE76": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE77": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE78": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE79": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE7A": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE7B": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE7C": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE7D": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE7E": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE7F": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE80": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE81": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE82": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE83": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE84": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE85": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE86": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE87": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE88": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE89": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE8A": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE8B": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE8C": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE8D": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE8E": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE8F": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE90": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE91": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE92": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE93": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE94": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE95": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE96": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE97": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE98": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE99": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE9A": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE9B": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE9C": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE9D": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE9E": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DE9F": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA0": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA1": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA2": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA3": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA4": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA5": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA6": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA7": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA8": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEA9": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEAA": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEAB": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEAC": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEAD": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEAE": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEAF": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB0": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB1": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB2": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB3": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB4": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB5": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB6": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB7": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB8": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEB9": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEBA": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEBB": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEBC": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEBD": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEBE": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEBF": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC0": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC1": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC2": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC3": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC4": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC5": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC6": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC7": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC8": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEC9": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DECA": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DECB": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DECC": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DECD": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DECE": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DECF": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED0": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED1": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED2": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED3": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED4": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED5": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED6": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED7": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED8": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DED9": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEDA": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEDB": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEDC": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEDD": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEDE": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEDF": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE0": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE1": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE2": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE3": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE4": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE5": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE6": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE7": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE8": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEE9": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEEA": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEEB": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEEC": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEED": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEEE": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEEF": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF0": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF1": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF2": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF3": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF4": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF5": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF6": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF7": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF8": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEF9": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEFA": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEFB": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEFC": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEFD": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEFE": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "DEFF": {
+   "name": "Inhale/Exhale data",
+   "byte_size": 0,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "F188": {
+   "name": "Vehicle Manufacturer ECU Software Number",
+   "byte_size": 24,
+   "did_type": "ascii",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "ECU Software Number bytes SUFFIX byte 1",
+     "lsb": 88,
+     "msb": 95,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "KPH",
+     "range": [
+      0,
+      255
+     ]
+    },
+    {
+     "name": "ECU Software Number bytes PREFIX byte 1",
+     "lsb": 184,
+     "msb": 191,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "KPH",
+     "range": [
+      0,
+      255
+     ]
+    },
+    {
+     "name": "ECU Software Number full SUFFIX",
+     "lsb": 80,
+     "msb": 95,
+     "data_type": "ascii"
+    },
+    {
+     "name": "Part number no zeros",
+     "lsb": 80,
+     "msb": 191,
+     "data_type": "ascii"
+    },
+    {
+     "name": "ECU Software Number full PREFIX",
+     "lsb": 160,
+     "msb": 191,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "KPH",
+     "range": [
+      0,
+      255
+     ]
+    },
+    {
+     "name": "ECU Software Number 3rd Character of Prefix",
+     "lsb": 72,
+     "msb": 79,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "KPH",
+     "range": [
+      0,
+      255
+     ]
+    }
+   ],
+   "source": "MDX_PCM",
+   "grade": "candidate"
+  },
+  "F190": {
+   "name": "VIN",
+   "byte_size": 24,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "VIN",
+     "lsb": 0,
+     "msb": 191,
+     "data_type": "ascii"
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "F405": {
+   "name": "Engine coolant temperature",
+   "byte_size": 1,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "Engine coolant temperature",
+     "lsb": 0,
+     "msb": 7,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": -40,
+     "units": "Celsius",
+     "range": [
+      -40,
+      215
+     ]
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "F40D": {
+   "name": "Vehicle Speed",
+   "byte_size": 2,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": null,
+   "subfields": [
+    {
+     "name": "Vehicle Speed",
+     "lsb": 0,
+     "msb": 15,
+     "data_type": "signed",
+     "resolution": 4,
+     "offset": 0,
+     "units": "Km",
+     "range": [
+      0,
+      262140
+     ]
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "FD00": {
+   "name": "Pilot correction status",
+   "byte_size": 1,
+   "did_type": "single_value",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "Pilot correction status",
+     "lsb": 0,
+     "msb": 7,
+     "data_type": "enumerated"
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  },
+  "FD0D": {
+   "name": "Current vehicle speed limit",
+   "byte_size": 38,
+   "did_type": "packeted",
+   "readable": {
+    "service": "22",
+    "sessions": [
+     "01",
+     "03"
+    ]
+   },
+   "writeable": {
+    "service": "2E",
+    "sessions": [
+     "03"
+    ]
+   },
+   "subfields": [
+    {
+     "name": "The distance that the vehicle had travelled when the engine oil was last changed.",
+     "lsb": 0,
+     "msb": 23,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "KM",
+     "range": [
+      0,
+      16777215
+     ]
+    },
+    {
+     "name": "Number of engine starts since the last service.",
+     "lsb": 24,
+     "msb": 39,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "Counts",
+     "range": [
+      0,
+      10000
+     ]
+    },
+    {
+     "name": "Total time for which the engine has remained at idle.",
+     "lsb": 40,
+     "msb": 71,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "Seconds",
+     "range": [
+      0,
+      3000000
+     ]
+    },
+    {
+     "name": "Total time for which the engine speed has been below a determined threshold.",
+     "lsb": 72,
+     "msb": 103,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "Seconds",
+     "range": [
+      0,
+      3000000
+     ]
+    },
+    {
+     "name": "Control flag to ensure that default service intervals are used until the next service.",
+     "lsb": 104,
+     "msb": 111,
+     "data_type": "enumerated"
+    },
+    {
+     "name": "Global real time (Time) at last service.",
+     "lsb": 112,
+     "msb": 143,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "Minutes",
+     "range": [
+      0,
+      4294967295
+     ]
+    },
+    {
+     "name": "Total time for which the engine has been running and idling since the last oil change service.",
+     "lsb": 144,
+     "msb": 175,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "Seconds",
+     "range": [
+      0,
+      3000000
+     ]
+    },
+    {
+     "name": "Total time for which the engine has been running and idling since the last oil change service.",
+     "lsb": 176,
+     "msb": 191,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "Hours",
+     "range": [
+      0,
+      2000
+     ]
+    },
+    {
+     "name": "Volume of heavy grade fuel in the engine oil.",
+     "lsb": 192,
+     "msb": 207,
+     "data_type": "unsigned",
+     "resolution": 0.01,
+     "offset": 0,
+     "units": "Milliliter",
+     "range": [
+      0,
+      100
+     ]
+    },
+    {
+     "name": "Volume of light grade fuel in the engine oil.",
+     "lsb": 208,
+     "msb": 223,
+     "data_type": "unsigned",
+     "resolution": 0.01,
+     "offset": 0,
+     "units": "Milliliter",
+     "range": [
+      0,
+      100
+     ]
+    },
+    {
+     "name": "Volume of light grade fuel in the engine oil.",
+     "lsb": 224,
+     "msb": 239,
+     "data_type": "unsigned",
+     "resolution": 0.01,
+     "offset": 0,
+     "units": "Milliliter",
+     "range": [
+      0,
+      100
+     ]
+    },
+    {
+     "name": "Global time in days when the last warning message was displayed.",
+     "lsb": 240,
+     "msb": 263,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "Days",
+     "range": [
+      0,
+      2982618
+     ]
+    },
+    {
+     "name": "The distance tavelled by the vehicle since the engine oil was last changed.",
+     "lsb": 264,
+     "msb": 279,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "Km",
+     "range": [
+      0,
+      65535
+     ]
+    },
+    {
+     "name": "The quantity of soot that has accumulated since the engine oil was last changed.",
+     "lsb": 264,
+     "msb": 279,
+     "data_type": "unsigned",
+     "resolution": 1,
+     "offset": 0,
+     "units": "Mg",
+     "range": [
+      0,
+      255000
+     ]
+    }
+   ],
+   "source": "MDX_PCM_D",
+   "grade": "candidate"
+  }
+ }
+}

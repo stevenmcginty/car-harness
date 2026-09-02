@@ -87,6 +87,29 @@ object Brands {
             clear = { ctrl, addr -> ctrl.mazdaClear(addr) },
         ),
         Brand(
+            id = "ford",
+            label = "Ford",
+            aliases = listOf("Ranger", "Transit", "Focus", "Fiesta"),
+            scanHint = "Walks the Ford HS-CAN modules (PCM, TCM, ABS, BCM, cluster, airbag, " +
+                "steering, SYNC...) reading each one's own fault memory; MS-CAN body " +
+                "modules need a switchable adapter.",
+            actions = listOf(
+                BrandAction(
+                    id = "extras",
+                    label = "Live extras",
+                    cardTitle = "FORD LIVE EXTRAS",
+                    emptyHint = "This car didn't answer any of the Ford-specific values. " +
+                        "Make sure the ignition is ON — the values come from Ford's own " +
+                        "IDS diesel-PCM tables, so coverage varies by model year and engine.",
+                    refreshHint = "One-shot read-only pass — tap Live extras again to refresh. " +
+                        "Values this car doesn't support are skipped.",
+                    run = { ctrl, onStep -> ctrl.fordEnhanced(onStep) },
+                ),
+            ),
+            scan = { ctrl, onStep -> ctrl.fordScan(onStep) },
+            clear = { ctrl, addr -> ctrl.fordClear(addr) },
+        ),
+        Brand(
             id = "peugeot",
             label = "Peugeot",
             aliases = listOf("Citroen", "Citroën", "DS", "PSA"),
@@ -357,13 +380,14 @@ object Brands {
      *
      * Keyed on the exact make strings VinDecode produces. A make we have no
      * profile for returns null: the caller leaves the user's own choice alone
-     * rather than guessing, because scanning a Ford with the BMW walker would
+     * rather than guessing, because scanning a Renault with the BMW walker would
      * just waste time on a bus that will never answer.
      */
     fun forMake(make: String?): Brand? {
         val id = when (make?.trim()?.lowercase()) {
             "bmw", "mini" -> "bmw"
             "mazda" -> "mazda"
+            "ford" -> "ford"
             "peugeot", "citroen", "citroën", "ds automobiles" -> "peugeot"
             "volkswagen", "audi", "skoda", "škoda", "seat", "cupra" -> "vw"
             "mercedes-benz", "mercedes", "smart" -> "mercedes"

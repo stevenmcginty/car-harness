@@ -13,12 +13,30 @@ import pathlib
 DEFAULT_DATA_ROOT = pathlib.Path.home() / "Desktop" / "car-harness-data"
 
 # Corpora, as they sit on this machine. These are read-only inputs; nothing in the
-# tool ever writes into them.
-DEFAULT_CORPUS_ROOTS = {
-    "gds2": pathlib.Path.home() / "Desktop" / "vauxhall",
-    "sdd": pathlib.Path.home() / "Desktop" / "sdd169",
-    "diagbox": pathlib.Path.home() / "Desktop" / "diagbox",
+# tool ever writes into them. They all live under one movable root laid out per
+# docs/SSD-MIGRATION-PLAN.md: the external SSD (E:\car) when it is plugged in,
+# otherwise the Desktop staging copy. Override the root with CARHARNESS_CORPUS_ROOT,
+# or a single corpus with CARHARNESS_CORPUS_<NAME>.
+SSD_CORPUS_ROOT = pathlib.Path("E:/car")
+STAGING_CORPUS_ROOT = pathlib.Path.home() / "Desktop" / "car-data-ssd"
+
+CORPUS_SUBDIRS = {
+    "gds2": pathlib.Path("vauxhall-opel") / "gds2",
+    "sdd": pathlib.Path("jlr") / "sdd169",
+    "diagbox": pathlib.Path("vauxhall-opel") / "diagbox",
+    "mercedes": pathlib.Path("mercedes"),
+    "ford": pathlib.Path("ford"),
 }
+
+
+def corpus_base():
+    """Root directory holding all raw corpora (SSD first, staging fallback)."""
+    env = os.environ.get("CARHARNESS_CORPUS_ROOT")
+    if env:
+        return pathlib.Path(env)
+    if SSD_CORPUS_ROOT.exists():
+        return SSD_CORPUS_ROOT
+    return STAGING_CORPUS_ROOT
 
 
 def data_root():
@@ -38,7 +56,7 @@ def corpus_root(name):
     env = os.environ.get("CARHARNESS_CORPUS_%s" % name.upper())
     if env:
         return pathlib.Path(env)
-    return DEFAULT_CORPUS_ROOTS[name]
+    return corpus_base() / CORPUS_SUBDIRS[name]
 
 
 def find_vatbins(root=None):

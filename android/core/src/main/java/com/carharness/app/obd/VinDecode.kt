@@ -122,6 +122,11 @@ object VinDecode {
         // confident wrong year; their build year/month live at 11/12 in
         // Ford's own letter code, which isn't decoded here.
         all(YearRule.NONE, "Ford", "WF0")
+        // Ford Australia/Thailand (Ranger T6, MAJ/6FP) uses the same
+        // model-code-at-10 scheme as Europe, so those refuse too.
+        all(YearRule.NONE, "Ford", "MAJ", "6FP")
+        // North-American Fords do encode the year letter at 10, by law.
+        all(YearRule.FULL, "Ford", "1FA", "1FT", "1FM", "2FM", "3FA")
         // Opel has used the model-year letter at 10 since the '80s.
         all(YearRule.FULL, "Opel / Vauxhall", "W0L", "W0V")
         all(YearRule.FULL, "Vauxhall", "VXK")
