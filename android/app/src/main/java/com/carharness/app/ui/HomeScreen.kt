@@ -517,7 +517,8 @@ fun ConnectPanel(state: AppState, requestBt: ((() -> Unit)) -> Unit) {
             "bt" -> {
                 Text(
                     "For Classic-Bluetooth dongles. Pair the dongle in Android Bluetooth " +
-                        "settings first (PIN usually 1234), then pick it here.",
+                        "settings first (cheap clones use PIN 1234; the OBDLink MX+ pairs " +
+                        "via its button, no PIN), then pick it here.",
                     color = TextMuted, fontFamily = Barlow, fontSize = 13.sp, lineHeight = 18.sp,
                 )
                 Spacer(Modifier.height(12.dp))

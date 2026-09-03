@@ -7,6 +7,7 @@ a connectivity check only; nothing is written to any car beyond the reset.
 """
 
 from backend.adapters.base import Adapter
+from backend.obd.elm327 import is_elm_banner
 from backend.core.models import AdapterField, AdapterTestResult
 from backend.obd.transport import TcpTransport, TransportError
 
@@ -56,7 +57,7 @@ class Elm327WifiAdapter(Adapter):
             transport.close()
 
         text = raw.decode("ascii", errors="replace").replace(">", " ").strip()
-        if "ELM327" in text.upper():
+        if is_elm_banner(text):
             return AdapterTestResult(
                 ok=True,
                 detail=f"ELM327 answered at {host}:{port}: {text!r}.",

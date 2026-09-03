@@ -8,6 +8,7 @@ performed and nothing is written to any car beyond the ELM327 reset.
 """
 
 from backend.adapters.base import Adapter
+from backend.obd.elm327 import is_elm_banner
 from backend.core.models import AdapterField, AdapterTestResult
 
 
@@ -85,7 +86,7 @@ class Elm327SerialAdapter(Adapter):
                 pass
 
         text = raw.decode("ascii", errors="replace").strip()
-        if "ELM327" in text.upper():
+        if is_elm_banner(text):
             return AdapterTestResult(
                 ok=True,
                 detail=f"ELM327 answered on {port}: {text!r}.",

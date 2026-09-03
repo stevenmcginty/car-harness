@@ -23,6 +23,7 @@ needs the ignition on.
 """
 
 from backend.adapters.base import Adapter
+from backend.obd.elm327 import is_elm_banner
 from backend.core.models import AdapterField, AdapterTestResult
 
 
@@ -83,7 +84,7 @@ class Elm327BleAdapter(Adapter):
         base_info = dict(info)
         base_info["reply"] = text
         try:
-            if "ELM327" in text.upper():
+            if is_elm_banner(text):
                 label = info.get("name") or info.get("address") or "dongle"
                 return AdapterTestResult(
                     ok=True,

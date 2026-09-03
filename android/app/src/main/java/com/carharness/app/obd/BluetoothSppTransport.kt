@@ -7,7 +7,8 @@ import java.util.UUID
 
 /**
  * Classic-Bluetooth ELM327 (SPP/RFCOMM). The device must be paired in Android
- * settings first (PIN usually 1234 or 0000).
+ * settings first (cheap clones use PIN 1234/0000; the OBDLink MX+ pairs via
+ * its button with no PIN).
  */
 @SuppressLint("MissingPermission") // caller checks BLUETOOTH_CONNECT before connecting
 class BluetoothSppTransport(private val device: BluetoothDevice) : ObdTransport {
@@ -20,21 +21,30 @@ class BluetoothSppTransport(private val device: BluetoothDevice) : ObdTransport 
     }
 
     override fun open() {
-        val s = try {
-            device.createRfcommSocketToServiceRecord(SPP_UUID)
-        } catch (e: Exception) {
-            throw IOException("Could not create a Bluetooth link: ${e.message}")
+        // Auto-sleep dongles (OBDLink MX+) wake on the incoming connect and can
+        // refuse the first RFCOMM attempt while powering up -- retry once.
+        var lastError: IOException? = null
+        for (attempt in 0 until 2) {
+            val s = try {
+                device.createRfcommSocketToServiceRecord(SPP_UUID)
+            } catch (e: Exception) {
+                throw IOException("Could not create a Bluetooth link: ${e.message}")
+            }
+            try {
+                s.connect()
+                socket = s
+                return
+            } catch (e: Exception) {
+                try { s.close() } catch (_: Exception) {}
+                lastError = IOException(
+                    "Could not connect to ${device.name ?: device.address}. Is the dongle " +
+                        "powered (plugged into the car) and paired in Android Bluetooth settings?",
+                    e
+                )
+                if (attempt == 0) Thread.sleep(2000)
+            }
         }
-        try {
-            s.connect()
-        } catch (e: Exception) {
-            try { s.close() } catch (_: Exception) {}
-            throw IOException(
-                "Could not connect to ${device.name ?: device.address}. Is the dongle " +
-                    "powered (plugged into the car) and paired in Android Bluetooth settings?"
-            )
-        }
-        socket = s
+        throw lastError!!
     }
 
     override fun exchange(data: ByteArray, timeoutMs: Long): ByteArray {

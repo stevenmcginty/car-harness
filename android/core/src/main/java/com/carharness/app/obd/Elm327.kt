@@ -35,6 +35,13 @@ class Elm327Session(private val transport: ObdTransport) {
         private val ISO_TP_LEN = Regex("^[0-9A-F]{3}$")
         private val ISO_TP_CONT = Regex("^([0-9A-F]{1,2}):([0-9A-F]+)$")
         private val ELM_VERSION = Regex("ELM327\\s+(v[\\w.]+)", RegexOption.IGNORE_CASE)
+
+        // STN-based dongles (OBDLink MX+/SX/LX) never say "ELM327" -- they
+        // answer ATZ with "OBDLink MX+ v5.x" or "STN...". Same chip family,
+        // same command set.
+        private val DONGLE_BANNERS = listOf("ELM327", "OBDLINK", "STN")
+        private fun isDongleBanner(reply: String) =
+            DONGLE_BANNERS.any { reply.uppercase().contains(it) }
     }
 
     fun open() {
@@ -44,17 +51,21 @@ class Elm327Session(private val transport: ObdTransport) {
         var reply = ""
         for (attempt in 0 until 3) {
             reply = raw("ATZ", 7000)
-            if (reply.uppercase().contains("ELM327")) break
+            if (isDongleBanner(reply)) break
             Thread.sleep(1000)
         }
-        if (!reply.uppercase().contains("ELM327")) {
+        if (!isDongleBanner(reply)) {
             val got = reply.trim().ifEmpty { "nothing" }
             throw ObdException(
-                "The dongle answered the reset with '$got' instead of an ELM327 banner.",
+                "The dongle answered the reset with '$got' instead of an ELM327-family banner.",
                 ObdException.Kind.LINK
             )
         }
-        firmware = ELM_VERSION.find(reply)?.groupValues?.get(1) ?: "ELM327"
+        firmware = ELM_VERSION.find(reply)?.groupValues?.get(1)
+            // OBDLink/STN banners: "OBDLink MX+ v5.7" -> "v5.7".
+            ?: Regex("v[\\w.]+", RegexOption.IGNORE_CASE).find(reply)?.value
+            ?: reply.trim().lines().firstOrNull { it.isNotBlank() }?.trim()
+            ?: "ELM327"
         for (cmd in listOf("ATE0", "ATL0", "ATS0", "ATH0", "ATSP0")) raw(cmd, 3000)
         opened = true
     }

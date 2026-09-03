@@ -21,11 +21,28 @@ _LINK_ERROR_TOKENS = (
     "FB ERROR",
     "DATA ERROR",
     "STOPPED",
+    # The dongle's receive buffer overflowed mid-reply -- the tail of the
+    # response was LOST, so whatever parsed before it is a silent truncation.
+    # A huge fault-memory read (19 02 FF on a module with dozens of codes,
+    # XF X260 ABS 0x7E6 on-car 2026-08-20) is the known trigger. Error, never
+    # return partial data as if it were whole.
+    "BUFFER FULL",
 )
 
 _HEX_LINE = re.compile(r"^[0-9A-F]+$")
 _ISO_TP_LEN = re.compile(r"^[0-9A-F]{3}$")
 _ISO_TP_CONT = re.compile(r"^([0-9A-F]{1,2}):([0-9A-F]+)$")
+
+# STN-based dongles (OBDLink MX+/SX/LX) never say "ELM327" -- they answer ATZ
+# with "OBDLink MX+ v5.x" or "STN...". Same chip family, same command set.
+_DONGLE_BANNERS = ("ELM327", "OBDLINK", "STN")
+
+
+def is_elm_banner(reply: str) -> bool:
+    """True if an ATZ reply looks like a supported ELM327-family dongle."""
+    upper = reply.upper()
+    return any(token in upper for token in _DONGLE_BANNERS)
+
 
 
 class ObdError(Exception):
@@ -67,18 +84,23 @@ class Elm327Session:
             reply = ""
             for _attempt in range(3):
                 reply = self._raw(b"ATZ\r", timeout=7.0)
-                if "ELM327" in reply.upper():
+                if is_elm_banner(reply):
                     break
                 time.sleep(1.0)
-            if "ELM327" not in reply.upper():
+            if not is_elm_banner(reply):
                 got = reply.strip() or "nothing"
                 raise ObdError(
                     f"The dongle answered the reset with {got!r} instead of an "
-                    "ELM327 banner.",
+                    "ELM327-family banner.",
                     kind="link",
                 )
             m = re.search(r"ELM327\s+(v[\w.]+)", reply, re.IGNORECASE)
-            self.firmware = m.group(1) if m else "ELM327"
+            if m:
+                self.firmware = m.group(1)
+            else:
+                # OBDLink/STN banners: "OBDLink MX+ v5.7" -> "v5.7".
+                m = re.search(r"v[\w.]+", reply, re.IGNORECASE)
+                self.firmware = m.group(0) if m else reply.strip().splitlines()[0].strip() or "ELM327"
 
             # echo off, linefeeds off, spaces off, headers off, auto protocol.
             for cmd in (b"ATE0\r", b"ATL0\r", b"ATS0\r", b"ATH0\r", b"ATSP0\r"):

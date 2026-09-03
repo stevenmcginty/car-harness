@@ -10,6 +10,7 @@ now or it doesn't. test() says which.
 """
 
 from backend.adapters.base import Adapter
+from backend.obd.elm327 import is_elm_banner
 from backend.core.models import AdapterTestResult
 
 
@@ -45,7 +46,7 @@ class Elm327RemoteAdapter(Adapter):
             return AdapterTestResult(ok=False, detail=str(exc), info=st)
         text = raw.decode("ascii", errors="replace").replace(">", " ").strip()
         info = dict(st, reply=text)
-        if "ELM327" in text.upper():
+        if is_elm_banner(text):
             return AdapterTestResult(
                 ok=True,
                 detail=f"The relayed dongle answered: {text!r} ({st['deviceName']}).",
