@@ -41,8 +41,10 @@ from backend.profiles.jlr import sweep as jlr_sweep  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
+from backend.profiles.mercedes import coldstart as mercedes_coldstart  # noqa: E402
 from backend.profiles.mercedes import misfire as mercedes_misfire  # noqa: E402
 from backend.profiles.mercedes import pids as mercedes_pids  # noqa: E402
+from backend.profiles.mercedes import routines as mercedes_routines  # noqa: E402
 from backend.profiles.mercedes import scan as mercedes_scan  # noqa: E402
 from backend.profiles.peugeot import oil as peugeot_oil  # noqa: E402
 from backend.profiles.peugeot import pids as peugeot_pids  # noqa: E402
@@ -826,6 +828,134 @@ def mercedes_slk_known_issues(ecu: str | None = None) -> dict:
     ecu: filter to "sim271de20_m271_turbo" or "med177_m276_v6"; omit for both.
     """
     return mercedes_misfire.known_issues(ecu)
+
+
+@mcp.tool()
+def mercedes_om651_probe(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Key-on preflight for the OM651 cold-start job: which mined DIDs answer.
+
+    captures/mercedes/cla-w117-coldstart.md step 1. Reads all 41 XENTRY-mined
+    CRD3-MFA1 engine DIDs once on 0x7E0 (rail pressure demand/feedback, crank
+    state, cam/crank sync, glow state, injection quantities, temperatures) and
+    reports which answered, decoded BOTH byte orders, plus the byte order the
+    plausibility channels vote for. Read-only, ignition ON, engine OFF.
+
+    Run this the EVENING BEFORE. A cold start happens once a day and must not
+    be spent discovering that half the mined table NRC-refuses.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode (omit to use the default adapter).
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mercedes_coldstart.probe(instance, mode)
+
+
+@mcp.tool()
+def mercedes_om651_coldstart(
+    seconds: float = 180.0, endian: str | None = None,
+    preflight: bool = True, adapter_id: str | None = None,
+    mode: str = "real",
+) -> dict:
+    """Capture an OM651 diesel cold start through the crank (read-only).
+
+    captures/mercedes/cla-w117-coldstart.md step 2, for the post-rebuild
+    extended-crank complaint: ~5 s of dry cranking on the first start of the
+    day, instant every time after. Plug in, ignition ON, START THIS FIRST,
+    then turn the key only once it is running -- the key-on seconds before the
+    starter engages are the baseline.
+
+    One timeline in three phases. The crank phase reads a deliberately tiny
+    DID list (rail pressure feedback + demand, rpm, cam/crank sync, injection
+    quantity, glow state) so the sample rate survives; the run phase widens
+    out and adds the slow channels every 5th tick. Every value is stored with
+    its raw bytes.
+
+    Returns the reading: crank length, when the rail crossed the ~250 bar
+    injection-release band, whether firing followed that crossing (fuel
+    delivery) or the rail was up early and the engine still would not light
+    (pre-heat / air / compression), cam-crank sync time and glow states.
+
+    seconds: 30-3600. endian: "little"/"big" to force the byte order, omit to
+        let the preflight vote. preflight: read every DID once at key-on first
+        to drop silent ones -- turn off only if probe already answered.
+    adapter_id: a configured ELM327 adapter instance; required for real mode.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mercedes_coldstart.coldstart(instance, seconds, endian, None,
+                                        preflight, mode)
+
+
+@mcp.tool()
+def mercedes_om651_tests(routine: str | None = None) -> dict:
+    """The XENTRY guided tests mined for the OM651, and what each one measures.
+
+    No car needed. 13 service-0x31 routines taken out of CRD3MFA1.cbf --
+    the dynamic hydraulic test (F004, spins the starter and reports averaged
+    rail pressure while cranking), the high pressure rise/leak test (032A),
+    the rail air exhaustion bleed (0327), the lift pump test (F10D), glow
+    control (F104), the ECU's own compression test (0325), per-injector tests
+    and the inlet-metering-valve error table (F00F). Each row carries the
+    exact payloads and which bytes of the reply hold which number.
+
+    Read this BEFORE running one: they COMMAND the car. All graded candidate.
+
+    routine: one key to show alone; omit for all.
+    """
+    return mercedes_routines.catalogue(routine)
+
+
+@mcp.tool()
+def mercedes_om651_dtc_text(codes: list[str]) -> dict:
+    """XENTRY fault text for OM651 fuel, glow, injector and sync fault codes.
+
+    No car needed. Looks codes up in the 171 cold-start-relevant DTCs mined
+    from CRD3MFA1.cbf, matched on the SAE stem, and returns Mercedes' own
+    (German) description of what the ECU means by each one -- far more
+    specific than a generic P-code lookup.
+
+    codes: e.g. ["P0087", "P0193", "P0670"].
+    """
+    return mercedes_routines.lookup_dtcs(codes)
+
+
+@mcp.tool()
+def mercedes_om651_run_test(
+    routine: str, confirm: bool = False, wait_seconds: float = 30.0,
+    endian: str = "big", adapter_id: str | None = None, mode: str = "real",
+) -> dict:
+    """Run one mined XENTRY guided test on the OM651 -- COMMANDS THE CAR.
+
+    Opens the extended session (10 03), sends the routine start, polls its
+    results until the ECU reports TEST_FINISHED, decodes the mined result
+    fields and ALWAYS sends stop afterwards. Several of these spin the
+    starter, drive injectors or run the fuel pump -- this is not a read.
+
+    routine: a key from mercedes_om651_tests, e.g. "dyn_hydraulic",
+        "high_pressure", "rail_air", "lift_pump", "glow_control".
+    confirm: must be True, and only after the person at the car has agreed and
+        the car is set up for that test.
+    wait_seconds: how long to poll for TEST_FINISHED (default 30).
+    endian: the mined table declares "big" but the only Mercedes ECU on file
+        that has answered contradicted its own declaration, so this is
+        adjustable; raw bytes are kept either way.
+
+    A refusal is returned as a recorded NRC with a plain-English hint, not an
+    error -- NRC 0x33 means SecurityAccess, which the mined corpus does not
+    carry, so that routine stays XENTRY-only.
+    """
+    if confirm is not True:
+        return mercedes_routines.run(None, routine, False, wait_seconds,
+                                     endian, mode)
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return mercedes_routines.run(instance, routine, True, wait_seconds,
+                                 endian, mode)
+
 
 
 # --------------------------------------------------------------------------- #

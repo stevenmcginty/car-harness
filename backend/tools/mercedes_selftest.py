@@ -280,6 +280,14 @@ class FakeElmSession:
         raise ObdError("no data", kind="no_data")
 
 
+from backend.profiles.mercedes import coldstart as mb_cold  # noqa: E402
+from backend.profiles.mercedes import routines as mb_routines  # noqa: E402
+
+
+def mb_routines_dtcs():
+    return mb_routines.TESTS.get("dtcs", [])
+
+
 def main() -> int:
     failures = []
 
@@ -607,10 +615,13 @@ def main() -> int:
                 return (resp, None)
             did = (req[1] << 8) | req[2]
             def u16(value):
-                # 62 <did hi> <did lo> <data hi> <data lo> -- the mined decode
-                # reads big-endian from byte offset 3, the first data byte.
+                # 62 <did hi> <did lo> <data lo> <data hi> -- LITTLE-endian
+                # from byte offset 3, the first data byte. That is what the
+                # real SIM271DE20 answered on the car on 2026-08-23 (rpm
+                # FD 04 = 1277, MAP BC 2E = 992 mbar), and misfire.decode_entry
+                # was corrected to match it. This fake trails that decision.
                 return bytes([0x62, req[1], req[2],
-                              (value >> 8) & 0xFF, value & 0xFF])
+                              value & 0xFF, (value >> 8) & 0xFF])
             if did == 0xF190:
                 return (resp, bytes([0x62, 0xF1, 0x90]) + FAKE_VIN.encode())
             if did == 0x2100:                       # SIM-only marker
@@ -708,6 +719,196 @@ def main() -> int:
     check("a single-cylinder signature ranks an issue for that pattern",
           any(m["match_score"] > 0 for m in matched), str(matched[:1]))
 
+
+    # --- OM651 cold-start capture + XENTRY guided tests (CLA W117) ---------- #
+    print("\nOM651 cold start (CRD3-MFA1) -- captures/mercedes/cla-w117-coldstart.md")
+
+    entries = mb_cold._entries()
+    by_did = mb_cold._by_did()
+    check("41 CRD3MFA1 DIDs load from the mined table", len(entries) == 41,
+          str(len(entries)))
+    check("every crank DID exists in the mined table",
+          all(d in by_did for d in mb_cold.CRANK_DIDS),
+          str([d for d in mb_cold.CRANK_DIDS if d not in by_did]))
+    check("rail pressure feedback leads the crank list",
+          mb_cold.CRANK_DIDS[0] == "D058")
+
+    # Endian choice. 6702 is battery volts x0.01: 0E 74 big = 3700 -> 37.0 V
+    # (implausible), little = 0x740E -> 296 V (implausible too), so pick a
+    # vector that separates cleanly: 05 3C big = 1340 -> 13.40 V.
+    volts_big = "62670205 3C".replace(" ", "")
+    vote = mb_cold.pick_endian({"6702": volts_big})
+    check("endian vote picks big when only big is plausible",
+          vote["endian"] == "big" and vote["confident"], str(vote["votes"]))
+    volts_little = "6267023C05"
+    vote_l = mb_cold.pick_endian({"6702": volts_little})
+    check("endian vote picks little when only little is plausible",
+          vote_l["endian"] == "little" and vote_l["confident"],
+          str(vote_l["votes"]))
+    blind = mb_cold.pick_endian({})
+    check("endian vote with no evidence defaults little and says so",
+          blind["endian"] == "little" and not blind["confident"]
+          and "NOT" in blind["note"] or "NO channel" in blind["note"],
+          blind["note"][:40])
+
+    rail = by_did["D058"]
+    check("rail pressure decodes big-endian from byte 3",
+          mb_cold.decode_entry(rail, bytes.fromhex("62D05800FA"), "big") == 250.0)
+    check("rail pressure decodes little-endian the other way",
+          mb_cold.decode_entry(rail, bytes.fromhex("62D058FA00"), "little") == 250.0)
+    check("a negative response decodes to None",
+          mb_cold.decode_entry(rail, bytes.fromhex("7F2231")) is None)
+    err = by_did["601A"]
+    check("rail pressure error reads signed (offset -5000)",
+          mb_cold.decode_entry(err, bytes.fromhex("62601A1388"), "big") == 0.0)
+    glow = by_did["D017"]
+    check("glow state 2 names itself Pre Glow",
+          mb_cold.enum_name(glow, 2.0) == "Pre Glow",
+          str(mb_cold.enum_name(glow, 2.0)))
+    check("an unlisted enum value says so rather than guessing",
+          "unlisted" in (mb_cold.enum_name(glow, 200.0) or ""))
+
+    # A synthetic cold start shaped like the real complaint: 1 s key-on, then
+    # a ~2 s crank while the rail crawls from 40 bar up past release, then it
+    # catches. Ticks are 0.2 s apart because that is roughly what six DIDs
+    # over a fast dongle manage, and a 2 s crank only holds about ten of them.
+    def sample(t, rpm, bar, sync=1.0, phase="crank"):
+        return {"t": round(t, 2), "phase": phase, "did_5017": rpm,
+                "did_d058": bar, "did_60f9": sync, "did_d017": 2.0,
+                "did_d017_s": "Pre Glow"}
+    drain = [sample(0.0, 0.0, 0.0, 0.0, "keyon"),
+             sample(0.4, 0.0, 0.0, 0.0, "keyon")]
+    drain += [sample(0.8 + i * 0.2, 220.0, 40.0 + i * 24.0) for i in range(10)]
+    drain.append(sample(2.8, 900.0, 265.0, 1.0, "run"))
+    drain += [sample(3.0 + i * 0.2, 820.0, 300.0, 1.0, "run") for i in range(15)]
+    a = mb_cold.assess(drain)
+    check("a crawling rail that fires on arrival reads as rail_pressure_delay",
+          a["verdict"] == "rail_pressure_delay", a["verdict"])
+    check("crank length is measured from first turn to first fire",
+          abs(a["crank_seconds"] - 2.0) < 0.01, str(a["crank_seconds"]))
+    check("the rail-release crossing is timed",
+          a["t_rail_release"] is not None and a["release_to_fire_seconds"] <= 1.5,
+          f"{a['t_rail_release']} -> fire +{a['release_to_fire_seconds']}")
+    check("a 2 s crank is the complaint, not a healthy start",
+          a["crank_seconds"] >= mb_cold.EXTENDED_CRANK_S)
+
+    # The other half of the complaint: it catches, nearly dies, then settles.
+    struggle = list(drain[:13])
+    struggle += [sample(3.0, 520.0, 280.0, 1.0, "run"),
+                 sample(3.2, 430.0, 270.0, 1.0, "run"),
+                 sample(3.4, 610.0, 290.0, 1.0, "run")]
+    struggle += [sample(3.6 + i * 0.2, 810.0, 300.0, 1.0, "run")
+                 for i in range(15)]
+    st = mb_cold.assess(struggle)
+    check("a catch that nearly dies is reported as the struggle",
+          st["stumble_rpm_min"] is not None
+          and st["stumble_rpm_min"] < mb_cold.STUMBLE_RPM,
+          str(st["stumble_rpm_min"]))
+    check("the struggle earns a note in plain words",
+          any("nearly died again" in n for n in st["notes"]))
+    check("how long it took to hold idle is measured",
+          st["settle_seconds"] is not None, str(st["settle_seconds"]))
+    check("a clean catch reports no stumble below the threshold",
+          a["stumble_rpm_min"] >= mb_cold.STUMBLE_RPM, str(a["stumble_rpm_min"]))
+
+    ready = [sample(0.0, 0.0, 300.0, 0.0, "keyon")]
+    ready += [sample(0.4 + i * 0.2, 220.0, 300.0) for i in range(10)]
+    ready.append(sample(2.6, 900.0, 320.0, 1.0, "run"))
+    b = mb_cold.assess(ready)
+    check("a rail already up during a long crank reads as rail_ready_early",
+          b["verdict"] == "rail_ready_early", b["verdict"])
+
+    quick = [sample(0.0, 0.0, 0.0, 0.0, "keyon"),
+             sample(0.4, 220.0, 100.0), sample(0.8, 900.0, 300.0, 1.0, "run")]
+    check("a sub-second crank is called out as not the complaint",
+          mb_cold.assess(quick)["verdict"] == "no_extended_crank")
+    check("a short crank still tells the reader to check the stumble",
+          any("hunts" in n for n in mb_cold.assess(quick)["notes"]))
+    check("no crank at all is insufficient_data, not a guess",
+          mb_cold.assess([])["verdict"] == "insufficient_data")
+
+    silly = [sample(0.0, 0.0, 0.0, 0.0, "keyon")]
+    silly += [sample(0.4 + i * 0.2, 220.0, 60000.0) for i in range(10)]
+    silly.append(sample(2.6, 900.0, 60000.0, 1.0, "run"))
+    check("an impossible rail pressure is flagged as a scaling problem",
+          mb_cold.assess(silly)["scaling_suspect"])
+
+    late = [dict(x, did_60f9=0.0) for x in drain[:9]] + drain[9:]
+    check("late cam/crank sync earns its own note",
+          any("late" in n for n in mb_cold.assess(late)["notes"]),
+          str(mb_cold.assess(late)["sync_seconds"]))
+
+    check("coldstart/probe sim modes label themselves SIMULATED",
+          mb_cold.probe(None, "sim")["simulated"]
+          and mb_cold.coldstart(None, mode="sim")["simulated"])
+    check("coldstart refuses a byte order it does not know",
+          mb_cold.coldstart(None, endian="middle")["ok"] is False)
+
+    # --- the mined XENTRY guided tests ------------------------------------- #
+    cat = mb_routines.catalogue()
+    routines = cat["routines"]
+    check("13 XENTRY guided tests mined for the OM651", len(routines) == 13,
+          str(len(routines)))
+    check("the dynamic hydraulic test is present with start/stop/results",
+          all(routines["dyn_hydraulic"][k] for k in ("start", "stop", "results")))
+    check("dyn_hydraulic start is 31 01 F004",
+          routines["dyn_hydraulic"]["start"]["payload"] == "3101F004",
+          routines["dyn_hydraulic"]["start"]["payload"])
+    check("the high pressure test carries rise AND leak time",
+          sum(1 for f in routines["high_pressure"]["results"]["fields"]
+              if f["unit"] == "s") >= 2)
+    check("every routine says whether it commands the engine",
+          all("cranks_or_commands_engine" in r for r in routines.values()))
+    check("every routine is graded candidate until it runs on a car",
+          all(r["grade"] == "candidate" for r in routines.values()))
+    check("an unknown routine key is refused with the known list",
+          mb_routines.catalogue("nope")["ok"] is False)
+
+    status_field = next(f for f in routines["dyn_hydraulic"]["results"]["fields"]
+                        if f["name"] == "ROUTINE_STATUS")
+    # 71 03 F0 04 <status> ... -- status sits at absolute byte 4.
+    fin = mb_routines.decode_field(status_field,
+                                   bytes.fromhex("7103F00402"), "big")
+    check("routine status byte 02 decodes to TEST_FINISHED",
+          fin["state"] == "TEST_FINISHED", str(fin["state"]))
+    short = mb_routines.decode_field(status_field, bytes.fromhex("7103"), "big")
+    check("a reply too short for a field says so instead of throwing",
+          short.get("error") and short["value"] is None)
+    bar_field = next(f for f in routines["dyn_hydraulic"]["results"]["fields"]
+                     if f["unit"] == "bar")
+    got = mb_routines.decode_field(bar_field,
+                                   bytes.fromhex("7103F004020104") + b"\x00" * 20,
+                                   "big")
+    check("a routine pressure field decodes and keeps its raw bytes",
+          got["raw"] is not None and got["value"] is not None,
+          f"{got['raw']} -> {got['value']}")
+
+    refused = mb_routines.run(None, "dyn_hydraulic")
+    check("an active test without confirm is refused, and says why",
+          refused["ok"] is False and "ACTIVE test" in refused["message"])
+    check("the refusal repeats what the routine does before asking again",
+          "starter" in refused["message"])
+    check("an unknown routine cannot be run",
+          mb_routines.run(None, "nope", confirm=True)["ok"] is False)
+    check("run sim mode labels itself SIMULATED",
+          mb_routines.run(None, "lift_pump", confirm=True,
+                          mode="sim")["simulated"])
+
+    dtcs = mb_routines_dtcs()
+    check("194 cold-start fault codes mined with Mercedes' own text",
+          len(dtcs) == 194, str(len(dtcs)))
+    check("the mined fault text survived the encoding repair",
+          any("ü" in (d["description"] or "") for d in dtcs))
+    check("every fault code carries its ASCII symbolic name",
+          sum(1 for d in dtcs if d.get("symbol")) > len(dtcs) * 0.9)
+    look = mb_routines.lookup_dtcs(["P0087", "P0671"])
+    check("a P-code stem finds its XENTRY rows",
+          all(r["matches"] for r in look["results"]),
+          str([(r["code"], len(r["matches"])) for r in look["results"]]))
+    check("low rail pressure text is what P0087 comes back as",
+          any("Kraftstoffdruck" in (m["description"] or "")
+              for m in look["results"][0]["matches"]))
+
     sim_ident = mb_misfire.identify(None, "sim")
     sim_cap = mb_misfire.capture(None, 30, mode="sim")
     check("identify/capture sim modes label themselves SIMULATED",
@@ -724,7 +925,8 @@ def main() -> int:
     print("SELF-TEST PASSED: Mercedes engine+TCM table, UDS mask ladder + session "
           "escalation, KWP2000-over-CAN fallback, engine OBD fallback + DoIP note, "
           "E-Class hybrid live tier, ATF live extra, reset catalogue, brand "
-          "routes and the SLK rough-running identify/capture/assess workflow "
+          "routes, the SLK rough-running identify/capture/assess workflow and "
+          "the OM651 cold-start capture + mined XENTRY guided tests "
           "all good.")
     return 0
 

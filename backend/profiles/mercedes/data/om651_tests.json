@@ -1,0 +1,3225 @@
+{
+ "title": "Mercedes OM651 (CRD3-MFA1) - XENTRY guided tests and cold-start fault codes",
+ "provenance": {
+  "package": "XENTRY_Diagnostics_OpenShell_26.6.4.zip (chain in xentry_dids.json)",
+  "source_file": "xdos/caesar_cbf/Xentry/MB_PKW/Caesar/cbf/CRD3MFA1.cbf -> mined/CRD3MFA1.json",
+  "variant": "Diag_3300h",
+  "builder": "tools/dealer_index/build_xentry_om651_tests.py",
+  "connection": "HSCAN UDS 500 kbit, 0x7E0/0x7E8, global id 0x441"
+ },
+ "notes": [
+  "Every entry is graded 'candidate' -- none has run on a car yet.",
+  "ROUTINES ARE ACTIVE TESTS. Service 0x31 commands the ECU; several of them spin the starter, drive injectors or run the fuel pump. They are not the read-only 0x22 reads the capture uses. Run them only deliberately, with the car safe to crank, and expect an extended session (10 03) and possibly SecurityAccess first.",
+  "The CBF declares BigEndian on every parameter of every Mercedes ECU mined so far, yet the SLK's SIM271DE20 answered LITTLE-endian on the car (2026-08-23). declared_byte_order is recorded but not trusted; decode both ways and keep the raw bytes.",
+  "Result field byte_offset is absolute in the whole reply frame (service byte included), unlike the 0x22 tables whose offsets start after the 62 <DID> header."
+ ],
+ "routines": {
+  "dyn_hydraulic": {
+   "routine_id": "F004",
+   "title": "Dynamic hydraulic test",
+   "why": "Spins the starter and reports the AVERAGED rail pressure during cranking, the pressure after the up and down states, how long the pressure took to fall, and the engine speed at the end. This is the closest dealer equivalent of the extended-crank complaint.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "3101F004",
+    "name": "RT_F004_Start_Dyn_Hydraulic_Test",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_F004_Start_Dyn_Hydraulic_Test",
+     "payload": "3101F004",
+     "description": "F004 Start Dyn Hydraulic Test",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "3102F004",
+    "name": "RT_F004_Stop_Dyn_Hydraulic_Test"
+   },
+   "results": {
+    "payload": "3103F004",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "F004 Request Results Dyn_Hydraulic_Test_Status"
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F004 Request Results Rail pressure reading after up state of the test."
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 7,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F004 Request Results Rail pressure reading after down state of the test."
+     },
+     {
+      "name": "CM_0018_BIN0_NA_1",
+      "unit": null,
+      "byte_offset": 9,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F004 Request Results Hydraulic test result"
+     },
+     {
+      "name": "CM_0232_BIN10_bar_2",
+      "unit": "bar",
+      "byte_offset": 10,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F004 Request Results Averaged feedback pressure during the starter activation."
+     },
+     {
+      "name": "CM_0004_DEC1_s_2",
+      "unit": "s",
+      "byte_offset": 12,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 0.1,
+       "offset": 0.0
+      },
+      "label": "F004 Request Results Time needed to have a decrease of DTI_ISO_DYN_HYD_TST_DN_PRESS_APV bar"
+     },
+     {
+      "name": "CM_0046_BIN2_rpm_2",
+      "unit": "1/min",
+      "byte_offset": 14,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 0.25,
+       "offset": 0.0
+      },
+      "label": "F004 Request Results Engine speed at the end of the starter activation."
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "high_pressure": {
+   "routine_id": "032A",
+   "title": "High pressure test",
+   "why": "Rise time, leak time, pressure reached and pressure at the end of the test. Separates 'the pump cannot build it' from 'it builds and then leaks away'.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "3101032A00",
+    "name": "RT_032A_Start_High_Pressure_Test_Aftersales",
+    "needs_input": true
+   },
+   "start_variants": [
+    {
+     "name": "RT_032A_Start_High_Pressure_Test_Aftersales",
+     "payload": "3101032A00",
+     "description": "032A Start High Pressure Test Aftersales",
+     "needs_input": true
+    },
+    {
+     "name": "RT_032A_Start_High_Pressure_Test_ECU_Dataset",
+     "payload": "3101032A00",
+     "description": "032A Start High Pressure Test ECU Dataset",
+     "needs_input": true
+    },
+    {
+     "name": "RT_032A_Start_High_Pressure_Test",
+     "payload": "3101032A000000000000000000",
+     "description": "032A Start High Pressure Test",
+     "needs_input": true
+    },
+    {
+     "name": "RT_032A_Start_P_L_Cds_hptest_request_type",
+     "payload": "3101032A000000000000000000",
+     "description": "032A Start HPTest request type",
+     "needs_input": true
+    }
+   ],
+   "stop": {
+    "payload": "3102032A",
+    "name": "RT_032A_Stop_High_Pressure_Test"
+   },
+   "results": {
+    "payload": "3103032A",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "032A Request Results High Pressure Test Routine_Status"
+     },
+     {
+      "name": "ENUM_DTI_Iso_railpressure_inc_status_1",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "DTI_RAILP_INC_INIT",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "DTI_RAILP_INC_OK",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "DTI_RAILP_INC_NOK",
+         "start": 2.0,
+         "end": 2.0
+        }
+       ]
+      },
+      "label": "032A Request Results High Pressure Test Rail Pressure Status"
+     },
+     {
+      "name": "CM_0043_BIN2_degC_2",
+      "unit": "Â°C",
+      "byte_offset": 6,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 0.25,
+       "offset": -50.0
+      },
+      "label": "032A Request Results High Pressure Test Fuel temperature"
+     },
+     {
+      "name": "CM_0004_DEC1_s_2",
+      "unit": "s",
+      "byte_offset": 8,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 0.1,
+       "offset": 0.0
+      },
+      "label": "032A Request Results High Pressure Test time needed for rail pressure increase"
+     },
+     {
+      "name": "CM_0004_DEC1_s_2",
+      "unit": "s",
+      "byte_offset": 10,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 0.1,
+       "offset": 0.0
+      },
+      "label": "032A Request Results time needed for rail pressure decrease"
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 12,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "032A Request Results Rail pressure reached during up time"
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 14,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "032A Request Results Rail pressure at the end of the test"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "rail_air": {
+   "routine_id": "0327",
+   "title": "Rail air exhaustion (bleed) test",
+   "why": "Purges air from the high pressure circuit. Run it AFTER the cold-start capture: if the next cold start is normal, air ingress is proven.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "31010327",
+    "name": "RT_0327_Start_Rail_Air_Exhaustion_Test",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_0327_Start_Rail_Air_Exhaustion_Test",
+     "payload": "31010327",
+     "description": "0327 Start Rail Air Exhaustion Test",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "31020327",
+    "name": "RT_0327_Stop_Rail_Air_Exhaustion_Test"
+   },
+   "results": {
+    "payload": "31030327",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "0327 Request Results Rail Air Exhaustion Test"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "lift_pump": {
+   "routine_id": "F10D",
+   "title": "Fuel pump / lift pump test",
+   "why": "Runs the in-tank low pressure pump on demand. Tests the supply side that a drain-back fault sits on.",
+   "cranks_or_commands_engine": false,
+   "start": {
+    "payload": "3101F10D",
+    "name": "RT_F10D_Fuel_pump_Lift_Pump_Test_Start",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_F10D_Fuel_pump_Lift_Pump_Test_Start",
+     "payload": "3101F10D",
+     "description": "F10D Fuel pump_Lift Pump Test: Start",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "3102F10D",
+    "name": "RT_F10D_Fuel_pump_Lift_Pump_Test_Stop"
+   },
+   "results": {
+    "payload": "3103F10D",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "F10D Request Results Fuel_pump_Lift_Pump_Test Status"
+     },
+     {
+      "name": "CM_0030_BIN0_NA_4",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 32,
+      "byte_size": 4,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F10D Request Results Fuel_pump_Lift_Pump_Test_Result"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "glow_control": {
+   "routine_id": "F104",
+   "title": "Glow control desired function test",
+   "why": "Commands the glow controller and reports its result. The pre-heat half of the diagnosis.",
+   "cranks_or_commands_engine": false,
+   "start": {
+    "payload": "3101F104",
+    "name": "RT_F104_Glow_Control_Desired_Function_Test_Start",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_F104_Glow_Control_Desired_Function_Test_Start",
+     "payload": "3101F104",
+     "description": "F104 Glow Control Desired Function Test: Start",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "3102F104",
+    "name": "RT_F104_Glow_Control_Desired_Function_Test_Stop"
+   },
+   "results": {
+    "payload": "3103F104",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "F104 Request Results Glow_Control_Desired_Function_Test Status"
+     },
+     {
+      "name": "CM_0030_BIN0_NA_4",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 32,
+      "byte_size": 4,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F104 Request Results Glow_Control_Desired_Function_Test_Result"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "glow_indicator": {
+   "routine_id": "F10F",
+   "title": "Glow plug indicator test",
+   "why": "Drives the dash glow lamp -- proves the tester is actually talking to the glow path.",
+   "cranks_or_commands_engine": false,
+   "start": {
+    "payload": "3101F10F",
+    "name": "RT_F10F_Glow_Plug_indicator_Test_Start",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_F10F_Glow_Plug_indicator_Test_Start",
+     "payload": "3101F10F",
+     "description": "F10F Glow Plug indicator Test: Start",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "3102F10F",
+    "name": "RT_F10F_Glow_Plug_indicator_Test_Stop"
+   },
+   "results": {
+    "payload": "3103F10F",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "F10F Request Results Glow_Plug_indicator_Test Status"
+     },
+     {
+      "name": "CM_0030_BIN0_NA_4",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 32,
+      "byte_size": 4,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F10F Request Results Glow_Plug_indicator_Test_Result"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "compression": {
+   "routine_id": "0325",
+   "title": "Compression test (classic / modified)",
+   "why": "The ECU's own cranking compression comparison. Directly relevant after a cylinder head rebuild.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "3101032500",
+    "name": "RT_0325_Start_Compression_test_classic",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_0325_Start_Compression_test_classic",
+     "payload": "3101032500",
+     "description": "0325 Start Compression test classic",
+     "needs_input": false
+    },
+    {
+     "name": "RT_0325_Start_Compression_test_modified",
+     "payload": "310103250100",
+     "description": "0325 Start Compression test modified",
+     "needs_input": true
+    }
+   ],
+   "stop": {
+    "payload": "3102032500",
+    "name": "RT_0325_Stop_Compression_test_classic"
+   },
+   "results": {
+    "payload": "3103032500",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "0325 Request Results Compression test classic"
+     },
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "0325 Request Results Compression test modified"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "fuel_pump_pressure": {
+   "routine_id": "03B7",
+   "title": "Controlled fuel pump pressure test",
+   "why": "Commands a pressure and reports whether it held.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "310103B7",
+    "name": "RT_03B7_Controlled_Fuel_Pump_Pressure_Test_Start",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_03B7_Controlled_Fuel_Pump_Pressure_Test_Start",
+     "payload": "310103B7",
+     "description": "03B7 Controlled Fuel Pump Pressure Test: Start",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "310203B7",
+    "name": "RT_03B7_Controlled_Fuel_Pump_Pressure_Test_Stop"
+   },
+   "results": {
+    "payload": "310303B7",
+    "fields": [
+     {
+      "name": "CM_0018_BIN0_NA_1",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "03B7 Request Results Controlled_Fuel_Pump_Pressure_Test Status"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "injector_0": {
+   "routine_id": "F115",
+   "title": "Injector 1 test",
+   "why": "Per-injector activation.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "3101F115",
+    "name": "RT_F115_Injector_0_test_Start",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_F115_Injector_0_test_Start",
+     "payload": "3101F115",
+     "description": "F115 Injector 0 test: Start",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "3102F115",
+    "name": "RT_F115_Injector_0_test_Stop"
+   },
+   "results": {
+    "payload": "3103F115",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "F115 Request Results Injector_0_test Status"
+     },
+     {
+      "name": "CM_0030_BIN0_NA_4",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 32,
+      "byte_size": 4,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F115 Request Results Injector_0_test_Result"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "injector_1": {
+   "routine_id": "F116",
+   "title": "Injector 2 test",
+   "why": "Per-injector activation.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "3101F116",
+    "name": "RT_F116_Injector_1_test_Start",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_F116_Injector_1_test_Start",
+     "payload": "3101F116",
+     "description": "F116 Injector 1 test: Start",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "3102F116",
+    "name": "RT_F116_Injector_1_test_Stop"
+   },
+   "results": {
+    "payload": "3103F116",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "F116 Request Results Injector_1_test Status"
+     },
+     {
+      "name": "CM_0030_BIN0_NA_4",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 32,
+      "byte_size": 4,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F116 Request Results Injector_1_test_Result"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "injector_2": {
+   "routine_id": "F117",
+   "title": "Injector 3 test",
+   "why": "Per-injector activation.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "3101F117",
+    "name": "RT_F117_Injector_2_test_Start",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_F117_Injector_2_test_Start",
+     "payload": "3101F117",
+     "description": "F117 Injector 2 test: Start",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "3102F117",
+    "name": "RT_F117_Injector_2_test_Stop"
+   },
+   "results": {
+    "payload": "3103F117",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "F117 Request Results Injector_2_test Status"
+     },
+     {
+      "name": "CM_0030_BIN0_NA_4",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 32,
+      "byte_size": 4,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F117 Request Results Injector_2_test_Result"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "injector_3": {
+   "routine_id": "F118",
+   "title": "Injector 4 test",
+   "why": "Per-injector activation.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "3101F118",
+    "name": "RT_F118_Injector_3_test_Start",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_F118_Injector_3_test_Start",
+     "payload": "3101F118",
+     "description": "F118 Injector 3 test: Start",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "3102F118",
+    "name": "RT_F118_Injector_3_test_Stop"
+   },
+   "results": {
+    "payload": "3103F118",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "F118 Request Results Injector_3_test Status"
+     },
+     {
+      "name": "CM_0030_BIN0_NA_4",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 32,
+      "byte_size": 4,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F118 Request Results Injector_3_test_Result"
+     }
+    ]
+   },
+   "grade": "candidate"
+  },
+  "imv_diagnosis": {
+   "routine_id": "F00F",
+   "title": "Inlet metering valve diagnosis",
+   "why": "Reads back the rail pressure error table -- the metering valve is the usual reason a rail will not come up on cranking.",
+   "cranks_or_commands_engine": true,
+   "start": {
+    "payload": "3101F00F",
+    "name": "RT_F00F_Start_IMV_Diagnosis",
+    "needs_input": false
+   },
+   "start_variants": [
+    {
+     "name": "RT_F00F_Start_IMV_Diagnosis",
+     "payload": "3101F00F",
+     "description": "F00F Start IMV_Diagnosis",
+     "needs_input": false
+    }
+   ],
+   "stop": {
+    "payload": "3102F00F",
+    "name": "RT_F00F_Stop_IMV_Diagnosis"
+   },
+   "results": {
+    "payload": "3103F00F",
+    "fields": [
+     {
+      "name": "ROUTINE_STATUS",
+      "unit": null,
+      "byte_offset": 4,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "table",
+       "states": [
+        {
+         "name": "TEST_NOT_LAUNCHED",
+         "start": 0.0,
+         "end": 0.0
+        },
+        {
+         "name": "TEST_IN_PROGRESS",
+         "start": 1.0,
+         "end": 1.0
+        },
+        {
+         "name": "TEST_FINISHED",
+         "start": 2.0,
+         "end": 2.0
+        },
+        {
+         "name": "TEST_ABORTION_IN_PROGRESS",
+         "start": 16.0,
+         "end": 16.0
+        },
+        {
+         "name": "TEST_ABORTED",
+         "start": 17.0,
+         "end": 17.0
+        }
+       ]
+      },
+      "label": "F00F Request Results IMV_Diagnosis_Status"
+     },
+     {
+      "name": "ENUM_DTI_Isdyres_21_DTI_ISO_DYN_RES_1",
+      "unit": null,
+      "byte_offset": 5,
+      "bit_offset": 0,
+      "length_bits": 8,
+      "byte_size": 1,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "bool",
+       "true": "DTI_ISO_DYN_TEST_FAILED",
+       "false": "DTI_ISO_DYN_TEST_OK"
+      },
+      "label": "F00F Request Results This flow contain the result of the ISO Dyn Test."
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 6,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F00F Request Results Rail pressure error table."
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 8,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F00F Request Results Rail pressure error table. (2)"
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 10,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F00F Request Results Rail pressure error table. (3)"
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 12,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F00F Request Results Rail pressure error table. (4)"
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 14,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F00F Request Results Rail pressure error table. (5)"
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 16,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F00F Request Results Rail pressure error table. (6)"
+     },
+     {
+      "name": "CM_0034_BIN0_bar_2",
+      "unit": "bar",
+      "byte_offset": 18,
+      "bit_offset": 0,
+      "length_bits": 16,
+      "byte_size": 2,
+      "declared_byte_order": "BigEndian",
+      "conversion": {
+       "type": "linear",
+       "multiplier": 1.0,
+       "offset": 0.0
+      },
+      "label": "F00F Request Results Rail pressure error table. (7)"
+     }
+    ]
+   },
+   "grade": "candidate"
+  }
+ },
+ "dtcs": [
+  {
+   "code": "P001107",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_CAM_DRIFT",
+   "description": "Die Position der Einlassnockenwelle (Zylinderreihe 1) weicht vom Sollwert ab. Es liegt ein mechanischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P001126",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_CAM_LEARNING",
+   "description": "Die Position der Einlassnockenwelle (Zylinderreihe 1) weicht vom Sollwert ab. Die Signaländerungsrate ist unterhalb des zulässigen Grenzwertes.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008700",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_BUILD_LOWTK",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008707",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_2_POS",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig. Es liegt ein mechanischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008709",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_HO_POS",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig. Es liegt ein Bauteilfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008721",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "INJ_LOW_RAILP",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig. Die Signalamplitude ist kleiner als die Minimalamplitude.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P00877A",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_SAS_RPF",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig. Eine Leckage oder defekte Dichtung wurde erkannt.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P00877B",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_LT_POS",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig. Der Flüssigkeitsstand ist zu niedrig.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008791",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_IO_POS",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008792",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_IC_POS",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig. Die Funktion oder die Anweisung ist fehlerhaft.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008796",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_RD_POS",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig. Es liegt ein interner Komponentenfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P0087FA",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_BUILD_NMTK",
+   "description": "Der Kraftstoffdruck im System ist zu niedrig.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008807",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_2_NEG",
+   "description": "Der Kraftstoffdruck im System ist zu hoch. Es liegt ein mechanischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008809",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_HO_NEG",
+   "description": "Der Kraftstoffdruck im System ist zu hoch. Es liegt ein Bauteilfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008863",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_OVERP_TIMEOUT",
+   "description": "Der Kraftstoffdruck im System ist zu hoch. Die Dauer der Ansteuerung wurde überschritten: Überlastschutz ist aktiv.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P00887B",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_LT_NEG",
+   "description": "Der Kraftstoffdruck im System ist zu hoch. Der Flüssigkeitsstand ist zu niedrig.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008885",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "OVER_PRESSURE_IMV",
+   "description": "Der Kraftstoffdruck im System ist zu hoch. Es liegt ein Signal oberhalb des zulässigen Grenzwertes.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008891",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_IO_NEG",
+   "description": "Der Kraftstoffdruck im System ist zu hoch.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008892",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_IC_NEG",
+   "description": "Der Kraftstoffdruck im System ist zu hoch. Die Funktion oder die Anweisung ist fehlerhaft.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008893",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "OVER_PRESSURE_HPV",
+   "description": "Der Kraftstoffdruck im System ist zu hoch. Es liegt keine Anweisung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008896",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "RPC_CTRL_ERROR_RD_NEG",
+   "description": "Der Kraftstoffdruck im System ist zu hoch. Es liegt ein interner Komponentenfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008897",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "OVER_PRESSURE_UNDEF",
+   "description": "Der Kraftstoffdruck im System ist zu hoch. Die Systemfunktion ist eingeschränkt.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008904",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_FC_HP_DISABL",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Es liegt ein interner Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008906",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HP_OL_SLOPE",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Es liegt ein Algorithmusfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008918",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HP_CRT_FB_LOW",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Der Grenzwert für Strom ist unterschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008919",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HP_CRT_FB_HIGH",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Der Grenzwert für Strom ist überschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P00891A",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HP_CRT_CTRL_TRIM_LOW",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Der Grenzwert für Widerstand ist unterschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P00891B",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HP_CRT_CTRL_TRIM_HIGH",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Der Grenzwert für Widerstand ist überschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008921",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HP_CONTROL_TRIM_LO",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Die Signalamplitude ist kleiner als die Minimalamplitude.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008922",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HP_CONTROL_TRIM_HI",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Die Signalamplitude ist größer als die Maximalamplitude.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P00892B",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HPV_DRIVE_SC",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Die elektrischen Leitungen haben Kurzschluss untereinander.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P008971",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HP_CHECKING",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Funktionsstörung. Das Stellglied ist blockiert.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P009013",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HPV_DRIVE_OC",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P009111",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HPV_DRIVE_SC2G",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P009212",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "HPV_DRIVE_SC2V",
+   "description": "Das Druckregelventil 1 für Kraftstoff hat Kurzschluss nach Plus. Es liegt ein Kurzschluss nach Plus vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P00C692",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "I_C_STRT_CND_LATE",
+   "description": "Der Kraftstoffdruck im System ist während des Startvorgangs zu niedrig. Die Funktion oder die Anweisung ist fehlerhaft.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P014800",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_HYDFF_WARN",
+   "description": "Die Kraftstoffversorgung hat einen Fehler.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P014807",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_HYDFF_LH",
+   "description": "Die Kraftstoffversorgung hat einen Fehler. Es liegt ein mechanischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P018127",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUEL_TEMP_GRAD",
+   "description": "Der Kraftstofftemperatur-Sensor hat Funktionsstörung. Die Signaländerungsrate ist oberhalb des zulässigen Grenzwertes.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P018128",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUEL_TEMP_PLAU",
+   "description": "Der Kraftstofftemperatur-Sensor hat Funktionsstörung. Der Signal-Offset ist außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P018129",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUEL_TEMP",
+   "description": "Der Kraftstofftemperatur-Sensor hat Funktionsstörung. Es liegt ein ungültiges Signal vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P018164",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUEL_TEMP_MDPL",
+   "description": "Der Kraftstofftemperatur-Sensor hat Funktionsstörung. Es liegt ein unplausibles Signal vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P018211",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUEL_TEMP_LO",
+   "description": "Der Kraftstofftemperatur-Sensor hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P018315",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUEL_TEMP_HI",
+   "description": "Der Kraftstofftemperatur-Sensor hat Kurzschluss nach Plus. Es liegt ein Kurzschluss nach Plus oder eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P019121",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "RAILP_CAL_LOW",
+   "description": "Der Raildrucksensor hat Funktionsstörung. Die Signalamplitude ist kleiner als die Minimalamplitude.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P019122",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "RAILP_CAL_HIGH",
+   "description": "Der Raildrucksensor hat Funktionsstörung. Die Signalamplitude ist größer als die Maximalamplitude.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P019125",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "RAIL_PRES_DROP",
+   "description": "Der Raildrucksensor hat Funktionsstörung. Es liegt eine fehlerhafte Signalform vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P019127",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "RAIL_PRES_GRAD",
+   "description": "Der Raildrucksensor hat Funktionsstörung. Die Signaländerungsrate ist oberhalb des zulässigen Grenzwertes.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P019128",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "RAILP_CAL_MED_TST_FLT",
+   "description": "Der Raildrucksensor hat Funktionsstörung. Der Signal-Offset ist außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P019164",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "ESM_RPC",
+   "description": "Der Raildrucksensor hat Funktionsstörung. Es liegt ein unplausibles Signal vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P019200",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "RAIL_PRES_LO",
+   "description": "Der Raildrucksensor hat Kurzschluss nach Masse.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P019300",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "RAIL_PRES_HI",
+   "description": "Der Raildrucksensor hat Kurzschluss nach Plus.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P020101",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "INJ_SC_LOW_IMP_0",
+   "description": "Der Kraftstoffinjektor (Zylinder 1) hat einen elektrischen Fehler oder Unterbrechung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P020113",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "FCI_OC_INJ_0",
+   "description": "Der Kraftstoffinjektor (Zylinder 1) hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P020201",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "INJ_SC_LOW_IMP_3",
+   "description": "Der Kraftstoffinjektor (Zylinder 2) hat einen elektrischen Fehler oder Unterbrechung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P020213",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "FCI_OC_INJ_3",
+   "description": "Der Kraftstoffinjektor (Zylinder 2) hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P020301",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "INJ_SC_LOW_IMP_1",
+   "description": "Der Kraftstoffinjektor (Zylinder 3) hat einen elektrischen Fehler oder Unterbrechung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P020313",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "FCI_OC_INJ_1",
+   "description": "Der Kraftstoffinjektor (Zylinder 3) hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P020401",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "INJ_SC_LOW_IMP_2",
+   "description": "Der Kraftstoffinjektor (Zylinder 4) hat einen elektrischen Fehler oder Unterbrechung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P020413",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "FCI_OC_INJ_2",
+   "description": "Der Kraftstoffinjektor (Zylinder 4) hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P024028",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "P21_PRES_PLAU",
+   "description": "Der Ladedrucksensor für Niederdruck-Abgasturbolader hat Funktionsstörung. Der Signal-Offset ist außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P024029",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "P21_PRESSURE",
+   "description": "Der Ladedrucksensor für Niederdruck-Abgasturbolader hat Funktionsstörung. Es liegt ein ungültiges Signal vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P024413",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "WASTEG_DRV_OC",
+   "description": "Der Ausgang für Niederdruck-Abgasturbolader hat Funktionsstörung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P024511",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "WASTEG_DRV_SC2G",
+   "description": "Der Ausgang für Niederdruck-Abgasturbolader hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P024612",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "WASTEG_DRV_SC2V",
+   "description": "Der Ausgang für Niederdruck-Abgasturbolader hat Kurzschluss nach Plus. Es liegt ein Kurzschluss nach Plus vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P026111",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "FCI_SC_INJ_0",
+   "description": "Der Kraftstoffinjektor (Zylinder 1) hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P026411",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "FCI_SC_INJ_3",
+   "description": "Der Kraftstoffinjektor (Zylinder 2) hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P026711",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "FCI_SC_INJ_1",
+   "description": "Der Kraftstoffinjektor (Zylinder 3) hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P027011",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "FCI_SC_INJ_2",
+   "description": "Der Kraftstoffinjektor (Zylinder 4) hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02CC00",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_TRIM_LOW_INJ_LO_0",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 1) hat den unteren Grenzwert erreicht.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02CC84",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_MIN_ABSOLUTE_0",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 1) hat den unteren Grenzwert erreicht. Es liegt ein Signal unterhalb des zulässigen Grenzwertes.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02CD00",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_TRIM_HI_INJ_LO_0",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 1) hat den oberen Grenzwert erreicht.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02CE00",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_TRIM_LOW_INJ_LO_3",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 2) hat den unteren Grenzwert erreicht.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02CE84",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_MIN_ABSOLUTE_3",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 2) hat den unteren Grenzwert erreicht. Es liegt ein Signal unterhalb des zulässigen Grenzwertes.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02CF00",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_TRIM_HI_INJ_LO_3",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 2) hat den oberen Grenzwert erreicht.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02D000",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_TRIM_LOW_INJ_LO_1",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 3) hat den unteren Grenzwert erreicht.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02D084",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_MIN_ABSOLUTE_1",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 3) hat den unteren Grenzwert erreicht. Es liegt ein Signal unterhalb des zulässigen Grenzwertes.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02D100",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_TRIM_HI_INJ_LO_1",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 3) hat den oberen Grenzwert erreicht.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02D200",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_TRIM_LOW_INJ_LO_2",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 4) hat den unteren Grenzwert erreicht.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02D284",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_MIN_ABSOLUTE_2",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 4) hat den unteren Grenzwert erreicht. Es liegt ein Signal unterhalb des zulässigen Grenzwertes.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02D300",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_TRIM_HI_INJ_LO_2",
+   "description": "Der Lernwert für Kraftstoffinjektor (Zylinder 4) hat den oberen Grenzwert erreicht.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02EE00",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_HI_RES_DROP_0",
+   "description": "Der Kraftstoffinjektor (Zylinder 1) hat Funktionsstörung.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02EE01",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_LO_RES_DROP_0",
+   "description": "Der Kraftstoffinjektor (Zylinder 1) hat Funktionsstörung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02EE1A",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_LO_RES_LEVEL_0",
+   "description": "Der Kraftstoffinjektor (Zylinder 1) hat Funktionsstörung. Der Grenzwert für Widerstand ist unterschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02EE1B",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_HI_RES_LEVEL_0",
+   "description": "Der Kraftstoffinjektor (Zylinder 1) hat Funktionsstörung. Der Grenzwert für Widerstand ist überschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02EF00",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_HI_RES_DROP_3",
+   "description": "Der Kraftstoffinjektor (Zylinder 2) hat Funktionsstörung.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02EF01",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_LO_RES_DROP_3",
+   "description": "Der Kraftstoffinjektor (Zylinder 2) hat Funktionsstörung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02EF1A",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_LO_RES_LEVEL_3",
+   "description": "Der Kraftstoffinjektor (Zylinder 2) hat Funktionsstörung. Der Grenzwert für Widerstand ist unterschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02EF1B",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_HI_RES_LEVEL_3",
+   "description": "Der Kraftstoffinjektor (Zylinder 2) hat Funktionsstörung. Der Grenzwert für Widerstand ist überschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02F000",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_HI_RES_DROP_1",
+   "description": "Der Kraftstoffinjektor (Zylinder 3) hat Funktionsstörung.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02F001",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_LO_RES_DROP_1",
+   "description": "Der Kraftstoffinjektor (Zylinder 3) hat Funktionsstörung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02F01A",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_LO_RES_LEVEL_1",
+   "description": "Der Kraftstoffinjektor (Zylinder 3) hat Funktionsstörung. Der Grenzwert für Widerstand ist unterschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02F01B",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_HI_RES_LEVEL_1",
+   "description": "Der Kraftstoffinjektor (Zylinder 3) hat Funktionsstörung. Der Grenzwert für Widerstand ist überschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02F100",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_HI_RES_DROP_2",
+   "description": "Der Kraftstoffinjektor (Zylinder 4) hat Funktionsstörung.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02F101",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_LO_RES_DROP_2",
+   "description": "Der Kraftstoffinjektor (Zylinder 4) hat Funktionsstörung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02F11A",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_LO_RES_LEVEL_2",
+   "description": "Der Kraftstoffinjektor (Zylinder 4) hat Funktionsstörung. Der Grenzwert für Widerstand ist unterschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P02F11B",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "BRC_HI_RES_LEVEL_2",
+   "description": "Der Kraftstoffinjektor (Zylinder 4) hat Funktionsstörung. Der Grenzwert für Widerstand ist überschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P033531",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_CRANK_LOST",
+   "description": "Der Positionssensor 1 der Kurbelwelle hat einen elektrischen Fehler. Signal nicht vorhanden",
+   "grade": "candidate"
+  },
+  {
+   "code": "P033600",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_ENG_SPD_FRZ",
+   "description": "Der Positionssensor 1 der Kurbelwelle hat Funktionsstörung.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P033602",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_CRANK_EARLY",
+   "description": "Der Positionssensor 1 der Kurbelwelle hat Funktionsstörung. Es liegt ein allgemeiner Signalfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P033603",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_CRK_DIR_SENS",
+   "description": "Der Positionssensor 1 der Kurbelwelle hat Funktionsstörung. Es liegt ein Frequenz- oder Pulsweitenmodulationsfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P033631",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_GAP_MISSED",
+   "description": "Der Positionssensor 1 der Kurbelwelle hat Funktionsstörung. Signal nicht vorhanden",
+   "grade": "candidate"
+  },
+  {
+   "code": "P033664",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "CRK_SENS",
+   "description": "Der Positionssensor 1 der Kurbelwelle hat Funktionsstörung. Es liegt ein unplausibles Signal vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P033687",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_CRANK_MISSING",
+   "description": "Der Positionssensor 1 der Kurbelwelle hat Funktionsstörung. Botschaft fehlt.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P034129",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_CAM_ERRATIC",
+   "description": "Der Positionssensor der Einlassnockenwelle (Zylinderreihe 1) hat Funktionsstörung. Es liegt ein ungültiges Signal vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P034131",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_CAM_MISSING",
+   "description": "Der Positionssensor der Einlassnockenwelle (Zylinderreihe 1) hat Funktionsstörung. Signal nicht vorhanden",
+   "grade": "candidate"
+  },
+  {
+   "code": "P034187",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "APS_CAM_LOST",
+   "description": "Der Positionssensor der Einlassnockenwelle (Zylinderreihe 1) hat Funktionsstörung. Botschaft fehlt.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P046185",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUEL_TANK_LEVEL",
+   "description": "Der Tankgeber links hat Funktionsstörung. Es liegt ein Signal oberhalb des zulässigen Grenzwertes.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P047622",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "EXH_P_OVERSHOOT",
+   "description": "Das Abgasrückführstellglied 1 (Niederdruck) hat Funktionsstörung. Die Signalamplitude ist größer als die Maximalamplitude.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P04A028",
+   "families": [
+    "fuel_pressure"
+   ],
+   "symbol": "EXHTHRT_UNDEFPOS",
+   "description": "Das Abgasrückführstellglied 2 (Hochdruck) hat Funktionsstörung. Der Signal-Offset ist außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P052F00",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG_WIRE_NOCONEC",
+   "description": "Die Spannungsversorgung des Steuergerätes ''Glühzeit'' hat Funktionsstörung.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P053A13",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "CK_CASE_DRV_OC",
+   "description": "Der Ausgang für Heizelement der Entlüftungsleitung ''Kurbelgehäuse'' hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P053B11",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "CK_CASE_DRV_SC2G",
+   "description": "Der Ausgang für Heizelement der Entlüftungsleitung ''Kurbelgehäuse'' hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P053C12",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "CK_CASE_DRV_SC2V",
+   "description": "Der Ausgang für Heizelement der Entlüftungsleitung ''Kurbelgehäuse'' hat Kurzschluss nach Plus. Es liegt ein Kurzschluss nach Plus vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P06111E",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_OP_MODE_BRC_RES",
+   "description": "Das Steuergerät ''Kraftstoffinjektor'' hat Funktionsstörung (Endstufenfehler des Steuergerätes ''Verbrennungsmotor''). Der Widerstandswert liegt außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P061500",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "STRT_RLY_OC",
+   "description": "Das Starterrelais hat einen elektrischen Fehler.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P061600",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "STRT_RLY_SC2G",
+   "description": "Das Starterrelais hat Kurzschluss nach Masse.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P061700",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "STRT_RLY_SC2V",
+   "description": "Das Starterrelais hat Kurzschluss nach Plus.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062700",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FP_OC",
+   "description": "Der Ausgang für Kraftstoffpumpe hat einen elektrischen Fehler oder Unterbrechung.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062701",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FP_SC",
+   "description": "Der Ausgang für Kraftstoffpumpe hat einen elektrischen Fehler oder Unterbrechung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062713",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUELP_DRV_OC",
+   "description": "Der Ausgang für Kraftstoffpumpe hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062800",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUELP_DRV_SC2G",
+   "description": "Der Ausgang für Kraftstoffpumpe hat Kurzschluss nach Masse.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062900",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "FUELP_DRV_SC2V",
+   "description": "Der Ausgang für Kraftstoffpumpe hat Kurzschluss nach Plus.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B00",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_INJ_BAL",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B09",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_INJ_TYPE_AFTER",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Es liegt ein Bauteilfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B28",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_MDP",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Der Signal-Offset ist außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B33",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_PLS_CHK_TOFF",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Die Ausschaltdauer der Signalfrequenz ist zu lang.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B35",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_PLS_CHK_TON",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Die Einschaltdauer der Signalfrequenz ist zu lang.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B46",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "MDP_MAP_CHECK",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Es liegt ein Fehler im Kalibrierungs- oder Parametrierungsspeicher vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B48",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_PLS_CHK_C2I",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Es liegt ein Fehler im Steuerungsspeicher vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B62",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_PULSE_CMP_L2",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Der Signalvergleich ist fehlerhaft.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B64",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_INJ_TYPE_MAIN",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Es liegt ein unplausibles Signal vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B92",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_PLS_CHK_TYPE",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Die Funktion oder die Anweisung ist fehlerhaft.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B93",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_FC_DISABL_INJ",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Es liegt keine Anweisung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B94",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_PLS_CHK_TOOTH",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Es liegt eine unerwartete Anweisung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062B96",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_PLS_CHK_NBR",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden. Es liegt ein interner Komponentenfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062BE0",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_PLS_CHK_L1QT",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062BE1",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_PULSE_CMP_L1",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062BE2",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "FCI_INJ_BAL_TRIM",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062BFA",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_INJ_TYPE_PILOT2",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062BFB",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_INJ_TYPE_POST1",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062BFC",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_INJ_TYPE_POST2",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062BFD",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_INJ_TYPE_POST3",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062BFE",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_INJ_TYPE_PRE",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062BFF",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_INJ_TYPE_SWAPTIME",
+   "description": "Ein interner Steuergerätefehler in der Überwachung der Kraftstoffinjektoren ist vorhanden.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062D00",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_STRT_EL_TEST",
+   "description": "Der Ausgang für Kraftstoffinjektor (Zylinderreihe 1) hat Funktionsstörung.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P062D47",
+   "families": [
+    "injector",
+    "fuel_supply"
+   ],
+   "symbol": "ESM_MM_DISABL_INJ",
+   "description": "Der Ausgang für Kraftstoffinjektor (Zylinderreihe 1) hat Funktionsstörung. Es liegt ein Laufzeitfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P064C01",
+   "families": [
+    "glow"
+   ],
+   "symbol": "AGK_GPU_OS_SC",
+   "description": "Das Steuergerät ''Glühzeit'' hat Funktionsstörung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P064C04",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG_WIRE_COM2",
+   "description": "Das Steuergerät ''Glühzeit'' hat Funktionsstörung. Es liegt ein interner Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P064C4B",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG_WIRE_OVR_HT",
+   "description": "Das Steuergerät ''Glühzeit'' hat Funktionsstörung. Es liegt ein Fehler aufgrund Übertemperatur vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P064C64",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG_WIRE_COM1",
+   "description": "Das Steuergerät ''Glühzeit'' hat Funktionsstörung. Es liegt ein unplausibles Signal vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P064C96",
+   "families": [
+    "glow"
+   ],
+   "symbol": "AGK_GPU_OS_OC",
+   "description": "Das Steuergerät ''Glühzeit'' hat Funktionsstörung. Es liegt ein interner Komponentenfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P066A11",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG1_DIAG_SHT_CT",
+   "description": "Der Ausgang für Glühkerze (Zylinder 1) hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P066C11",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG2_DIAG_SHT_CT",
+   "description": "Der Ausgang für Glühkerze (Zylinder 2) hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P066E11",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG3_DIAG_SHT_CT",
+   "description": "Der Ausgang für Glühkerze (Zylinder 3) hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P067001",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOWPLUG_DRIVE",
+   "description": "Der Ausgang für Glühendstufe hat einen elektrischen Fehler oder Unterbrechung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P067113",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG1_DIAG_OPN_LD",
+   "description": "Der Ausgang für Glühkerze (Zylinder 1) hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P067213",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG2_DIAG_OPN_LD",
+   "description": "Der Ausgang für Glühkerze (Zylinder 2) hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P067313",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG3_DIAG_OPN_LD",
+   "description": "Der Ausgang für Glühkerze (Zylinder 3) hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P067413",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG4_DIAG_OPN_LD",
+   "description": "Der Ausgang für Glühkerze (Zylinder 4) hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P067A11",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG4_DIAG_SHT_CT",
+   "description": "Der Ausgang für Glühkerze (Zylinder 4) hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P06B91E",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG1_DIAG_OVR_HT",
+   "description": "Der Ausgang für Glühkerze (Zylinder 1) hat Funktionsstörung. Der Widerstandswert liegt außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P06BA1E",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG2_DIAG_OVR_HT",
+   "description": "Der Ausgang für Glühkerze (Zylinder 2) hat Funktionsstörung. Der Widerstandswert liegt außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P06BB1E",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG3_DIAG_OVR_HT",
+   "description": "Der Ausgang für Glühkerze (Zylinder 3) hat Funktionsstörung. Der Widerstandswert liegt außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P06BC1E",
+   "families": [
+    "glow"
+   ],
+   "symbol": "GLOW_PLUG4_DIAG_OVR_HT",
+   "description": "Der Ausgang für Glühkerze (Zylinder 4) hat Funktionsstörung. Der Widerstandswert liegt außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P06E901",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "STARTER_RELAY",
+   "description": "Der Starter des Verbrennungsmotors hat Funktionsstörung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P13AB00",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "NSC_ADAP_MAX",
+   "description": "Der Wirkungsgrad des NOx-Speicherkatalysators (Zylinderreihe 1) ist nicht ausreichend: Verdacht auf schwefelhaltigen Kraftstoff.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P152100",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "SCRI_RC_ENG_STRT",
+   "description": "Der Starter wurde durch das Abgasnachbehandlungssystem gesperrt.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P214711",
+   "families": [
+    "injector"
+   ],
+   "symbol": "FCI_BANK_SC2GND_0",
+   "description": "Die Spannungsversorgung der Injektorgruppe ''A'' hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P214812",
+   "families": [
+    "injector"
+   ],
+   "symbol": "FCI_BANK_SC2VBAT_0",
+   "description": "Die Spannungsversorgung der Injektorgruppe ''A'' hat Kurzschluss nach Plus. Es liegt ein Kurzschluss nach Plus vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P215011",
+   "families": [
+    "injector"
+   ],
+   "symbol": "FCI_BANK_SC2GND_1",
+   "description": "Die Spannungsversorgung der Injektorgruppe ''B'' hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P215112",
+   "families": [
+    "injector"
+   ],
+   "symbol": "FCI_BANK_SC2VBAT_1",
+   "description": "Die Spannungsversorgung der Injektorgruppe ''B'' hat Kurzschluss nach Plus. Es liegt ein Kurzschluss nach Plus vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P226900",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "WATER_IN_FUEL",
+   "description": "Der Wasseranteil im Kraftstoff ist zu hoch.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P244AFA",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "DPF_HOSE_LEAK",
+   "description": "Der Differenzdruck im Dieselpartikelfilter (Zylinderreihe 1) ist zu niedrig.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P25391C",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FP_SENS_VOLT",
+   "description": "Der Drucksensor des Kraftstoff-Niederdruckkreislaufs hat Funktionsstörung. Der Spannungswert liegt außerhalb des zulässigen Bereiches.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P254000",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FP_SENS_PLAU",
+   "description": "Das Signal für den Drucksensor des Kraftstoff-Niederdruckkreislaufs ist unplausibel.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P254111",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FP_SENS_SC2G",
+   "description": "Der Drucksensor des Kraftstoff-Niederdruckkreislaufs hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P254200",
+   "families": [
+    "fuel_pressure",
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FP_SENS_SC2B",
+   "description": "Der Drucksensor des Kraftstoff-Niederdruckkreislaufs hat Kurzschluss nach Plus.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P261713",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "ENGSPD_DRV_OC",
+   "description": "Das Signal des Positionssensors der Kurbelwelle hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P261811",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "ENGSPD_DRV_SC2G",
+   "description": "Das Signal des Positionssensors der Kurbelwelle hat Kurzschluss nach Masse. Es liegt ein Kurzschluss nach Masse vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P261912",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "ENGSPD_DRV_SC2V",
+   "description": "Das Signal des Positionssensors der Kurbelwelle hat Kurzschluss nach Plus. Es liegt ein Kurzschluss nach Plus vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P263509",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FP_DIFFP",
+   "description": "Der Kraftstoffdurchfluss der Kraftstoffpumpe ''A'' ist zu gering. Es liegt ein Bauteilfehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P263592",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FP_HI_RESIST",
+   "description": "Der Kraftstoffdurchfluss der Kraftstoffpumpe ''A'' ist zu gering. Die Funktion oder die Anweisung ist fehlerhaft.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P26359A",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FP_LIMPH",
+   "description": "Der Kraftstoffdurchfluss der Kraftstoffpumpe ''A'' ist zu gering. Die Betriebsbedingungen für die Komponente oder das System sind nicht erfüllt.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P268701",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_GPU_HTU_SC",
+   "description": "Die Kraftstofffilterheizung hat einen elektrischen Fehler oder Unterbrechung. Es liegt ein allgemeiner elektrischer Fehler vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P268713",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_GPU_HTU_OC",
+   "description": "Die Kraftstofffilterheizung hat einen elektrischen Fehler oder Unterbrechung. Es liegt eine Unterbrechung vor.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P26871B",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_GPU_HTU_RES",
+   "description": "Die Kraftstofffilterheizung hat einen elektrischen Fehler oder Unterbrechung. Der Grenzwert für Widerstand ist überschritten.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P268C51",
+   "families": [
+    "injector"
+   ],
+   "symbol": "C2I_DATA_0",
+   "description": "Die Werte des Injektor-Einspritzmengenabgleichs (Zylinder 1) sind fehlerhaft. Das Bauteil ist nicht programmiert.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P268D51",
+   "families": [
+    "injector"
+   ],
+   "symbol": "C2I_DATA_3",
+   "description": "Die Werte des Injektor-Einspritzmengenabgleichs (Zylinder 2) sind fehlerhaft. Das Bauteil ist nicht programmiert.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P268E51",
+   "families": [
+    "injector"
+   ],
+   "symbol": "C2I_DATA_1",
+   "description": "Die Werte des Injektor-Einspritzmengenabgleichs (Zylinder 3) sind fehlerhaft. Das Bauteil ist nicht programmiert.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P268F51",
+   "families": [
+    "injector"
+   ],
+   "symbol": "C2I_DATA_2",
+   "description": "Die Werte des Injektor-Einspritzmengenabgleichs (Zylinder 4) sind fehlerhaft. Das Bauteil ist nicht programmiert.",
+   "grade": "candidate"
+  },
+  {
+   "code": "P269600",
+   "families": [
+    "injector"
+   ],
+   "symbol": "ESM_PLS_CHK_INJNB",
+   "description": "Die Injektordaten sind unplausibel.",
+   "grade": "candidate"
+  },
+  {
+   "code": "U010987",
+   "families": [
+    "fuel_supply"
+   ],
+   "symbol": "AGK_FSCM_MSGLOST",
+   "description": "Die Kommunikation mit dem Steuergerät ''Kraftstoffpumpe'' hat Funktionsstörung. Botschaft fehlt.",
+   "grade": "candidate"
+  },
+  {
+   "code": "U012087",
+   "families": [
+    "start_sync"
+   ],
+   "symbol": "AGK_GEN_MSGLOST",
+   "description": "Die Kommunikation mit dem Starter oder Generator hat Funktionsstörung. Botschaft fehlt.",
+   "grade": "candidate"
+  }
+ ]
+}
