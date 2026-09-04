@@ -233,7 +233,9 @@ def get_adapter_types() -> dict:
 
 @app.get("/api/adapters")
 def get_adapters() -> dict:
-    return {"adapters": [i.model_dump() for i in adapter_registry.list_instances()]}
+    instances = adapter_registry.list_instances()
+    default_id = next((i.id for i in instances if i.default), None)
+    return {"adapters": [i.model_dump() for i in instances], "defaultId": default_id}
 
 
 @app.get("/api/serial-ports")
@@ -287,6 +289,14 @@ async def create_adapter(request: Request) -> dict:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@app.put("/api/adapters/{adapter_id}/default")
+def set_default_adapter_endpoint(adapter_id: str) -> dict:
+    """Make this adapter the one used when a call names none."""
+    if adapter_registry.set_default(adapter_id):
+        return {"defaultId": adapter_id}
+    raise HTTPException(status_code=404, detail=f"Adapter '{adapter_id}' not found.")
+
+
 @app.delete("/api/adapters/{adapter_id}")
 def delete_adapter(adapter_id: str) -> dict:
     if adapter_registry.remove_instance(adapter_id):
@@ -299,18 +309,19 @@ def delete_adapter(adapter_id: str) -> dict:
 # ELM327-style adapter. mode=sim returns clearly-labelled fakes.
 # --------------------------------------------------------------------------- #
 def _obd_adapter_or_400(adapter_id: str | None, mode: str) -> dict | None:
+    """The adapter a real call runs on: the one named, else the saved default."""
     if mode not in ("real", "sim"):
         raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
     if mode == "sim":
         return None
-    if not adapter_id:
+    instance = adapter_registry.resolve(adapter_id)
+    if instance is None:
+        if adapter_id:
+            raise HTTPException(status_code=404, detail=f"Unknown adapter '{adapter_id}'.")
         raise HTTPException(
             status_code=400,
-            detail="Pick an ELM327-style adapter (or use mode=sim).",
+            detail="Pick an ELM327-style adapter (or set a default, or use mode=sim).",
         )
-    instance = adapter_registry.get_instance(adapter_id)
-    if instance is None:
-        raise HTTPException(status_code=404, detail=f"Unknown adapter '{adapter_id}'.")
     return instance.model_dump()
 
 

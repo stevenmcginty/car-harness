@@ -93,8 +93,17 @@ def _load_raw() -> List[dict]:
                 "name": item.get("name") or item["id"],
                 "config": config if isinstance(config, dict) else {},
                 "lastTest": last_test if isinstance(last_test, dict) else None,
+                "default": bool(item.get("default")),
             }
         )
+    # Only one instance may carry the flag: a hand-edited file with several
+    # keeps the first and clears the rest.
+    seen_default = False
+    for item in items:
+        if item["default"] and not seen_default:
+            seen_default = True
+        else:
+            item["default"] = False
     return items
 
 
@@ -132,6 +141,42 @@ def get_instance(instance_id: str) -> Optional[AdapterInstance]:
     return None
 
 
+def get_default() -> Optional[AdapterInstance]:
+    """The instance flagged as default, or None if none is flagged."""
+    for item in _load_raw():
+        if item.get("default"):
+            try:
+                return AdapterInstance(**item)
+            except Exception:
+                return None
+    return None
+
+
+def set_default(instance_id: str) -> bool:
+    """Flag one saved instance as the default, clearing the flag on every other.
+
+    Returns True if set, False if ``instance_id`` is unknown."""
+    items = _load_raw()
+    if not any(i.get("id") == instance_id for i in items):
+        return False
+    for item in items:
+        item["default"] = item["id"] == instance_id
+    _save_raw(items)
+    return True
+
+
+def resolve(instance_id: Optional[str]) -> Optional[AdapterInstance]:
+    """The adapter a caller means: the one it named, else the default.
+
+    This is the single fallback rule every resolver shares. Returns None both
+    for an unknown id and for "nothing named and no default set"; callers that
+    need to tell those apart look at whether ``instance_id`` was given.
+    """
+    if instance_id:
+        return get_instance(instance_id)
+    return get_default()
+
+
 # --------------------------------------------------------------------------- #
 # testing + create/remove
 # --------------------------------------------------------------------------- #
@@ -162,6 +207,7 @@ def save_instance(type_id: str, name: str, config: dict) -> AdapterInstance:
         "name": name,
         "config": dict(config or {}),
         "lastTest": {"ok": result.ok, "detail": result.detail, "at": _now()},
+        "default": False,
     }
     items = _load_raw()
     items.append(instance)
@@ -170,7 +216,10 @@ def save_instance(type_id: str, name: str, config: dict) -> AdapterInstance:
 
 
 def remove_instance(instance_id: str) -> bool:
-    """Delete a saved instance. Returns True if removed, False if unknown."""
+    """Delete a saved instance. Returns True if removed, False if unknown.
+
+    Deleting the default simply takes its flag with it: no other instance is
+    promoted, so callers fall back to naming an adapter until one is set."""
     items = _load_raw()
     remaining = [i for i in items if i.get("id") != instance_id]
     if len(remaining) == len(items):

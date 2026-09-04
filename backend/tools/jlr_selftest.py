@@ -865,10 +865,12 @@ def main() -> int:
                "jlr_adblue_health", "jlr_adblue_drive_log")))
     for tool in (mcp_server.jlr_discover_modules, mcp_server.jlr_engine_sweep,
                  mcp_server.jlr_adblue_health, mcp_server.jlr_adblue_drive_log):
-        err = tool(None, "real")
-        check("MCP real mode with no adapter gives the honest pick-an-adapter error",
+        # A bogus id, not None: with a default adapter configured, None now
+        # resolves to that default and would attempt a real scan.
+        err = tool("no-such-adapter", "real")
+        check("MCP real mode with an unknown adapter gives the honest error",
               isinstance(err, dict)
-              and "Pick an ELM327 adapter" in err.get("error", ""), str(err))
+              and "Unknown adapter" in err.get("error", ""), str(err))
     msim = mcp_server.jlr_adblue_health(None, "sim")
     check("MCP sim mode returns the labelled fake", msim.get("simulated") is True)
 

@@ -97,6 +97,9 @@
       adapterSel.innerHTML = list.length
         ? list.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")
         : `<option value="">No adapters configured</option>`;
+      // The saved default wins over "whatever is first in the list".
+      const defaultId = adapters.defaultId || "";
+      if (defaultId && list.some((a) => a.id === defaultId)) adapterSel.value = defaultId;
       state.adapter = adapterSel.value;
 
       brandSel.innerHTML =

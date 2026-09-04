@@ -266,17 +266,21 @@ def _elm_adapter_or_error(mode: str, adapter_id: str | None):
     """Resolve an ELM327 adapter for a real Mazda call, or return an error dict.
 
     Returns (instance_dict_or_None, error_dict_or_None). For mode='sim' the
-    instance is None and there is no error.
+    instance is None and there is no error. An omitted adapter_id falls back to
+    the saved default adapter; only with no default set is it an error.
     """
     if mode not in ("real", "sim"):
         return None, {"error": "mode must be 'real' or 'sim'."}
     if mode == "sim":
         return None, None
-    if not adapter_id:
-        return None, {"error": "Pick an ELM327 adapter (adapter_id from list_adapters) or use mode='sim'."}
-    instance = adapter_registry.get_instance(adapter_id)
+    instance = adapter_registry.resolve(adapter_id)
     if instance is None:
-        return None, {"error": f"Unknown adapter '{adapter_id}'."}
+        if adapter_id:
+            return None, {"error": f"Unknown adapter '{adapter_id}'."}
+        return None, {
+            "error": "Pick an ELM327 adapter (adapter_id from list_adapters) "
+            "or set a default with set_default_adapter, or use mode='sim'."
+        }
     return instance.model_dump(), None
 
 
@@ -290,7 +294,7 @@ def mazda_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dic
     must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     Note: body/comfort modules live on Mazda's MS-CAN bus and are NOT reachable
     through a standard OBD dongle -- that needs an MS-CAN switchable adapter.
     """
@@ -309,7 +313,7 @@ def mazda_live_values(adapter_id: str | None = None, mode: str = "real") -> dict
     car/engine doesn't support are skipped silently. Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -328,7 +332,7 @@ def mazda_snapshot(adapter_id: str | None = None, mode: str = "real") -> dict:
     car/year doesn't broadcast are skipped. Works with ignition ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -344,7 +348,8 @@ def mazda_clear_module(
     """Clear fault memory on Mazda modules over a dongle -- CHANGES THE CAR.
 
     confirm: must be True, and only after the user has explicitly agreed.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     address: hex diagnostic address like "0x7E0" (the engine/PCM); omit to clear
         every HS-CAN module that answers. Faults return if the underlying
         problem is still present.
@@ -371,7 +376,7 @@ def ford_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict
     Ignition must be ON. Works over the phone relay adapter (elm327-remote).
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     Note: MS-CAN body modules need a switchable adapter and are not reachable
     through a standard OBD dongle.
     """
@@ -393,7 +398,7 @@ def ford_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
     its raw hex beside the decode. Unanswered DIDs are skipped. Ignition ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -409,7 +414,8 @@ def ford_clear_module(
     """Clear fault memory on Ford modules over a dongle -- CHANGES THE CAR.
 
     confirm: must be True, and only after the user has explicitly agreed.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     address: hex diagnostic address like "0x7E0" (the PCM); omit to clear every
         HS-CAN module that answers. Faults return if the cause is still there.
     """
@@ -435,7 +441,7 @@ def peugeot_scan_modules(adapter_id: str | None = None, mode: str = "real") -> d
     Peugeot, Citroen, DS). Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     Note: pre-2004 (VAN bus) and many 2004-2010 (KWP2000) PSA cars can't be
     module-scanned through a standard OBD dongle.
     """
@@ -456,7 +462,7 @@ def peugeot_health_check(adapter_id: str | None = None, mode: str = "real") -> d
     flag. Values this car/engine doesn't support are skipped. Ignition ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -472,7 +478,8 @@ def peugeot_clear_module(
     """Clear fault memory on Peugeot modules over a dongle -- CHANGES THE CAR.
 
     confirm: must be True, and only after the user has explicitly agreed.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     address: hex request id like "0x752" (the BSI) or "0x6A8" (the engine); omit
         to clear every PSA module that answers. Faults return if the underlying
         problem is still present.
@@ -498,7 +505,7 @@ def peugeot_engine_probe(adapter_id: str | None = None, mode: str = "real") -> d
     answered. Ignition ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -525,7 +532,7 @@ def peugeot_oil_coldstart(
 
     blocks: hex block ids; omit for all ten that a THP answers.
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -548,7 +555,7 @@ def peugeot_engine_blocks(
     blocks: hex block ids like ["C2","CB"]; omit for all ten. Fewer blocks
         means a faster sample rate, which matters when chasing a transient.
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -577,7 +584,7 @@ def peugeot_engine_sweep(
     extended: open the read-safe PSA session ladder first (some DIDs only
         answer there).
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     try:
         first_i, last_i = int(first, 16), int(last, 16)
@@ -611,7 +618,7 @@ def peugeot_oil_capture(
     address: "psa" (0x6A8) or "obd" (0x7E0), per peugeot_engine_probe.
     extended: open the read-safe PSA session first for DIDs that need it.
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -635,7 +642,7 @@ def vw_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
     Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     Note: pre-2012 VAG cars (TP2.0/K-line) can't be module-scanned through a
     standard OBD dongle.
     """
@@ -656,7 +663,7 @@ def vw_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
     doesn't support are skipped silently. Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -672,7 +679,8 @@ def vw_clear_module(
     """Clear fault memory on VW/Audi modules over a dongle -- CHANGES THE CAR.
 
     confirm: must be True, and only after the user has explicitly agreed.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     address: hex request id like "0x7E0" (the engine) or "0x710" (the gateway);
         omit to clear every VAG module that answers. Faults return if the
         underlying problem is still present.
@@ -700,7 +708,7 @@ def mercedes_scan_modules(adapter_id: str | None = None, mode: str = "real") -> 
     Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     Note: this is NOT a VCDS/ISTA-style all-modules walk. Body/chassis/comfort
     modules (ABS/ESP, SRS, SAM, EZS, cluster, Airmatic, climate) use Mercedes'
     proprietary addressing behind the gateway and are STAR/XENTRY-only -- no OBD
@@ -724,7 +732,7 @@ def mercedes_live_values(adapter_id: str | None = None, mode: str = "real") -> d
     skipped. Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     Note: DPF soot / AdBlue level have no public DID for Mercedes, so DPF/SCR
     health shows through the fault codes, not a live value.
     """
@@ -742,7 +750,8 @@ def mercedes_clear_module(
     """Clear fault memory on Mercedes engine/gearbox modules over a dongle -- CHANGES THE CAR.
 
     confirm: must be True, and only after the user has explicitly agreed.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     address: hex request id like "0x7E0" (the engine) or "0x7E1" (the gearbox);
         omit to clear both modules that answer. Clears via UDS then the KWP
         14 FF 00 fallback. Faults return if the underlying problem is still present.
@@ -766,7 +775,7 @@ def mercedes_slk_identify(adapter_id: str | None = None, mode: str = "real") -> 
     Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -792,7 +801,8 @@ def mercedes_slk_misfire_capture(
 
     seconds: capture length 30-3600. ecu: omit to auto-identify, or
         "sim271de20_m271_turbo" / "med177_m276_v6" to skip that step.
-    adapter_id: a configured ELM327 adapter instance; required for real mode.
+    adapter_id: a configured ELM327 adapter instance; required for real mode
+        (omit to use the default adapter).
     """
     if ecu is not None and ecu not in (
             "sim271de20_m271_turbo", "med177_m276_v6"):
@@ -835,7 +845,7 @@ def vauxhall_scan_modules(adapter_id: str | None = None, mode: str = "real") -> 
     Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
 
     Two honest limits. Low Speed GMLAN (single-wire, 33.3k) carries much of the
     comfort/body traffic and NO standard dongle reaches it. And 2019+ Corsa,
@@ -864,7 +874,7 @@ def vauxhall_discover_modules(adapter_id: str | None = None, mode: str = "real")
     addresses).
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -898,7 +908,7 @@ def vauxhall_software_versions(adapter_id: str | None = None, mode: str = "real"
     software.py for the full reasoning.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -919,7 +929,7 @@ def vauxhall_gearbox_analyze(adapter_id: str | None = None, mode: str = "real") 
     do. Does not Fast Learn and does not flash.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a labelled 6T35 flare case.
+        required for real mode (omit to use the default adapter). mode="sim" returns a labelled 6T35 flare case.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -940,7 +950,7 @@ def vauxhall_live_values(adapter_id: str | None = None, mode: str = "real") -> d
     set on the engine. Ignition ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
 
     GENUINE GAP: no public DID exposes the TCM's clutch adaptive cells, line
     pressure or clutch slip. Those are GDS2-only, and nothing is invented for
@@ -987,7 +997,8 @@ def vauxhall_tcm_capture(
     discovering what an unknown parameter does.
 
     seconds: how long to log for. Drive the shift that flares during it.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1013,7 +1024,8 @@ def vauxhall_tcm_sweep(
     range already verified.
 
     first / last: hex parameter ids as strings, e.g. "1900" and "19FF".
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1033,7 +1045,8 @@ def vauxhall_clear_module(
     """Clear fault memory on Vauxhall modules over a dongle -- CHANGES THE CAR.
 
     confirm: must be True, and only after the user has explicitly agreed.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     address: hex request id like "0x7E1" (the gearbox) or "0x241" (the BCM);
         omit to clear every module that answers. Tries UDS 14 FF FF FF then
         GMLAN 04. Note the GMLAN clear takes NO group argument -- on a GMW3110
@@ -1064,7 +1077,8 @@ def vauxhall_adaptive_learn_preflight(
     even discussing the learn: it costs nothing and it answers "is the car warm
     enough and in the right state" with numbers.
 
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     mode="sim" reads a simulated TCM; scenario picks which one (complete, cold,
         not-in-park, engine-off, not-ready, ...).
     """
@@ -1108,7 +1122,8 @@ def vauxhall_adaptive_learn(
         dealer data's threshold has two defensible readings (84 °C converted,
         44 °C raw); the harness gates on the conservative one and will not pick
         it behind the user's back.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     mode="sim" runs the whole exchange against a simulated TCM with no car;
         scenario picks the outcome to rehearse (complete, nrc33, module-abort,
         keepalive-loss, exception, release-refused, ...).
@@ -1158,7 +1173,7 @@ def fiat_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict
     car.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1180,7 +1195,7 @@ def fiat_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
     TPMS (0xC7) is NEVER polled -- it can engage the immobilizer.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1196,7 +1211,8 @@ def fiat_clear_module(
     """Clear fault memory on Fiat / Alfa (FCA) modules over a dongle -- CHANGES THE CAR.
 
     confirm: must be True, and only after the user has explicitly agreed.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     address: one-byte FCA module address like "0x10" (engine) or "0x28" (ABS);
         omit to clear every FCA module that answers. TPMS "0xC7" is refused
         outright (immobilizer trap). On a 2018+ Security-Gateway car the clear is
@@ -1249,7 +1265,7 @@ def jlr_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
     resets (jlr in list_service_resets) still work on every era.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1270,7 +1286,7 @@ def jlr_live_values(adapter_id: str | None = None, mode: str = "real") -> dict:
     curated generic Mode-01 set. Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1286,7 +1302,8 @@ def jlr_clear_module(
     """Clear fault memory on Jaguar / Land Rover modules over a dongle -- CHANGES THE CAR.
 
     confirm: must be True, and only after the user has explicitly agreed.
-    adapter_id: a configured ELM327 adapter instance (required for real mode).
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
     address: an 11-bit module id like "0x7E0" (engine), "0x7E1" (ZF gearbox) or
         "0x795" (rear e-diff); omit to clear every JLR module that answers.
         Ladder matches the read side: UDS 14 FF FF FF, then the KWP clear an
@@ -1315,7 +1332,7 @@ def jlr_discover_modules(adapter_id: str | None = None, mode: str = "real") -> d
     roughly 2-5 minutes over a Bluetooth dongle. Ignition must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1346,7 +1363,7 @@ def jlr_engine_sweep(
     spraying of a dead bus). Read-only.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1374,7 +1391,7 @@ def jlr_adblue_health(adapter_id: str | None = None, mode: str = "real") -> dict
     must be ON.
 
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1411,7 +1428,7 @@ def jlr_adblue_drive_log(
     dids: hex DID strings, or a single watch-preset name, to log instead of
         the default engine set.
     adapter_id: a configured ELM327 adapter instance (from list_adapters);
-        required for real mode. mode="sim" returns a clearly-labelled fake.
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
     """
     instance, error = _elm_adapter_or_error(mode, adapter_id)
     if error is not None:
@@ -1593,8 +1610,14 @@ def list_adapter_types() -> dict:
 
 @mcp.tool()
 def list_adapters() -> dict:
-    """List the user-configured adapter INSTANCES saved via the wizard."""
-    return {"adapters": [i.model_dump() for i in adapter_registry.list_instances()]}
+    """List the user-configured adapter INSTANCES saved via the wizard.
+
+    The one with "default": true is used by every tool whose adapter_id is
+    omitted; "defaultId" names it (null if none is set).
+    """
+    instances = adapter_registry.list_instances()
+    default_id = next((i.id for i in instances if i.default), None)
+    return {"adapters": [i.model_dump() for i in instances], "defaultId": default_id}
 
 
 @mcp.tool()
@@ -1626,6 +1649,18 @@ def add_adapter(type_id: str, name: str, config: dict) -> dict:
         return adapter_registry.save_instance(type_id, name, config or {}).model_dump()
     except ValueError as exc:
         return {"error": str(exc)}
+
+
+@mcp.tool()
+def set_default_adapter(adapter_id: str) -> dict:
+    """Make one saved adapter the default used whenever adapter_id is omitted.
+
+    Clears the flag on every other instance. Deleting the default leaves no
+    default at all until one is set again.
+    """
+    if adapter_registry.set_default(adapter_id):
+        return {"defaultId": adapter_id}
+    return {"error": f"Adapter '{adapter_id}' not found."}
 
 
 @mcp.tool()

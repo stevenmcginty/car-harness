@@ -32,6 +32,8 @@
     backendReachable: null, // null = unknown yet, true/false once we know
     testInFlight: false,
     adapters: [],
+    defaultAdapterId: "", // "" = no default set
+    adapterChosenByUser: false,
     currentAdapterId: "" // "" = Auto / none
   };
 
@@ -668,6 +670,15 @@
     });
 
     if (!stillExists) state.currentAdapterId = "";
+    // Until the user picks for themselves, the saved default is the choice.
+    if (!state.adapterChosenByUser && !state.currentAdapterId && state.defaultAdapterId) {
+      for (var i = 0; i < state.adapters.length; i++) {
+        if (state.adapters[i].id === state.defaultAdapterId) {
+          state.currentAdapterId = state.defaultAdapterId;
+          break;
+        }
+      }
+    }
     select.value = state.currentAdapterId;
   }
 
@@ -675,14 +686,26 @@
     return apiFetch("/api/adapters")
       .then(function (data) {
         state.adapters = (data && data.adapters) || [];
+        state.defaultAdapterId = (data && data.defaultId) || "";
         renderAdapterSelect();
         if (wizard.open) renderWizard();
       })
       .catch(function () {
         // Backend down: keep an empty list; "Auto / none" stays usable.
         state.adapters = [];
+        state.defaultAdapterId = "";
         renderAdapterSelect();
         if (wizard.open) renderWizard();
+      });
+  }
+
+  function makeDefaultAdapter(id) {
+    apiFetch("/api/adapters/" + encodeURIComponent(id) + "/default", { method: "PUT" })
+      .then(function () {
+        loadAdapters();
+      })
+      .catch(function () {
+        /* backend banner already surfaced by apiFetch */
       });
   }
 
@@ -867,6 +890,14 @@
     name.textContent = a.name || a.id;
     info.appendChild(name);
 
+    if (a.default) {
+      var badge = document.createElement("span");
+      badge.className = "adapter-list-badge";
+      badge.textContent = "Default";
+      name.appendChild(document.createTextNode(" "));
+      name.appendChild(badge);
+    }
+
     var meta = document.createElement("span");
     meta.className = "adapter-list-meta";
     meta.textContent = adapterTypeName(a.typeId);
@@ -882,6 +913,17 @@
     }
 
     item.appendChild(info);
+
+    if (!a.default) {
+      var mk = document.createElement("button");
+      mk.type = "button";
+      mk.className = "btn btn-small";
+      mk.textContent = "Make default";
+      mk.addEventListener("click", function () {
+        makeDefaultAdapter(a.id);
+      });
+      item.appendChild(mk);
+    }
 
     var del = document.createElement("button");
     del.type = "button";
@@ -3560,6 +3602,7 @@
 
   el.adapterSelect.addEventListener("change", function () {
     state.currentAdapterId = el.adapterSelect.value;
+    state.adapterChosenByUser = true;
     resetObdPanel();
     resetBrandPanel(); // brand scans run through the picked adapter too
     if (obd.liveOn) {

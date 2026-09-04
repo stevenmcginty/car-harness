@@ -141,6 +141,8 @@ class AdapterInstance(BaseModel):
     name: str
     config: dict = Field(default_factory=dict)
     lastTest: Optional[dict] = None
+    # The one adapter used when a caller names none. At most one is set.
+    default: bool = False
 
 
 class AdapterTestResult(BaseModel):
