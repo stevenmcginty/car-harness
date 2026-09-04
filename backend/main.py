@@ -893,6 +893,37 @@ def brand_coldstart_capture(brand: str, adapter: str | None = None,
     }
 
 
+@app.get("/api/{brand}/coldstart/tests")
+def brand_coldstart_tests(brand: str, routine: str | None = None) -> dict:
+    """The mined dealer guided tests for this engine, and what each measures.
+
+    No car needed. Read this before running one: they are service 0x31, which
+    COMMANDS the ECU, and several of them spin the starter or drive injectors."""
+    module = _brand_capability_or_404(brand, "routines")
+    return module.catalogue(routine)
+
+
+@app.post("/api/{brand}/coldstart/test")
+def brand_coldstart_run_test(brand: str, routine: str, confirm: bool = False,
+                             wait_seconds: float = 30.0, endian: str = "big",
+                             adapter: str | None = None,
+                             mode: str = "real") -> dict:
+    """Run one mined dealer guided test -- COMMANDS THE CAR.
+
+    Opens the extended session, sends the routine start, polls its results
+    until the ECU reports it finished, decodes the mined result fields and
+    ALWAYS sends stop afterwards. A refusal comes back as a recorded negative
+    response with a plain-English hint rather than an error: an NRC is the most
+    informative answer a guided test can give about what it wanted."""
+    module = _brand_capability_or_404(brand, "routines")
+    if confirm is not True:
+        return module.run(None, routine, False, wait_seconds, endian, mode)
+    instance = _obd_adapter_or_400(adapter, mode)
+    return _stamp_capture(brand, f"routine-{routine}",
+                          module.run(instance, routine, True, wait_seconds,
+                                     endian, mode), instance)
+
+
 @app.get("/api/{brand}/software")
 def brand_software(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
     """What software is flashed into each of the car's modules. Read-only.

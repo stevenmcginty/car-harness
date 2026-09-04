@@ -221,11 +221,21 @@ def _run_client(client: Elm327UdsClient, routine: dict, wait_s: float,
         return {"steps": steps, "fields": [], "status": None,
                 "finished": False,
                 "error": "no start payload mined for this routine"}
+    # A start that declares input parameters is NOT automatically unusable.
+    # The CBF labels almost every input "Injektorcode" regardless of what it
+    # really is, and the mined payload already carries the bytes those inputs
+    # would fill. On 032A that byte is the request-type selector, and its
+    # mined default 0x00 means "take the test parameters from the control
+    # unit's own data set" -- which is exactly what a tester wants and is
+    # safer than inventing values. So the payload is sent as mined, and the
+    # result records that the inputs were left at their defaults rather than
+    # pretending none existed.
     if start.get("needs_input"):
-        return {"steps": steps, "fields": [], "status": None,
-                "finished": False,
-                "error": "the only mined start variant needs an injector code "
-                         "as input, which this harness cannot supply"}
+        steps.append({"step": "note", "request": None, "reply": None,
+                      "ok": True, "nrc": None, "error": None,
+                      "hint": "This routine declares input parameters. The "
+                              "mined payload's own default bytes were sent "
+                              "unchanged -- nothing was invented."})
 
     started = _send(client, start["payload"], timeout=5.0)
     started["step"] = f"start ({start['name']})"
