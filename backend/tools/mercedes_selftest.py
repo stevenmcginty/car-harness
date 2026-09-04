@@ -26,6 +26,7 @@ Exits 0 on PASS, 1 on FAIL.
 """
 
 import json
+import pathlib
 import sys
 from pathlib import Path
 
@@ -281,6 +282,7 @@ class FakeElmSession:
 
 
 from backend.profiles.mercedes import coldstart as mb_cold  # noqa: E402
+from backend.tools import mercedes_coldstart_session as mb_session  # noqa: E402
 from backend.profiles.mercedes import routines as mb_routines  # noqa: E402
 
 
@@ -908,6 +910,56 @@ def main() -> int:
     check("low rail pressure text is what P0087 comes back as",
           any("Kraftstoffdruck" in (m["description"] or "")
               for m in look["results"][0]["matches"]))
+
+
+    # --- baseline vs cold: the compare that makes a warm run worth taking --- #
+    import contextlib
+    import io as _io
+    import tempfile
+
+    def _write_run(tmp, name, samples, soak):
+        path = pathlib.Path(tmp) / f"{name}.json"
+        path.write_text(json.dumps({
+            "car": "cla-w117", "command": "capture", "soak": soak,
+            "note": "", "savedAt": None,
+            "result": {"samples": samples,
+                       "assessment": mb_cold.assess(samples)}}), encoding="utf-8")
+        return path
+
+    # Baseline: taken a few hours after a short run, so the circuit is still
+    # primed -- the rail is already up and it catches almost at once.
+    prim = [sample(0.0, 0.0, 180.0, 0.0, "keyon")]
+    prim += [sample(0.2 + i * 0.2, 220.0, 240.0 + i * 20.0) for i in range(4)]
+    prim += [sample(1.0, 900.0, 320.0, 1.0, "run")]
+    prim += [sample(1.2 + i * 0.2, 820.0, 300.0, 1.0, "run") for i in range(15)]
+    check("a primed start reads short and is not the complaint",
+          mb_cold.assess(prim)["verdict"] == "no_extended_crank",
+          mb_cold.assess(prim)["verdict"])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base_p = _write_run(tmp, "base", prim, "hours")
+        cold_p = _write_run(tmp, "cold", struggle, "overnight")
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = mb_session.compare(base_p, cold_p)
+        out = buf.getvalue()
+        check("compare runs over two saved captures", rc == 0 and out)
+        check("compare lines both soak labels up", "soak=hours" in out
+              and "soak=overnight" in out)
+        check("compare names the crank growth as the fault",
+              "crank grew" in out, out.splitlines()[-1][:60])
+        check("compare carries the later run's notes through",
+              "nearly died again" in out)
+
+        # A run saved as a bare capture result, pasted out of the MCP tool
+        # rather than the session runner, must still compare.
+        bare = pathlib.Path(tmp) / "bare.json"
+        bare.write_text(json.dumps(
+            {"samples": prim, "assessment": mb_cold.assess(prim)}),
+            encoding="utf-8")
+        with contextlib.redirect_stdout(_io.StringIO()) as buf2:
+            check("compare accepts a bare capture result too",
+                  mb_session.compare(bare, cold_p) == 0)
 
     sim_ident = mb_misfire.identify(None, "sim")
     sim_cap = mb_misfire.capture(None, 30, mode="sim")
