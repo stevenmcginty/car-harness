@@ -82,6 +82,14 @@ _METRICS = [
 
 
 def _elm_adapter(adapter_id=None):
+    """The adapter to use: the one asked for, else the configured DEFAULT.
+
+    Honouring the default matters. Steve keeps several ELM327 instances saved
+    -- a BLE Veepeak he no longer carries, and the phone relay he actually
+    uses -- and picking the first one in the list quietly talks to the wrong
+    dongle and reports the car as dead. The default flag is the answer to
+    "which one is really plugged in", so it wins.
+    """
     instances = [i.model_dump() for i in adapter_registry.list_instances()]
     if adapter_id:
         for inst in instances:
@@ -89,7 +97,7 @@ def _elm_adapter(adapter_id=None):
                 return inst
         return None
     elms = [i for i in instances if str(i.get("typeId", "")).startswith("elm327")]
-    return elms[0] if elms else None
+    return next((i for i in elms if i.get("default")), elms[0] if elms else None)
 
 
 def _save(car, command, soak, result, note, adapter):

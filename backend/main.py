@@ -828,6 +828,71 @@ def brand_misfire_capture(brand: str, adapter: str | None = None,
     }
 
 
+@app.get("/api/{brand}/coldstart/probe")
+def brand_coldstart_probe(brand: str, adapter: str | None = None,
+                          mode: str = "real") -> dict:
+    """Key-on preflight before a cold-start capture: which mined DIDs answer.
+
+    Reads the whole mined engine table once with the ignition on and the engine
+    off, decodes every reply BOTH byte orders, and votes on which one this ECU
+    actually uses from channels whose real range is known. Run it the evening
+    before: a cold start happens once a day and must not be spent discovering
+    that half the table refuses."""
+    module = _brand_capability_or_404(brand, "coldstart")
+    instance = _obd_adapter_or_400(adapter, mode)
+    return _stamp_capture(brand, "coldstart-probe",
+                          module.probe(instance, mode), instance)
+
+
+@app.post("/api/{brand}/coldstart/capture")
+def brand_coldstart_capture(brand: str, adapter: str | None = None,
+                            seconds: float = 300.0, endian: str | None = None,
+                            crank_dids: str | None = None,
+                            preflight: bool = True, mode: str = "real") -> dict:
+    """Start a cold-start capture and return a job id immediately.
+
+    Returns before the car has been touched, on purpose: the operator is about
+    to turn a key and nothing should be waiting on an open socket. Poll
+    /api/jobs/<id> for state, /api/jobs/<id>/partial for samples as they land,
+    and POST /api/jobs/<id>/stop to end it early keeping everything captured.
+
+    crank_dids: comma-separated override for the short crank list, e.g.
+        "D058,5017". Worth using on a slow link -- every DID in that list costs
+        a full round trip, and the crank being measured may only last two
+        seconds, so fewer channels can mean more points across the event."""
+    module = _brand_capability_or_404(brand, "coldstart")
+    instance = _obd_adapter_or_400(adapter, mode)
+    if not 1.0 <= seconds <= 3600.0:
+        raise HTTPException(
+            status_code=400, detail="seconds must be between 1 and 3600.")
+    if endian not in (None, "little", "big"):
+        raise HTTPException(
+            status_code=400, detail="endian must be 'little', 'big' or omitted.")
+    dids = [d.strip().upper() for d in (crank_dids or "").split(",") if d.strip()]
+
+    def run(progress, should_stop):
+        result = module.coldstart(instance, seconds, endian, dids or None,
+                                  preflight, mode, on_sample=progress,
+                                  should_stop=should_stop)
+        return _stamp_capture(brand, "coldstart", result, instance)
+
+    job_id = jobs.start("coldstart-capture", run,
+                        label=f"{brand} cold start, {int(seconds)}s")
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "seconds": seconds,
+        "crankDids": dids or None,
+        "poll": f"/api/jobs/{job_id}",
+        "samples": f"/api/jobs/{job_id}/partial",
+        "message": (
+            f"Cold-start capture started for {int(seconds)}s."
+            + (" Preflight is reading the mined table first -- WAIT for the "
+               "job to report it is past that before turning the key."
+               if preflight else " Turn the key when ready.")),
+    }
+
+
 @app.get("/api/{brand}/software")
 def brand_software(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
     """What software is flashed into each of the car's modules. Read-only.

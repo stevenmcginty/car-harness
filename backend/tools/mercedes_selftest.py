@@ -735,18 +735,28 @@ def main() -> int:
     check("rail pressure feedback leads the crank list",
           mb_cold.CRANK_DIDS[0] == "D058")
 
-    # Endian choice. 6702 is battery volts x0.01: 0E 74 big = 3700 -> 37.0 V
-    # (implausible), little = 0x740E -> 296 V (implausible too), so pick a
-    # vector that separates cleanly: 05 3C big = 1340 -> 13.40 V.
-    volts_big = "62670205 3C".replace(" ", "")
+    # Endian choice. These are the REAL bytes the CLA returned on 2026-09-04:
+    # 6702 = 2E D3 = 11987 counts, which at the car-corrected x0.001 is
+    # 11.987 V -- a battery sitting with the ignition on. Read the other way
+    # round (D3 2E = 54062) it is 54 V, which nothing on a car reads, so this
+    # single channel separates the two orders on its own.
+    volts_big = "6267022ED3"
     vote = mb_cold.pick_endian({"6702": volts_big})
     check("endian vote picks big when only big is plausible",
           vote["endian"] == "big" and vote["confident"], str(vote["votes"]))
-    volts_little = "6267023C05"
+    volts_little = "626702D32E"
     vote_l = mb_cold.pick_endian({"6702": volts_little})
     check("endian vote picks little when only little is plausible",
           vote_l["endian"] == "little" and vote_l["confident"],
           str(vote_l["votes"]))
+    check("the CLA's own bytes decode to a real battery voltage",
+          mb_cold.decode_entry(by_did["6702"],
+                               bytes.fromhex(volts_big), "big") == 11.987,
+          str(mb_cold.decode_entry(by_did["6702"],
+                                   bytes.fromhex(volts_big), "big")))
+    check("41 CRD3MFA1 DIDs are now graded live, not candidate",
+          all(e["grade"] == "live" for e in entries),
+          str({e["grade"] for e in entries}))
     blind = mb_cold.pick_endian({})
     check("endian vote with no evidence defaults little and says so",
           blind["endian"] == "little" and not blind["confident"]
