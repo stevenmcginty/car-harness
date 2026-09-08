@@ -18,6 +18,7 @@ connect must never freeze the whole API.
 """
 
 import asyncio
+import base64
 import json
 import mimetypes
 import re
@@ -537,6 +538,45 @@ def ping() -> dict:
 @app.get("/api/remote/status")
 def remote_relay_status() -> dict:
     return relay_hub.status()
+
+
+# This process holds the phone's socket; it must never forward to itself.
+relay_hub.bridge_url = None
+
+
+@app.post("/api/remote/exchange")
+async def remote_relay_exchange(request: Request) -> dict:
+    """One ELM command through the phone, for OTHER local processes (the MCP
+    server, tool scripts). Their own hub is empty, so they post here instead
+    and every tool works over the relay no matter which process runs it.
+    Local callers only: the phone's bytes are not a public service."""
+    client = request.client.host if request.client else ""
+    if client not in _LOCAL_CLIENTS:
+        raise HTTPException(status_code=403, detail="Local processes only.")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail='Send JSON {"b64": "...", "timeout": 5.0}.')
+    body = body or {}
+    try:
+        data = base64.b64decode(body.get("b64") or "")
+    except Exception:
+        raise HTTPException(status_code=400, detail="b64 is not valid base64.")
+    try:
+        timeout = min(max(float(body.get("timeout") or 5.0), 0.1), 60.0)
+    except (TypeError, ValueError):
+        timeout = 5.0
+    if not relay_hub.local:
+        raise HTTPException(
+            status_code=409,
+            detail="No phone relay is connected. Open the Car Harness app in "
+                   "the car and switch on Relay.",
+        )
+    try:
+        raw = await run_in_threadpool(relay_hub.exchange, data, timeout)
+    except RelayError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {"b64": base64.b64encode(raw).decode("ascii")}
 
 
 @app.websocket("/api/remote/ws")

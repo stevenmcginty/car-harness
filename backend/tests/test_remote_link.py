@@ -72,6 +72,7 @@ class RelayHubTest(unittest.TestCase):
 
     def setUp(self):
         self.hub = RemotePhoneHub()
+        self.hub.bridge_url = None  # a bench hub never forwards to a server
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.thread.start()
@@ -185,6 +186,69 @@ class RelayHubTest(unittest.TestCase):
         for text in ("not json at all", '{"type":"ping"}', '{"type":"data","b64":"!!"}'):
             self.hub.on_text(text)
         self.assertEqual(self.hub.exchange(b"ATZ\r", timeout=0.2), b"")
+
+
+class RelayBridgeTest(unittest.TestCase):
+    """A hub with no phone of its own forwards to the server on 8765 -- the
+    fix for the MCP process saying 'no phone' while the phone was up."""
+
+    def setUp(self):
+        self.hub = RemotePhoneHub()
+        self.hub.bridge_url = "http://bench"
+        self.calls = []
+
+    def _stub(self, responses):
+        def fake_http(method, path, body, timeout):
+            self.calls.append((method, path, body))
+            return responses[path]
+        self.hub._http = fake_http
+
+    def test_status_and_exchange_go_over_the_bridge(self):
+        self._stub({
+            "/api/remote/status": (200, {"connected": True, "deviceName": "Pixel",
+                                         "connectedAt": "t"}),
+            "/api/remote/exchange": (200, {"b64": base64.b64encode(b"ELM327 v1.4b\r>").decode()}),
+        })
+        self.assertTrue(self.hub.connected)
+        st = self.hub.status()
+        self.assertTrue(st["connected"])
+        self.assertEqual(st["deviceName"], "Pixel")
+        self.assertEqual(st["via"], "http://bench")
+        self.assertEqual(self.hub.exchange(b"ATZ\r", timeout=2.0), b"ELM327 v1.4b\r>")
+        method, path, body = self.calls[-1]
+        self.assertEqual((method, path), ("POST", "/api/remote/exchange"))
+        self.assertEqual(base64.b64decode(body["b64"]), b"ATZ\r")
+        self.assertEqual(body["timeout"], 2.0)
+
+    def test_server_with_no_phone_is_reported_honestly(self):
+        self._stub({
+            "/api/remote/status": (200, {"connected": False}),
+            "/api/remote/exchange": (409, {"detail": "No phone relay is connected."}),
+        })
+        self.assertFalse(self.hub.connected)
+        with self.assertRaises(RelayError) as ctx:
+            self.hub.exchange(b"ATZ\r", timeout=0.2)
+        self.assertIn("No phone relay", str(ctx.exception))
+
+    def test_no_server_at_all_is_reported_honestly(self):
+        def down(method, path, body, timeout):
+            raise OSError("connection refused")
+        self.hub._http = down
+        self.assertFalse(self.hub.connected)
+        self.assertFalse(self.hub.status()["connected"])
+        with self.assertRaises(RelayError) as ctx:
+            self.hub.exchange(b"ATZ\r", timeout=0.2)
+        self.assertIn("desktop server", str(ctx.exception))
+
+    def test_a_local_phone_wins_over_the_bridge(self):
+        def boom(*a):
+            raise AssertionError("bridge used")
+        self.hub._http = boom
+        self.hub._ws = object()
+        self.hub.device_name = "Local"
+        self.assertTrue(self.hub.local)
+        self.assertTrue(self.hub.connected)
+        self.assertEqual(self.hub.status()["deviceName"], "Local")
 
 
 if __name__ == "__main__":
