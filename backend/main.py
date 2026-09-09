@@ -19,6 +19,8 @@ connect must never freeze the whole API.
 
 import asyncio
 import base64
+import functools
+import inspect
 import json
 import mimetypes
 import re
@@ -665,6 +667,19 @@ def jobs_stop(job_id: str) -> dict:
 #
 # Read-only except /clear and /reset, which demand confirm: true.
 # --------------------------------------------------------------------------- #
+def _wants_adapter(func) -> bool:
+    """Does this brand module's entry point take an OBD adapter?
+
+    Brands reach the same surface by different roads: BMW/MINI drive their own
+    EDIABAS cable and take no adapter, Mercedes reads the identical information
+    over a plain dongle. Rather than branch on the brand name, ask the function.
+    """
+    try:
+        return "adapter" in inspect.signature(func).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 def _brand_capability_or_404(brand: str, name: str):
     module = brands.brand_module(brand, name)
     if module is None:
@@ -1393,12 +1408,24 @@ async def reset_cbs(brand: str, request: Request) -> dict:
 
 
 @app.get("/api/{brand}/battery")
-async def get_battery(brand: str, mode: str = "real") -> dict:
-    """Battery condition from the car's own power management. Read-only."""
+async def get_battery(brand: str, mode: str = "real",
+                      adapter: str | None = None) -> dict:
+    """Battery condition from the car's own power management. Read-only.
+
+    Some brands reach the power management through their own native cable
+    (BMW/MINI via EDIABAS) and take no adapter; others read it over a plain
+    dongle (Mercedes, whose 12 V energy manager lives inside the engine ECU).
+    The adapter is only resolved and passed when the brand's module asks for
+    one, so a native-cable brand is not made to invent a dongle.
+    """
     module = _brand_capability_or_404(brand, "battery")
     if mode not in ("real", "sim"):
         raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
-    return await run_in_threadpool(module.status, mode)
+    if not _wants_adapter(module.status):
+        return await run_in_threadpool(module.status, mode)
+    instance = _obd_adapter_or_400(adapter, mode)
+    return await run_in_threadpool(
+        functools.partial(module.status, mode, adapter=instance))
 
 
 @app.post("/api/{brand}/battery/register")
@@ -1413,7 +1440,19 @@ async def register_battery(brand: str, request: Request) -> dict:
     mode = body.get("mode") or "real"
     if mode not in ("real", "sim"):
         raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
-    return await run_in_threadpool(module.register, mode, bool(body.get("confirm")))
+    confirm = bool(body.get("confirm"))
+    if not _wants_adapter(module.register):
+        return await run_in_threadpool(module.register, mode, confirm)
+    instance = _obd_adapter_or_400(body.get("adapter"), mode)
+    extra = {}
+    if body.get("capacityAh") is not None:
+        try:
+            extra["capacity_ah"] = float(body["capacityAh"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400,
+                                detail="capacityAh must be a number.")
+    return await run_in_threadpool(
+        functools.partial(module.register, mode, confirm, adapter=instance, **extra))
 
 
 @app.get("/api/{brand}/ediabas/installed")

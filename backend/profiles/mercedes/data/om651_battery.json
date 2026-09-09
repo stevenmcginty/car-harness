@@ -1,0 +1,215 @@
+{
+  "title": "OM651 / CRD3-MFA1 12 V energy management (AGK): battery readings and the battery-change routines",
+  "provenance": {
+    "file": "E:\\car\\mercedes\\xentry-extracted\\xdos\\caesar_cbf\\Xentry\\MB_PKW\\Caesar\\cbf\\CRD3MFA1.cbf",
+    "mined": "E:\\car\\mercedes\\mined\\CRD3MFA1.json",
+    "variant": "Diag_3300h",
+    "date": "2026-09-09"
+  },
+  "notes": [
+    "On the MFA platform (W117 CLA, W176 A, X156 GLA) the 12 V energy manager lives INSIDE the engine ECU (CRD3-MFA1, 0x7E0/0x7E8). There is no separate battery-management module to reach. The IBS current sensor (0x74F/0x757 on the 125k chassis CAN, and 0x6D5/0x6B0) carries F1xx identification only -- no registration.",
+    "The classic Mercedes rear-SAM 'Batteriewechsel' write (DID 0x0562, charge-balance index) belongs to W204/W212/W231. It does NOT exist on this platform.",
+    "None of these routines needs SecurityAccess: the mined per-service security level is 0 for 03A0, 03A1, 03A2, 03A3, 03A7 and 035B. The extended session 10 03 is enough.",
+    "Every parameter in the CBF declares BigEndian, and that field has already been proven a lie on another Mercedes ECU. Decodes here are big-endian because that is all the corpus offers; the raw bytes are always kept so a wrong decode can be re-read, not re-driven.",
+    "The CBF names every routine input parameter 'Injektorcode' regardless of what it really is, so the input MEANINGS below are inference from the routine name plus the read-back DIDs, not mined fact. They are labelled as such.",
+    "ON-CAR VERDICT, W117 CLA 220 CDI (WDD1179032N291528), 2026-09-09: this ECU's energy-management block is NOT LIVE. Every channel returns the same bytes with the ignition on, the engine off and the engine running at 766 rpm -- capacity 0, current exactly 0.0 A, SOC exactly 60 %, temperature exactly 30.0 degC, measurement state 0 -- while rpm (5017) and rail pressure (D058) from the same ECU in the same session move normally. A running engine must show charging current and about 14 V, so these are placeholders, not readings. Routines 03A0 and 03A2 both returned POSITIVE (7101 03A0 / 7101 03A2), so the ECU accepts them; they simply write into a function this car's calibration does not run. Conclusion: there is nothing to register on this variant, and a positive reply here does not mean a registration took effect. Always read 6153/6161/6165 before and after and believe the read, not the acknowledgement."
+  ],
+  "readings": [
+    {
+      "did": "6153",
+      "payload": "226153",
+      "label": "Latched battery capacity (ESOC_CapaHV_Mem)",
+      "unit": "As",
+      "start_bit": 24,
+      "length_bits": 32,
+      "multiplier": 0.000976563,
+      "offset": 0.0,
+      "also_ah": true,
+      "why": "The capacity the energy manager is currently working to. This is the number a registration changes."
+    },
+    {
+      "did": "6154",
+      "payload": "226154",
+      "label": "Current maximum available capacity",
+      "unit": "As",
+      "start_bit": 24,
+      "length_bits": 16,
+      "multiplier": 1.0,
+      "offset": 0.0,
+      "also_ah": true,
+      "why": "What the ECU believes the battery can actually hold right now, after ageing."
+    },
+    {
+      "did": "6701",
+      "payload": "226701",
+      "label": "Calculated maximum available capacity (from the last battery measurement)",
+      "unit": "As",
+      "start_bit": 24,
+      "length_bits": 16,
+      "multiplier": 10.0,
+      "offset": 0.0,
+      "also_ah": true,
+      "why": "The ECU's own measured answer. If this tracks the new battery, the ECU is self-learning and a capacity write is not needed."
+    },
+    {
+      "did": "6152",
+      "payload": "226152",
+      "label": "State of charge (SOC)",
+      "unit": "%",
+      "start_bit": 24,
+      "length_bits": 16,
+      "multiplier": 0.0625,
+      "offset": 0.0,
+      "why": "Straight after a battery change this is usually wrong until the ECU re-measures."
+    },
+    {
+      "did": "6161",
+      "payload": "226161",
+      "label": "Battery voltage (BMS_Batt_Volt)",
+      "unit": "V",
+      "start_bit": 24,
+      "length_bits": 16,
+      "multiplier": 0.00625,
+      "offset": 0.0,
+      "why": "The energy manager's own voltage. The mined multiplier 0.0625 gives 118.75 V, which no 12 V system can sit at, so it is corrected by a decade here on physical grounds. That correction is NOT confirmed against a known voltage: on the CLA the channel is frozen at 0x076C engine off and engine running alike, so it carried no live value to check against. Confirm on a car whose block is live."
+    },
+    {
+      "did": "6165",
+      "payload": "226165",
+      "label": "Battery current (BMS_Batt_Curr)",
+      "unit": "A",
+      "start_bit": 24,
+      "length_bits": 16,
+      "multiplier": 0.0625,
+      "offset": -1000.0,
+      "why": "Positive = charging. This is the IBS sensor's reading arriving at the engine ECU."
+    },
+    {
+      "did": "6167",
+      "payload": "226167",
+      "label": "Battery temperature (BMS_Batt_Temp)",
+      "unit": "degC",
+      "start_bit": 24,
+      "length_bits": 16,
+      "multiplier": 0.25,
+      "offset": -50.0,
+      "why": "Charging voltage is temperature compensated; a silly temperature means the IBS is not being believed."
+    },
+    {
+      "did": "6164",
+      "payload": "226164",
+      "label": "SOC status bits (summary)",
+      "unit": "",
+      "start_bit": 24,
+      "length_bits": 16,
+      "multiplier": 1.0,
+      "offset": 0.0,
+      "why": "Bit meanings are not mined. Kept raw so a before/after change is still visible."
+    },
+    {
+      "did": "6700",
+      "payload": "226700",
+      "label": "Battery measurement function state",
+      "unit": "",
+      "start_bit": 24,
+      "length_bits": 8,
+      "multiplier": 1.0,
+      "offset": 0.0,
+      "why": "Says whether the ECU's own capacity measurement (routine 035B) has run."
+    },
+    {
+      "did": "6702",
+      "payload": "226702",
+      "label": "Start battery voltage for battery measurement",
+      "unit": "V",
+      "start_bit": 24,
+      "length_bits": 16,
+      "multiplier": 0.001,
+      "offset": 0.0,
+      "why": "Latched start voltage. Reads 0x2ED3 on this car on every read across four separate days. CORRECTED 2026-09-09: the mined multiplier 0.01 gives 119.87 V; a tenth of it gives 11.987 V, which is a believable resting voltage -- so the value was always plausible and it is the scaling, not the channel, that was wrong. It is still suspiciously constant, so treat it as latched rather than live."
+    },
+    {
+      "did": "6151",
+      "payload": "226151",
+      "label": "DTM_SOC_Low",
+      "unit": "",
+      "start_bit": 24,
+      "length_bits": 8,
+      "multiplier": 1.0,
+      "offset": 0.0,
+      "why": "Low-SOC threshold marker; raw only."
+    },
+    {
+      "did": "6150",
+      "payload": "226150",
+      "label": "DTM_SOC_High",
+      "unit": "",
+      "start_bit": 24,
+      "length_bits": 8,
+      "multiplier": 1.0,
+      "offset": 0.0,
+      "why": "High-SOC threshold marker; raw only."
+    }
+  ],
+  "routines": {
+    "currentless": {
+      "routine_id": "03A0",
+      "title": "Set or Reset Currentless Condition",
+      "start": {
+        "name": "RT_03A0_Set_or_Reset_Currentless_Condition_Start",
+        "payload": "310103A000"
+      },
+      "stop": null,
+      "results": null,
+      "changes_car": true,
+      "why": "Tells the 12 V energy manager that the car was disconnected from its battery. That is exactly what happened when the battery was swapped. It resets the charge-balance history so the manager stops applying the old battery's learned state to the new one. This is the conservative half of a Mercedes battery registration: it changes bookkeeping, not the battery model.",
+      "input_note": "One input byte, mined default 0x00. The CBF mislabels it 'Injektorcode' so the set/reset sense of 0x00 vs 0x01 is NOT mined fact. The mined default is sent unchanged; nothing is invented."
+    },
+    "set_capacity": {
+      "routine_id": "03A2",
+      "title": "Set Battery Capacity",
+      "start": {
+        "name": "RT_03A2_Set_Battery_Capacity_Start",
+        "payload": "310103A200000000"
+      },
+      "stop": null,
+      "results": null,
+      "changes_car": true,
+      "why": "Writes the commanded battery capacity into the energy manager. Only needed when the new battery's capacity differs from the old one.",
+      "input_note": "Four payload bytes. The CBF declares ONE 16-bit input at byte offset 4 and says nothing about bytes 6-7 or about scaling. The scaling used here (ampere-seconds divided by 10, matching read-back DID 6701) is INFERENCE, not mined fact. Never send this without reading 6153/6154/6701 first and again afterwards."
+    },
+    "set_ocv": {
+      "routine_id": "03A3",
+      "title": "Set OCV Characteristic",
+      "start": {
+        "name": "RT_03A3_Set_OCV_Characteristic_Start",
+        "payload": "310103A3000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "stop": null,
+      "results": null,
+      "changes_car": true,
+      "blocked": true,
+      "why": "21 x uint16 at 10 mV resolution, in 5 % state-of-charge steps: the open-circuit-voltage curve that tells the energy manager what CHEMISTRY the battery is (AGM vs flooded). There is no separate battery-type byte anywhere on this platform -- this curve is the type.",
+      "input_note": "BLOCKED in this harness. The mined payload is 42 zero bytes, which would write a curve of all zeros and destroy the battery model. No correct AGM curve exists in the mined corpus. Read the live curve with 226169 and keep it; do not write one."
+    },
+    "measure": {
+      "routine_id": "035B",
+      "title": "Battery Measurement Diagnostic",
+      "start": {
+        "name": "RT_035B_Battery_Measurement_Diagnostic_Start",
+        "payload": "3101035B"
+      },
+      "stop": {
+        "name": "RT_035B_Battery_Measurement_Diagnostic_Stop",
+        "payload": "3102035B"
+      },
+      "results": {
+        "name": "RT_035B_RequestResults_Battery_Measurement_Diagnostic_State",
+        "payload": "3103035B",
+        "fields": []
+      },
+      "changes_car": true,
+      "why": "The ECU measures the battery's own capacity and internal resistance. This is the self-learning path: if it runs and DID 6701 then reports the new battery, no capacity write is needed at all."
+    }
+  }
+}

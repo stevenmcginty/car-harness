@@ -20,6 +20,7 @@ explicit id_map says otherwise -- see Elm327UdsClient).
 """
 
 import re
+import time
 
 from backend.obd.elm327 import (
     _HEX_LINE,
@@ -37,11 +38,21 @@ def reassemble(text: str, echo: str):
     Handles single-line hex and the ELM's ISO-TP "length + NN:" multi-frame
     format (the same reassembly elm327.py does for the VIN). Unlike the generic
     parser it keeps negative responses (0x7F ...) -- module scanning must see
-    them. Raises ObdError(kind='link'|'no_data') when the dongle reports it
-    could not reach the car, so a dead link stays distinguishable from an ECU
-    that genuinely answered a negative.
+    them. Raises ObdError(kind='link'|'no_data'|'overflow') when the dongle
+    reports it could not reach the car (link) or dropped the tail of an
+    over-long reply (overflow), so both stay distinguishable from an ECU that
+    genuinely answered a negative.
     """
     upper = text.upper()
+    # BUFFER FULL is its own kind, not a generic link error: the module DID
+    # answer -- the reply was simply bigger than the dongle's buffer (XF X260
+    # ABS 0x7E6, a 299-byte 19 02 FF fault read, on-car 2026-08-20). Callers
+    # can re-ask in smaller status-mask chunks; treating it as a dead link
+    # would misreport a talking module as absent.
+    if "BUFFER FULL" in upper:
+        raise ObdError(
+            "The dongle's buffer overflowed -- the reply tail was lost "
+            "(re-ask in smaller chunks).", kind="overflow")
     for token in _LINK_ERROR_TOKENS:
         if token in upper:
             raise ObdError(f"The dongle reported '{token}'.", kind="link")
@@ -95,12 +106,15 @@ class Elm327UdsClient:
         # id_map: request CAN id -> response CAN id, for modules that don't
         # answer on request + 8 (optional; unset modules fall back to +8).
         self.id_map = dict(id_map) if id_map else {}
+        self._st = "64"     # the ATST ceiling begin() last set
+        self._stn = None    # None = not asked yet; see _is_stn()
 
     # ------------------------------------------------------------------ #
     def begin(self):
         """One-off ELM setup for a UDS module session (undone by restore())."""
         self.session.at("ATAT0")   # adaptive timing off -- we manage the timeout
         self.session.at("ATST64")  # ~400ms per-frame ceiling, plenty for a live ECU
+        self._st = "64"
 
     def restore(self):
         """Return the ELM to the defaults the generic OBD-II scan relies on."""
@@ -110,6 +124,7 @@ class Elm327UdsClient:
             except Exception:
                 pass
         self._target = None
+        self._st = "32"
 
     def _aim(self, req_id: int):
         """Point the ELM at one module: TX header + RX filter + flow control.
@@ -130,18 +145,91 @@ class Elm327UdsClient:
         self._target = req_id
 
     # ------------------------------------------------------------------ #
+    def _set_st(self, value: str):
+        """Raise/lower the ELM's per-response wait ceiling (ATST, x4 ms)."""
+        if value != self._st:
+            self.session.at(f"ATST{value}")
+            self._st = value
+
+    @staticmethod
+    def _pending_only(reply, data) -> bool:
+        """True when the only usable reply was a bare NRC 0x78
+        (responsePending): the ECU is still computing, not refusing."""
+        return bool(reply) and len(reply) >= 3 and reply[0] == 0x7F \
+            and reply[2] == 0x78
+
     def request(self, dst: int, data: bytes, timeout: float = 3.0) -> bytes:
         """Send one UDS request to module ``dst`` (its request CAN id) and return
         the reassembled UDS reply bytes.
 
         The reply may be a 0x7F negative response -- that is returned as-is so
         the caller's _check() (backend/core/uds.py) can raise a proper
-        UdsNegativeResponse. Raises ObdError(kind='no_data'|'link') when nothing
-        usable comes back, which tester_present() reads as "no ECU here".
+        UdsNegativeResponse. Raises ObdError(kind='no_data'|'link'|'overflow')
+        when nothing usable comes back, which tester_present() reads as "no ECU
+        here".
+
+        NRC 0x78 (responsePending) is handled here, once, for every profile:
+        a slow ECU answers 7F <sid> 78 first and the real data up to a second
+        later. The session's ~400ms ATST window can close between the two, so
+        the bare pending is re-sent behind a ~1s window (ATSTFF) before being
+        believed -- exactly the manual recipe that read the XF X260 PCM
+        (0x7E0 19 02 FF, on-car 2026-08-20) after the timed-out read failed.
         """
         self._aim(dst)
         cmd = data.hex().upper()
-        text = self.session._raw(cmd.encode("ascii") + b"\r", timeout)
+        reply = self._request_once(cmd, data, timeout)
+        retries = 0
+        while self._pending_only(reply, data) and retries < 3:
+            retries += 1
+            time.sleep(0.15)
+            self._set_st("FF")          # ~1s window for the finished answer
+            try:
+                reply = self._request_once(cmd, data, timeout)
+            finally:
+                self._set_st("64")      # back to the session ceiling
+        return reply
+
+    # ------------------------------------------------------------------ #
+    # Requests longer than one CAN frame
+    # ------------------------------------------------------------------ #
+    # An ELM327 command line carries at most 7 data bytes: that is one CAN
+    # frame's payload, and the chip will not segment a request for you -- it
+    # answers a longer line with a bare "?" that looks exactly like a syntax
+    # error and nothing like "too long". Mercedes' 03A2 "set battery capacity"
+    # is 8 bytes (31 01 03 A2 + a 4-byte parameter), so it hit this on the CLA
+    # on 2026-09-09 and came back as "no reply" until it was sent by hand.
+    #
+    # The STN chips in an OBDLink (MX+, SX, EX) add STPX, which takes the whole
+    # payload as one argument and does the ISO-TP segmentation itself. So a
+    # long request goes out as STPX when the dongle is an STN, and a plain
+    # ELM327 is told plainly that it cannot send this rather than being handed
+    # a line it will silently reject.
+    _MAX_SINGLE_FRAME = 7
+
+    def _is_stn(self) -> bool:
+        """Cached: does this dongle understand STPX? STDI names STN chips."""
+        if self._stn is None:
+            try:
+                reply = self.session.at("STDI") or ""
+            except Exception:
+                reply = ""
+            self._stn = "OBDLink" in reply or "STN" in reply
+        return self._stn
+
+    def _line(self, cmd: str) -> bytes:
+        """The ELM command line that carries one request payload of hex digits."""
+        if len(cmd) <= self._MAX_SINGLE_FRAME * 2:
+            return cmd.encode("ascii") + b"\r"
+        if not self._is_stn():
+            raise ObdError(
+                f"This request is {len(cmd) // 2} bytes and an ELM327 command "
+                "line carries at most 7. Only an STN-based dongle (OBDLink "
+                "MX+/SX/EX) can send it, via STPX.", kind="link")
+        target = self._target if self._target is not None else 0x7DF
+        return f"STPX h:{target:03X}, d:{cmd}, r:1".encode("ascii") + b"\r"
+
+    def _request_once(self, cmd: str, data: bytes, timeout: float) -> bytes:
+        text = self.session._raw(self._line(cmd), timeout)
         records = [bytes(r) for r in reassemble(text, cmd) if r]
         if records:
             # Prefer a record that actually answers this service (positive SID
