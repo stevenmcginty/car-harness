@@ -41,6 +41,8 @@ from backend.profiles.jlr import sweep as jlr_sweep  # noqa: E402
 from backend.profiles.mazda import pids as mazda_pids  # noqa: E402
 from backend.profiles.mazda import scan as mazda_scan  # noqa: E402
 from backend.profiles.mazda import snapshot as mazda_snapshot_mod  # noqa: E402
+from backend.profiles.nissan import pids as nissan_pids  # noqa: E402
+from backend.profiles.nissan import scan as nissan_scan  # noqa: E402
 from backend.profiles.mercedes import coldstart as mercedes_coldstart  # noqa: E402
 from backend.profiles.mercedes import misfire as mercedes_misfire  # noqa: E402
 from backend.profiles.mercedes import pids as mercedes_pids  # noqa: E402
@@ -427,6 +429,94 @@ def ford_clear_module(
     if error is not None:
         return error
     return ford_scan.clear(instance, mode, address)
+
+
+# --------------------------------------------------------------------------- #
+# Nissan AUDIO scan over a generic OBD dongle (HS-CAN, UDS/KWP) -- Z34 370Z.
+# Finds the AV control unit that stores the Bose-amp fault codes. The amp is not
+# an addressable node; the AV-unit diagnostic id is UNVERIFIED, so we discover
+# live which addresses answer (0x7E0-0x7E7 powertrain, 0x74x body/AV block).
+# --------------------------------------------------------------------------- #
+@mcp.tool()
+def nissan_discover_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Sweep the Nissan candidate addresses and report which nodes answer (read-only).
+
+    A fast presence sweep of the powertrain block (0x7E0-0x7E7, response =
+    request + 8) and the Nissan body/comfort/AV block (0x74x, response =
+    request + 0x20). Built for the 2016 370Z (Z34) audio job. The AV control
+    unit that stores the Bose-amp codes lives in the 0x74x block but its exact
+    id is UNVERIFIED -- this shows where it actually answers so you can then read
+    its faults with nissan_audio_faults. Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return nissan_scan.discover(instance, mode)
+
+
+@mcp.tool()
+def nissan_scan_modules(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read a Nissan's module fault memory over a generic OBD-II dongle (read-only).
+
+    Walks the powertrain (0x7E0-0x7E7) and Nissan body/AV (0x74x) candidate
+    addresses and reads each responding module's UDS fault codes + identification.
+    Body/AV modules are read on request + 0x20 (Nissan convention). Built for the
+    2016 370Z NISMO (Z34) audio job. Ignition must be ON. Works over the phone
+    relay adapter (elm327-remote).
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return nissan_scan.scan(instance, mode)
+
+
+@mcp.tool()
+def nissan_audio_faults(adapter_id: str | None = None, mode: str = "real") -> dict:
+    """Read DTCs from the Nissan body/AV nodes and surface the Bose-amp faults (read-only).
+
+    Reads fault memory from every body/AV candidate node (0x74x) and annotates
+    each code with its dealer text (B1F00-49 'BOSE AMP', U1263 Bose-amp comms to
+    the AV control unit, ...). Returns ampFault=True/False for whether any amp
+    code is present. Targets the symptom: audio to the REAR speakers only, none
+    to the front door/dash speakers. The AV-unit diagnostic id is UNVERIFIED --
+    the reply reports which node actually answered and carried the codes.
+    Ignition must be ON.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode (omit to use the default adapter). mode="sim" returns a clearly-labelled fake.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return nissan_scan.audio_faults(instance, mode)
+
+
+@mcp.tool()
+def nissan_clear_module(
+    confirm: bool = False, adapter_id: str | None = None,
+    address: str | None = None, mode: str = "real",
+) -> dict:
+    """Clear fault memory on Nissan modules over a dongle -- CHANGES THE CAR.
+
+    confirm: must be True, and only after the user has explicitly agreed.
+    adapter_id: a configured ELM327 adapter instance (required for real mode;
+        omit to use the default adapter).
+    address: hex diagnostic address like "0x74D" (the AV-unit best guess) or
+        "0x745" (BCM); omit to clear every module that answers. Faults return if
+        the cause is still there.
+    """
+    if confirm is not True:
+        return {"error": "Refused: clearing changes the car. Pass confirm=true after the user agrees."}
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return nissan_scan.clear(instance, mode, address)
 
 
 # --------------------------------------------------------------------------- #

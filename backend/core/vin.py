@@ -53,6 +53,9 @@ WMI_MAKES = {
     # Mazda
     "JMZ": "Mazda", "JM1": "Mazda", "JM7": "Mazda", "JM0": "Mazda",
     "4F2": "Mazda", "4F4": "Mazda",
+    # Nissan (JN1 = Japan-built; the Z34 370Z is JN1). SJN = UK, 1N4/1N6 = US.
+    "JN1": "Nissan", "JN6": "Nissan", "JN8": "Nissan", "SJN": "Nissan",
+    "1N4": "Nissan", "1N6": "Nissan", "3N1": "Nissan", "5N1": "Nissan",
     # Present so they are named rather than guessed at -- no profile supports them.
     "5YJ": "Tesla", "7SA": "Tesla", "LRW": "Tesla", "XP7": "Tesla",
 }
@@ -70,6 +73,7 @@ MAKE_PROFILES = {
     "Jaguar": ["jlr"], "Land Rover": ["jlr"],
     "Mazda": ["mazda"],
     "Ford": ["ford"],
+    "Nissan": ["nissan"],
 }
 
 # Profiles that only work over a native Ethernet cable (DoIP/HSFZ).

@@ -1,0 +1,28 @@
+{
+  "id": "nissan",
+  "name": "Nissan",
+  "transport": "elm327",
+  "description": "Nissan over a generic OBD-II dongle (HS-CAN, UDS/KWP). Tuned for the 2016 370Z NISMO (Z34, UK) AUDIO job -- finding the AV control unit that stores the Bose-amp fault codes (B1F00-49 'BOSE AMP', U1263 amp comms). The amp itself is not an addressable diagnostic node. Powertrain answers 0x7E0-0x7E7; body/comfort/AV modules answer on Nissan's 0x74x block (response = request + 0x20). The exact AV-unit id is UNVERIFIED, so the profile discovers live which addresses answer.",
+  "probe": "profile.py",
+  "adapters": [
+    "elm327-ble",
+    "elm327-wifi",
+    "elm327-serial",
+    "elm327-bluetooth",
+    "elm327-remote"
+  ],
+  "panel": {
+    "title": "All modules (OBD dongle)",
+    "hint": "Module scan for CAN-era Nissans (Z34 370Z and siblings) over the ordinary OBD dongle — each module's own fault memory, deeper than generic OBD-II. Pick the adapter top-right, ignition ON, then scan. The AV/head unit that holds the Bose-amp codes is on Nissan's 0x74x body block; its exact address is discovered live.",
+    "scanBusy": "Walking the Nissan modules through the dongle… (absent addresses time out quietly)",
+    "actions": [
+      {
+        "id": "discover",
+        "label": "Discover modules",
+        "busy": "Sweeping the candidate addresses to see what answers…",
+        "title": "Nissan module sweep",
+        "hint": "Fast read-only sweep of the powertrain (0x7E0-0x7E7) and Nissan body/AV (0x74x) candidate addresses — reports which nodes answer so you can find the AV unit that stores the Bose-amp codes. Then read its DTCs (nissan_audio_faults) — targets the symptom: audio to rear speakers only, none to the front door/dash speakers (B1F00-49 'BOSE AMP', U1263)."
+      }
+    ]
+  }
+}
