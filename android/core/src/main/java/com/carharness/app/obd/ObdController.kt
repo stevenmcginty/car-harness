@@ -207,6 +207,16 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
             FordUds.readEnhanced(session, onProgress)
         }
 
+    /** Nissan HS-CAN module scan (powertrain +8, body/AV +0x20). Serialised. */
+    suspend fun nissanScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        NissanUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one Nissan module's fault memory; returns that module's fresh DTCs. */
+    suspend fun nissanClear(address: Int): List<UdsDtc> = mutex.withLock {
+        NissanUds.clearDtcs(session, address)
+    }
+
     /** Peugeot / PSA module scan (per-module UDS id pairs). Serialised. */
     suspend fun peugeotScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
         PeugeotUds.scan(session, simulated, onProgress)

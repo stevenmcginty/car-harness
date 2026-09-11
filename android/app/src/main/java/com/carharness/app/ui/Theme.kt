@@ -587,7 +587,7 @@ fun SegmentedControl(
 private val MONOGRAMS = mapOf(
     "bmw" to "BMW", "mazda" to "MZD", "peugeot" to "PSA", "vw" to "VAG",
     "mercedes" to "MB", "fiat" to "FCA", "jlr" to "JLR", "porsche" to "POR",
-    "ford" to "FORD",
+    "ford" to "FORD", "nissan" to "NIS",
 )
 
 /** The square monogram plate every brand is drawn as, rail and sheet alike. */

@@ -135,7 +135,12 @@ object VinDecode {
         // 10 — both invalid year codes, so they refuse safely.
         all(YearRule.FULL, "Toyota", "JTD", "JTE", "JTH", "JTM", "SB1")
         all(YearRule.FULL, "Honda", "JHM", "SHH")
-        all(YearRule.FULL, "Nissan", "JN1", "SJN")
+        all(YearRule.FULL, "Nissan", "JN1", "JN3", "JN8", "SJN")
+        // North-American and Mexican Nissans encode the year letter by law.
+        all(YearRule.FULL, "Nissan", "1N4", "1N6", "5N1", "3N1")
+        // Infiniti is Nissan's own diagnostic bus, so Brands.forMake sends it
+        // to the Nissan walker. JN1 stays Nissan: it carries both.
+        all(YearRule.FULL, "Infiniti", "JNK", "JNR")
         all(YearRule.FULL, "Hyundai", "KMH")
         all(YearRule.FULL, "Kia", "KNA", "KND")
         all(YearRule.FULL, "Volvo", "YV1", "YV4")

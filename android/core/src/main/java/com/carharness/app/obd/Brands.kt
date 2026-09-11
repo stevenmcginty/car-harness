@@ -110,6 +110,18 @@ object Brands {
             clear = { ctrl, addr -> ctrl.fordClear(addr) },
         ),
         Brand(
+            id = "nissan",
+            label = "Nissan",
+            aliases = listOf("370Z", "Qashqai", "Juke", "Leaf", "Navara", "Infiniti"),
+            scanHint = "Walks both halves of the Nissan HS-CAN bus — the powertrain block " +
+                "(engine, gearbox) that answers on request + 8, and Nissan's own body / " +
+                "comfort / AV block that answers on request + 0x20, where the BCM and the " +
+                "AV head unit live. The Bose amp has no diagnostic address of its own: its " +
+                "faults are stored by the AV unit, so they show up there.",
+            scan = { ctrl, onStep -> ctrl.nissanScan(onStep) },
+            clear = { ctrl, addr -> ctrl.nissanClear(addr) },
+        ),
+        Brand(
             id = "peugeot",
             label = "Peugeot",
             aliases = listOf("Citroen", "Citroën", "DS", "PSA"),
@@ -388,6 +400,7 @@ object Brands {
             "bmw", "mini" -> "bmw"
             "mazda" -> "mazda"
             "ford" -> "ford"
+            "nissan", "infiniti" -> "nissan"
             "peugeot", "citroen", "citroën", "ds automobiles" -> "peugeot"
             "volkswagen", "audi", "skoda", "škoda", "seat", "cupra" -> "vw"
             "mercedes-benz", "mercedes", "smart" -> "mercedes"
