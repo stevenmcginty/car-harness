@@ -122,6 +122,22 @@ object Brands {
             clear = { ctrl, addr -> ctrl.nissanClear(addr) },
         ),
         Brand(
+            id = "vauxhall",
+            label = "Vauxhall / Opel",
+            aliases = listOf("Opel", "Astra", "Corsa", "Insignia", "Mokka", "Zafira", "VXR"),
+            scanHint = "Walks both GM address blocks: the powertrain block that answers on " +
+                "request + 8 (engine, gearbox), and GM's own body/chassis block at " +
+                "0x24x that answers on request + 0x400, where the BCM, ABS, airbag and " +
+                "cluster live. Global A cars speak GMW3110, not plain UDS — faults are " +
+                "service A9, identification 1A, clear 04 — so every module is tried in " +
+                "both dialects and the report says which one answered. Two things a " +
+                "dongle can never reach: GM's single-wire Low Speed GMLAN comfort bus " +
+                "(OBD pin 1), and 2019+ Corsa/Mokka/Astra L, which are PSA cars — use " +
+                "the Peugeot profile for those.",
+            scan = { ctrl, onStep -> ctrl.vauxhallScan(onStep) },
+            clear = { ctrl, addr -> ctrl.vauxhallClear(addr) },
+        ),
+        Brand(
             id = "peugeot",
             label = "Peugeot",
             aliases = listOf("Citroen", "Citroën", "DS", "PSA"),
@@ -401,6 +417,9 @@ object Brands {
             "mazda" -> "mazda"
             "ford" -> "ford"
             "nissan", "infiniti" -> "nissan"
+            // VinDecode names the W0L/W0V cars "Opel / Vauxhall" and the
+            // GB-built ones "Vauxhall" — both land on the one GM walker.
+            "vauxhall", "opel", "opel / vauxhall" -> "vauxhall"
             "peugeot", "citroen", "citroën", "ds automobiles" -> "peugeot"
             "volkswagen", "audi", "skoda", "škoda", "seat", "cupra" -> "vw"
             "mercedes-benz", "mercedes", "smart" -> "mercedes"

@@ -56,6 +56,7 @@ from backend.profiles.vauxhall import scan as vauxhall_scan  # noqa: E402
 from backend.profiles.vauxhall import software as vauxhall_software  # noqa: E402
 from backend.profiles.vauxhall import tcm as vauxhall_tcm  # noqa: E402
 from backend.profiles.vauxhall import gearbox as vauxhall_gearbox  # noqa: E402
+from backend.profiles.vauxhall import engine as vauxhall_engine  # noqa: E402
 from backend.profiles.vauxhall import procedures as vauxhall_procedures  # noqa: E402
 from backend.profiles.vw import pids as vw_pids  # noqa: E402
 from backend.profiles.vw import scan as vw_scan  # noqa: E402
@@ -1155,6 +1156,89 @@ def vauxhall_gearbox_analyze(adapter_id: str | None = None, mode: str = "real") 
     if error is not None:
         return error
     return vauxhall_gearbox.analyze(instance, mode)
+
+
+@mcp.tool()
+def vauxhall_engine_analyze(
+    adapter_id: str | None = None, mode: str = "real",
+    sweep: bool = False, scenario: str = "healthy",
+) -> dict:
+    """Analyse the Astra J VXR / A20NFT engine over an ELM327 (read-only).
+
+    Finds the ECM at 0x7E0, reads its identification and calibration part
+    numbers, reads its fault memory with GM's own wording out of the dealer
+    dictionary, reads a curated 35-parameter live block and writes a worksheet.
+    The block is built around desired-versus-actual pairs, which is what
+    actually decides a turbo petrol complaint: boost commanded against boost
+    measured, rail pressure commanded against rail pressure measured, cam angle
+    commanded against cam angle reached, throttle demanded against throttle
+    delivered -- plus trims, lambda, knock retard and the per-cylinder misfire
+    counters.
+
+    NOTHING HERE HAS BEEN CONFIRMED ON AN ENGINE. Every name, scaling and unit
+    is static analysis of GM's GDS2 dealer database for the E39A node; the car
+    has not been connected. Three consequences ride on every result and are
+    repeated in it rather than summarised away:
+
+    * GM's parameter list is its SHARED "E39 4-cylinder" set, so a fair number
+      of these will come back NRC 31 (request out of range) on a real A20NFT.
+      That is expected, not a fault, and the ``didReport`` section -- which
+      answered, which refused, which went silent -- is the most valuable thing
+      a first real run produces;
+    * there are no pass/fail thresholds anywhere in GM's data for this ECM, so
+      this tool reports numbers and names divergences and never pronounces a
+      verdict. Do not read one into it;
+    * the 70 DeviceControl ($AE) frames GM's data carries -- wastegate, bypass
+      valve, cam actuators, oil pressure solenoid -- are listed in the result
+      as information and are NEVER transmitted. There is no code path here that
+      could send one.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode (omit to use the default adapter).
+    mode: "sim" runs against a simulated E39A and is clearly labelled.
+    sweep: read EVERY service 0x22 request in GM's list (hundreds of frames,
+        minutes over Bluetooth) instead of the curated block. Never the
+        default: it maps a calibration rather than diagnosing a car.
+    scenario: which engine the simulator pretends to be -- "healthy",
+        "misfire-cyl3" or "boost-fault". Ignored in real mode.
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_engine.analyze(instance, mode, sweep, scenario)
+
+
+@mcp.tool()
+def vauxhall_engine_capture(
+    adapter_id: str | None = None, seconds: float = 600.0, mode: str = "real",
+    fast: bool = True, label: str = "drive", scenario: str = "healthy",
+) -> dict:
+    """Log the Astra J VXR engine through a drive (read-only).
+
+    Boost control and rail pressure cannot be judged at a standstill: the ECM
+    is not asking for anything, so nothing can fail to deliver it. The shape
+    that matters is a full-throttle pull, and that is a series rather than a
+    reading. This polls the desired/actual pairs as fast as the dongle allows,
+    timestamps every sample and writes one JSON object per line under
+    captures/vauxhall-engine-<date>/.
+
+    Every value is logged beside the raw bytes it came from, so a later
+    correction to one of GM's scalings does not cost the run. Read-only: no
+    clear, no coding, no DeviceControl.
+
+    adapter_id: a configured ELM327 adapter instance (from list_adapters);
+        required for real mode (omit to use the default adapter).
+    seconds: how long to log for.
+    fast: poll only the ten load-sensitive parameters every tick and sweep the
+        rest every fifth, which roughly triples the rate over a BLE relay.
+    label: "idle", "cold", "drive", "pull" or "other" -- goes in the filename
+        and on every row.
+    scenario: which engine the simulator pretends to be (mode="sim" only).
+    """
+    instance, error = _elm_adapter_or_error(mode, adapter_id)
+    if error is not None:
+        return error
+    return vauxhall_engine.capture(instance, seconds, mode, fast, label, scenario)
 
 
 @mcp.tool()

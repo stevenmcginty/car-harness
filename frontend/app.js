@@ -1718,6 +1718,7 @@
       discover: "discover",
       software: "software",
       gearbox: "gearbox",
+      engine: "engine",
       sweep: "sweep",
       "adblue-health": "adblue",
       "adblue-drive-log": "adblue",

@@ -51,6 +51,15 @@ asks the car.
     carries, plus those two override rows. Being in the master dictionary
     means GM assigned the code somewhere -- not that this module supports it.
 
+  gds2_e39a_ecm.json
+    GDS2 dealer data for the Astra J 2.0L (LHU) engine node "Engine Control
+    Module$ECM - E39A (S3) - GME", deliverable _x_2023ov, node 0x058ECF44,
+    on 0x7E0. Made by: tools/dealer_index/export_vauxhall_ecm.py from
+    car-harness-data/gds2.db (deterministic). Read by: dealer_data.py, engine.py.
+    The PID set is GM's shared E39 4-cylinder set, so every parameter is
+    applicability UNVERIFIED for the A20NFT; none has been read from a car.
+    The pack's own "caveats" key records the four known limits.
+
   19xx live PIDs (Torque / on-car):
     Torque Pro predefined set "Pontiac / GM / Opel / Vauxhall":
       Mode 22 PID 1940, header 7E2, equation A-40.

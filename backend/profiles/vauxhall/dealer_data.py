@@ -64,6 +64,41 @@ append, not the OR-in at the value offset. "The extract's read decoding is
 confirmed on the car" and "the control frame is verified" are different
 statements and must not be flattened into one.
 
+THE SECOND PACK -- THE E39A ENGINE CONTROLLER
+--------------------------------------------
+``data/gds2_e39a_ecm.json`` is the same kind of extract taken from the engine
+side: module node ``Engine Control Module$ECM - E39A (S3) - GME``, the node the
+Astra-J 2.0L (LHU) menu tree binds, which is the ECM in Steve's 2016 Astra VXR.
+It is read through the ``ecm_*`` functions below; the TCM functions above are
+untouched and still mean the gearbox.
+
+Three things about it decide how engine.py is allowed to use it, and they are
+carried in the file itself as machine-readable ``caveats`` rather than being
+paraphrased here:
+
+* the PID set the node binds is GM's SHARED "E39 4cyl" set, so the database
+  cannot say which of the 970 parameters the A20NFT answers -- every parameter
+  is marked ``applicability: "UNVERIFIED"`` and NRC 31 is expected on a fair
+  number of them;
+* there are no pass/fail thresholds anywhere in it. The ``range`` on a
+  conversion is the display limit GDS2 draws with, and some are plainly wrong;
+* the 70 device controls WRITE to the car. They are exposed here as
+  descriptions, exactly like the T76 ones, and nothing in this profile sends
+  one.
+
+The read half needs no new decoder: the ECM pack uses the same ``item`` /
+``read`` shape as the T76 pack, so ``decode()`` and ``apply_equation()`` below
+work on an ECM entry unchanged. What is new is the indexing -- the ECM pack
+keys parameters by request AND name, because one request frequently carries
+several named signals and, unlike the T76 set, several different requests carry
+the SAME name (``Boost Pressure Sensor`` is a volts reading on 22 30 88 and a
+kPa reading on 22 32 98).
+
+Nothing in the ECM pack has been seen on a car. Not one parameter, not one
+fault row, not one identifier -- and the 40 identification entries carry
+requests this exporter RECONSTRUCTED rather than read, which is a second and
+separate reason to distrust them until a car answers.
+
 EQUATIONS
 ---------
 Only the equation forms the T76 set actually uses are implemented, and an
@@ -262,3 +297,141 @@ def decode(entry: dict, payload: bytes) -> Optional[dict]:
     else:
         out["value"] = round(value, 4)
     return out
+
+
+# --------------------------------------------------------------------------- #
+# The E39A engine controller pack
+#
+# Kept as its own set of functions rather than a module argument on the ones
+# above, so that nothing reading the gearbox can accidentally be handed engine
+# data. The two packs are different modules on different addresses and the only
+# thing they share is the file format.
+# --------------------------------------------------------------------------- #
+ECM_DATA_FILE = Path(__file__).resolve().parent / "data" / "gds2_e39a_ecm.json"
+
+
+@lru_cache(maxsize=1)
+def load_ecm() -> dict:
+    """The whole E39A extract. Cached -- it is about three megabytes."""
+    with ECM_DATA_FILE.open(encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+@lru_cache(maxsize=1)
+def _ecm_by_request() -> Dict[str, List[dict]]:
+    """ECM parameters grouped by the request frame that reads them."""
+    out: Dict[str, List[dict]] = {}
+    for entry in load_ecm().get("parameters", []):
+        req = entry.get("request")
+        if req:
+            out.setdefault(req.upper(), []).append(entry)
+    return out
+
+
+def ecm_by_request(request: str) -> List[dict]:
+    """Every named ECM signal carried by one request frame, e.g. '22 00 0C'."""
+    return _ecm_by_request().get(request.upper(), [])
+
+
+def ecm_parameter(request: str, name: str) -> Optional[dict]:
+    """One ECM parameter, keyed by request AND name.
+
+    Name alone is not a key in this pack and neither is the request. There are
+    two ``Boost Pressure Sensor`` rows on different requests in different units,
+    and 22 32 98 carries both the boost reading and a freeze-frame slot. A
+    caller that means one specific signal has to say both, and gets None rather
+    than a near-miss if the pack does not have it.
+    """
+    for entry in ecm_by_request(request):
+        if entry.get("name") == name:
+            return entry
+    return None
+
+
+def ecm_read_requests() -> List[str]:
+    """Every distinct service 0x22 request in the ECM pack, in pack order.
+
+    This is the full sweep list -- several hundred frames. It is deliberately
+    a separate call from the curated block in engine.py: sweeping it is a
+    deliberate act, not something a routine read should ever do by accident.
+    """
+    seen: List[str] = []
+    known = set()
+    for entry in load_ecm().get("parameters", []):
+        req = entry.get("request")
+        if entry.get("service") != "$22" or not req or req in known:
+            continue
+        known.add(req)
+        seen.append(req)
+    return seen
+
+
+def ecm_ident_parameters() -> List[dict]:
+    """The 40 GMLAN $1A identification rows.
+
+    Their request bytes were RECONSTRUCTED by the exporter rather than read out
+    of the database, which each row records in its own ``requestSource``. They
+    are offered so an identification read has GM's names for what comes back;
+    they are not evidence that this ECM answers any of them.
+    """
+    return [e for e in load_ecm().get("parameters", []) if e.get("service") == "$1A"]
+
+
+def ecm_caveats() -> List[dict]:
+    """The pack's own machine-readable limits, as written by the exporter.
+
+    Surfaced verbatim rather than restated: a caveat that gets paraphrased at
+    each hop is a caveat that eventually goes missing.
+    """
+    return list(load_ecm().get("caveats", []))
+
+
+def ecm_device_controls() -> List[dict]:
+    """The 70 $AE device controls, as DESCRIPTIONS.
+
+    Every one of these writes to the car. Nothing in this profile transmits
+    one, and this function exists so the operator can see what the dealer tool
+    is able to command without the harness being able to command it.
+    """
+    return list(load_ecm().get("deviceControls", []))
+
+
+def ecm_tests() -> List[dict]:
+    """The 61 named dealer tests, in their 7 folders.
+
+    The pack's ``test-bindings-dead`` caveat applies to all of them: there is
+    no test-to-frame join anywhere in the database, so a test here is a name
+    and nothing more. Pairing one with a parameter is a guess.
+    """
+    return list(load_ecm().get("tests", []))
+
+
+@lru_cache(maxsize=1)
+def _ecm_dtc_names() -> Dict[str, tuple]:
+    """code -> (name, which list it came from). Local overrides win."""
+    out: Dict[str, tuple] = {}
+    dtc = load_ecm().get("dtc") or {}
+    for row in (dtc.get("masterList") or {}).get("rows", []):
+        code = (row.get("code") or "").upper()
+        if code:
+            out[code] = (row.get("name"), "master")
+    for local in dtc.get("localLists") or []:
+        for row in local.get("rows", []):
+            code = (row.get("code") or "").upper()
+            if code:
+                out[code] = (row.get("name"), "local")
+    return out
+
+
+def ecm_dtc_name(code: str) -> Optional[dict]:
+    """GM's own wording for a code, with which list it came from.
+
+    ``local`` means this module node names the code itself, which is as close
+    to "this ECM supports it" as the database gets. ``master`` means it is in
+    the corpus-wide dictionary, which says only that GM has assigned the code
+    somewhere -- exactly the same caveat the T76 dtc_name() carries.
+    """
+    hit = _ecm_dtc_names().get((code or "").upper())
+    if hit is None:
+        return None
+    return {"name": hit[0], "list": hit[1]}

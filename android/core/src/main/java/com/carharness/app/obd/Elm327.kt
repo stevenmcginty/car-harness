@@ -126,6 +126,18 @@ class Elm327Session(private val transport: ObdTransport) {
         collect(raw(dataHex, timeoutMs), dataHex)
 
     /**
+     * Escape hatch: send one command and hand the dongle's answer back as
+     * untouched text — no ISO-TP reassembly, no NO DATA / error tokens, no
+     * echo stripping. Callers parse the frames themselves.
+     *
+     * It exists for GM's UUDT fault frames (VauxhallUds): those arrive on a
+     * different CAN id as a run of loose 8-byte frames, which collect() would
+     * either glue into one meaningless record or throw away. Use query() or
+     * udsRecords() for anything that is really a request/response.
+     */
+    fun rawText(cmd: String, timeoutMs: Long = 8000): String = raw(cmd, timeoutMs)
+
+    /**
      * Run a bus-monitor command (ATMA) for a fixed window and return the raw
      * capture. There is no '>' while monitoring — the transports return
      * whatever arrived once the deadline lapses.

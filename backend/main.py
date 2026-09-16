@@ -1016,6 +1016,30 @@ def brand_gearbox(brand: str, adapter: str | None = None, mode: str = "real") ->
     return module.analyze(mode)
 
 
+@app.get("/api/{brand}/engine")
+def brand_engine(brand: str, adapter: str | None = None, mode: str = "real",
+                 sweep: bool = False, scenario: str = "healthy") -> dict:
+    """Engine-focused read: ECM identity, faults, live block, diagnosis.
+
+    Read-only. Brands that do not ship engine.py 404 the same way a missing
+    gearbox.py does.
+
+    ``sweep`` swaps the curated live block for every parameter the brand's
+    dealer data lists -- hundreds of frames, and never the default, because it
+    maps a calibration rather than diagnosing a car. ``scenario`` picks which
+    engine the simulator pretends to be and is ignored in real mode.
+    """
+    module = _brand_capability_or_404(brand, "engine")
+    if not hasattr(module, "analyze"):
+        raise HTTPException(status_code=404, detail=f"'{brand}' has no engine analyse step.")
+    if brands.needs_adapter(brand):
+        instance = _obd_adapter_or_400(adapter, mode)
+        return module.analyze(instance, mode, sweep, scenario)
+    if mode not in ("real", "sim"):
+        raise HTTPException(status_code=400, detail="mode must be 'real' or 'sim'.")
+    return module.analyze(mode)
+
+
 @app.get("/api/{brand}/live")
 def brand_live(brand: str, adapter: str | None = None, mode: str = "real") -> dict:
     """Brand-specific live values (Mazda mode-22 extras, Peugeot health check,

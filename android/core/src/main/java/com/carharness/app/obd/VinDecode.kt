@@ -129,7 +129,8 @@ object VinDecode {
         all(YearRule.FULL, "Ford", "1FA", "1FT", "1FM", "2FM", "3FA")
         // Opel has used the model-year letter at 10 since the '80s.
         all(YearRule.FULL, "Opel / Vauxhall", "W0L", "W0V")
-        all(YearRule.FULL, "Vauxhall", "VXK")
+        // GB-built Vauxhalls: VXK (Luton vans) and SED (Ellesmere Port).
+        all(YearRule.FULL, "Vauxhall", "VXK", "SED")
         // Japan-built Toyotas/Hondas/Nissans follow the year code; EU-built or
         // EU-market cars carry '0' (Toyota) or the market code 'U' (Nissan) at
         // 10 — both invalid year codes, so they refuse safely.

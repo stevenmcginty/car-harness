@@ -217,6 +217,17 @@ class ObdController(private val session: Elm327Session, val simulated: Boolean) 
         NissanUds.clearDtcs(session, address)
     }
 
+    /** Vauxhall / Opel (GM Global A) module scan — powertrain +8, GM body
+     *  block +0x400, GMW3110 first with a UDS fallback. Serialised. */
+    suspend fun vauxhallScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
+        VauxhallUds.scan(session, simulated, onProgress)
+    }
+
+    /** Clear one Vauxhall module's fault memory; returns that module's fresh DTCs. */
+    suspend fun vauxhallClear(address: Int): List<UdsDtc> = mutex.withLock {
+        VauxhallUds.clearDtcs(session, address)
+    }
+
     /** Peugeot / PSA module scan (per-module UDS id pairs). Serialised. */
     suspend fun peugeotScan(onProgress: (String) -> Unit): UdsScanReport = mutex.withLock {
         PeugeotUds.scan(session, simulated, onProgress)

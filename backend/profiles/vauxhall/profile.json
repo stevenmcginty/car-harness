@@ -7,7 +7,7 @@
   "adapters": ["elm327-ble", "elm327-wifi", "elm327-serial", "elm327-bluetooth"],
   "panel": {
     "title": "GMLAN module scan (OBD dongle)",
-    "hint": "Astra K 1.4T auto: TCM is at 0x7E2, not the textbook 0x7E1. Scan reads every module's fault memory. 'Gearbox analyse' is the 6T35 job -- calibration, GM-named faults (not SAE-generic), live block, clutch map, and the clutch adapt cells. Find modules / Software versions still sit here. Everything on this panel is read-only except the two adaptive-learn buttons: 'Learn preflight' reads whether the gearbox would accept a Transmission Adaptive Values Learn and sends nothing, and 'Adaptive values learn' actually runs it. That routine has NEVER been run on a car -- its frames are a confirmed static decode of GM's own dealer database and nothing more -- so rehearse it in Simulate mode first, where every failure path can be watched. Ignition ON.",
+    "hint": "Astra K 1.4T auto: TCM is at 0x7E2, not the textbook 0x7E1. Scan reads every module's fault memory. 'Gearbox analyse' is the 6T35 job -- calibration, GM-named faults (not SAE-generic), live block, clutch map, and the clutch adapt cells. 'Engine analyse' is the same job on the engine controller at 0x7E0, built for the Astra J VXR A20NFT out of GM's own E39A dealer data -- and unlike the gearbox that data has never been checked against a car, so read its applicability table before believing any of its numbers. Find modules / Software versions still sit here. Everything on this panel is read-only except the two adaptive-learn buttons: 'Learn preflight' reads whether the gearbox would accept a Transmission Adaptive Values Learn and sends nothing, and 'Adaptive values learn' actually runs it. That routine has NEVER been run on a car -- its frames are a confirmed static decode of GM's own dealer database and nothing more -- so rehearse it in Simulate mode first, where every failure path can be watched. Ignition ON.",
     "scanBusy": "Reading the Vauxhall over GMLAN (UDS dialect first, then GMW3110)...",
     "actions": [
       {
@@ -31,6 +31,14 @@
         "busy": "Reading the TCM -- calibration, faults, live...",
         "title": "Astra K 6T35 gearbox",
         "hint": "Finds the TCM (0x7E2 on this Astra K, 0x7E1 fallback), reads the calibration part numbers, reads faults with GM 6T35/6T40 names (P2723 is the 1-2-3-4 clutch, not 'Shift Solenoid E'), reads the live block (fluid temp, selector, range switch, shaft speeds, commanded gear, gear ratio, TCC slip and the fast-learn readiness state), asks for the clutch adapt cells, and writes a worksheet that maps codes onto clutches. Read-only. Signals named from the GDS2 dealer data but never yet seen on this car are marked as such rather than shown as fact.",
+        "readOnly": true
+      },
+      {
+        "id": "engine",
+        "label": "Engine analyse",
+        "busy": "Reading the ECM -- identification, faults, live block...",
+        "title": "Astra J VXR A20NFT engine",
+        "hint": "Finds the ECM at 0x7E0, reads its identification and calibration part numbers, reads faults with GM's own wording out of the dealer dictionary, reads a curated 35-parameter live block (rpm, load, coolant, intake air, MAF, throttle demanded vs actual, both fuel trims, commanded lambda, both lambda sensors, rail pressure desired vs actual, boost desired vs actual, wastegate and bypass command, ignition timing, knock retard, cam position desired vs actual on both cams, and the misfire counters) and writes a worksheet. THE PARAMETER LIST CAME FROM GM'S GDS2 DEALER DATABASE AND HAS NEVER BEEN CONFIRMED ON THIS ENGINE -- not one of these has been asked of an A20NFT. GM's list is its shared 'E39 4-cylinder' set, so expect a fair number to come back NRC 31 (request out of range); that split is reported as the applicability table and is the most useful thing a first run produces. There are no pass/fail thresholds in GM's data, so nothing here judges a reading -- it reports the number and names the divergence. Read-only: no clear, no coding, no adaptation, and the 70 DeviceControl frames GM's data carries are listed for information and never transmitted.",
         "readOnly": true
       },
       {

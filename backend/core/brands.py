@@ -136,6 +136,9 @@ def features(brand: str) -> dict:
         # Gearbox-focused read (ident + faults + live + diagnosis).
         "gearbox": brand_module(brand, "gearbox") is not None
         and hasattr(brand_module(brand, "gearbox"), "analyze"),
+        # Engine-focused read (ECM ident + faults + curated live block).
+        "engine": brand_module(brand, "engine") is not None
+        and hasattr(brand_module(brand, "engine"), "analyze"),
         "resets": brand_module(brand, "resets") is not None,
         # Manufacturer routines the harness runs itself rather than walking the
         # operator through -- confirm-gated, precondition-gated, and with a
