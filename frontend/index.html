@@ -41,7 +41,7 @@
           <option value="">Auto / none</option>
         </select>
       </div>
-      <div class="field">
+      <div class="field field-setup">
         <span class="field-label">Setup</span>
         <div class="panel-actions">
           <button id="add-adapter-btn" class="btn btn-secondary btn-small" type="button">Add adapter…</button>
@@ -263,7 +263,7 @@
       <div class="panel-header">
         <h2>Service resets<span id="service-brand-label" class="panel-subject"></span></h2>
         <div class="panel-actions">
-          <button id="service-capture-btn" class="btn btn-secondary" type="button">Capture from your scan tool…</button>
+          <button id="service-capture-btn" class="btn btn-secondary" type="button" hidden>Capture from your scan tool…</button>
         </div>
       </div>
 
@@ -274,6 +274,11 @@
         steps to follow on the car.
       </p>
 
+      <!-- Shown only for a long catalogue (JLR lists 17 resets across a dozen
+           models): typing a model code or name narrows the cards to that car. -->
+      <input id="service-filter" class="service-filter" type="search" hidden
+             placeholder="Filter by model or job — e.g. L494, Discovery, brake"
+             aria-label="Filter service resets" autocomplete="off" />
       <p id="service-message" class="status-message" hidden></p>
       <div id="service-list" class="service-list"></div>
 
