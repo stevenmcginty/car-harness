@@ -148,6 +148,7 @@
     serviceBrandLabel: document.getElementById("service-brand-label"),
     jobsBrandLabel: document.getElementById("jobs-brand-label"),
     serviceMessage: document.getElementById("service-message"),
+    serviceFilter: document.getElementById("service-filter"),
     serviceList: document.getElementById("service-list"),
     pairBtn: document.getElementById("pair-btn"),
     pairModal: document.getElementById("pair-modal"),
@@ -172,8 +173,14 @@
   };
   var pair = { open: false, info: null, devices: [], error: "" };
   var brand = { scanInFlight: false, clearInFlight: false, extrasInFlight: false };
-  var service = { loading: false, runningId: null };
-  var learned = { items: [], loading: false, runningId: null, logs: {} };
+  // openIds: the reset cards whose steps are expanded, so a re-render (a reset
+  // starting or finishing re-fetches the list) doesn't fold them shut again.
+  var service = { loading: false, runningId: null, openIds: {} };
+  // supported: null until the first /api/captures answer. The capture/replay
+  // UI shipped ahead of its backend; a 404 there means this backend has no
+  // capture endpoints, so the button and list stay hidden rather than leading
+  // into a modal whose every call fails.
+  var learned = { items: [], loading: false, runningId: null, logs: {}, supported: null };
   // Capture & replay modal state. phase: "intro" | "recording" | "review".
   var capture = {
     open: false,
@@ -219,12 +226,31 @@
   // rejects on network failure or non-2xx response. Tracks backend reachability.
   // Two-callback .then so only fetch()'s own rejection (network down) marks the
   // backend unreachable -- an HTTP 4xx/5xx means the backend IS running.
+  // A 4xx/5xx rejects with err.status set and err.detail holding the backend's
+  // own explanation (FastAPI's {"detail": ...}), so the UI can say what went
+  // wrong instead of claiming the backend can't be reached.
   function apiFetch(url, options) {
     return fetch(url, options).then(
       function (res) {
         setBackendReachable(true);
         if (!res.ok) {
-          throw new Error("HTTP " + res.status);
+          return res.text().then(function (text) {
+            var detail = "";
+            try {
+              var body = JSON.parse(text);
+              var d = body && (body.detail != null ? body.detail : body.message);
+              if (typeof d === "string") detail = d;
+              else if (Array.isArray(d)) {
+                detail = d.map(function (x) { return (x && x.msg) || String(x); }).join("; ");
+              }
+            } catch (e) {
+              /* not JSON -- e.g. a bare 500 "Internal Server Error" */
+            }
+            var err = new Error(detail || "HTTP " + res.status);
+            err.status = res.status;
+            err.detail = detail;
+            throw err;
+          });
         }
         return res
           .text()
@@ -242,6 +268,28 @@
         throw networkErr;
       }
     );
+  }
+
+  // The text for a failed call: when the backend answered (err.status set),
+  // its own reason; only a genuine network failure gets the "couldn't reach"
+  // wording passed in.
+  function failText(err, offlineText) {
+    if (err && err.status) {
+      return (
+        err.detail ||
+        "The backend hit an error (HTTP " + err.status + ") — the server window has the details."
+      );
+    }
+    return offlineText;
+  }
+
+  // A one-shot action (import, delete, make default) has no message line of
+  // its own. When the network is down the banner already says so; when the
+  // backend answered with a refusal, say why rather than doing nothing.
+  function reportActionError(what) {
+    return function (err) {
+      if (err && err.status) window.alert(what + "\n\n" + failText(err, ""));
+    };
   }
 
   var reconnectTimer = null;
@@ -623,9 +671,7 @@
       .then(function () {
         loadModules();
       })
-      .catch(function () {
-        /* backend banner already surfaced by apiFetch */
-      });
+      .catch(reportActionError("Couldn't delete that job."));
   }
 
   function importModule(file) {
@@ -639,9 +685,7 @@
       .then(function () {
         loadModules();
       })
-      .catch(function () {
-        /* backend banner already surfaced by apiFetch */
-      })
+      .catch(reportActionError("Couldn't import " + file.name + "."))
       .then(function () {
         el.importBtn.disabled = false;
         el.importBtn.textContent = originalText;
@@ -704,9 +748,7 @@
       .then(function () {
         loadAdapters();
       })
-      .catch(function () {
-        /* backend banner already surfaced by apiFetch */
-      });
+      .catch(reportActionError("Couldn't make that adapter the default."));
   }
 
   function deleteAdapter(id) {
@@ -715,9 +757,7 @@
       .then(function () {
         loadAdapters();
       })
-      .catch(function () {
-        /* backend banner already surfaced by apiFetch */
-      });
+      .catch(reportActionError("Couldn't delete that adapter."));
   }
 
   // ---------- Add-adapter wizard ----------
@@ -1184,9 +1224,9 @@
         }
         renderWizard();
       })
-      .catch(function () {
+      .catch(function (err) {
         wizard.testInFlight = false;
-        wizard.testResult = { ok: false, detail: "Couldn't reach the backend to run the test." };
+        wizard.testResult = { ok: false, detail: failText(err, "Couldn't reach the backend to run the test.") };
         renderWizard();
       });
   }
@@ -1312,9 +1352,9 @@
           }
         });
       })
-      .catch(function () {
+      .catch(function (err) {
         wizard.saveInFlight = false;
-        wizard.error = "Couldn't save — is the backend running?";
+        wizard.error = failText(err, "Couldn't save — is the backend running?");
         renderWizard();
       });
   }
@@ -1471,8 +1511,8 @@
       .then(function (data) {
         renderObdScan(data);
       })
-      .catch(function () {
-        renderObdScan({ ok: false, message: "Couldn't reach the backend to scan." });
+      .catch(function (err) {
+        renderObdScan({ ok: false, message: failText(err, "Couldn't reach the backend to scan.") });
       })
       .then(function () {
         obd.scanInFlight = false;
@@ -1510,8 +1550,8 @@
         el.obdMessage.textContent = (data && data.message) || "";
         if (data && data.ok) runObdScan();
       })
-      .catch(function () {
-        el.obdMessage.textContent = "Couldn't reach the backend to clear codes.";
+      .catch(function (err) {
+        el.obdMessage.textContent = failText(err, "Couldn't reach the backend to clear codes.");
       })
       .then(function () {
         obd.clearInFlight = false;
@@ -1564,9 +1604,9 @@
       .then(function (data) {
         if (obd.liveOn) renderLive(data);
       })
-      .catch(function () {
+      .catch(function (err) {
         if (obd.liveOn) {
-          renderLive({ ok: false, message: "Couldn't reach the backend for live data." });
+          renderLive({ ok: false, message: failText(err, "Couldn't reach the backend for live data.") });
         }
       })
       .then(function () {
@@ -1996,8 +2036,8 @@
       .then(function (data) {
         renderBrandScan(data);
       })
-      .catch(function () {
-        renderBrandScan({ ok: false, message: "Couldn't reach the backend to scan." });
+      .catch(function (err) {
+        renderBrandScan({ ok: false, message: failText(err, "Couldn't reach the backend to scan.") });
       })
       .then(function () {
         brand.scanInFlight = false;
@@ -2041,8 +2081,8 @@
         brand.clearInFlight = false;
         if (data && data.ok) runBrandScan(true);
       })
-      .catch(function () {
-        setClearNote("Couldn't reach the backend to clear.");
+      .catch(function (err) {
+        setClearNote(failText(err, "Couldn't reach the backend to clear."));
       })
       .then(function () {
         brand.clearInFlight = false;
@@ -2329,9 +2369,9 @@
         el.brandExtrasCopy.hidden = !sheet;
         el.brandExtrasDownload.hidden = !hasSamples;
       })
-      .catch(function () {
+      .catch(function (err) {
         if (countdown) clearInterval(countdown);
-        el.brandExtrasMessage.textContent = "Couldn't reach the backend.";
+        el.brandExtrasMessage.textContent = failText(err, "Couldn't reach the backend.");
       })
       .then(function () {
         brand.extrasInFlight = false;
@@ -2535,8 +2575,8 @@
               body: "{}" }
           ).then(function (r) {
             el.brandExtrasMessage.textContent = (r && r.message) || "Stopping…";
-          }).catch(function () {
-            el.brandExtrasMessage.textContent = "Couldn't reach the backend.";
+          }).catch(function (err) {
+            el.brandExtrasMessage.textContent = failText(err, "Couldn't reach the backend.");
           }).then(function () {
             el.brandProcedureAbort.disabled = false;
           });
@@ -2566,8 +2606,8 @@
           finish();
         });
       })
-      .catch(function () {
-        el.brandExtrasMessage.textContent = "Couldn't reach the backend.";
+      .catch(function (err) {
+        el.brandExtrasMessage.textContent = failText(err, "Couldn't reach the backend.");
         finish();
       });
   }
@@ -2612,8 +2652,8 @@
         });
         renderJobSelect();
       })
-      .catch(function () {
-        el.brandJobsMessage.textContent = "Couldn't reach the backend.";
+      .catch(function (err) {
+        el.brandJobsMessage.textContent = failText(err, "Couldn't reach the backend.");
       });
   }
 
@@ -2737,9 +2777,77 @@
     return span;
   }
 
+  // A catalogue procedure is a flat list of lines, but some of them carry
+  // structure: a line ending in ":" heads a variant ("MINI -- the trip
+  // button:"), a blank line separates variants, and the lines under a heading
+  // may already be numbered ("1. Ignition ON"). Split it into groups so each
+  // variant gets its own heading and its own 1..n, instead of one long list
+  // numbered "2. 1. Don't start the engine" with an empty item in the middle.
+  function procedureGroups(lines) {
+    var groups = [];
+    var cur = null;
+    (lines || []).forEach(function (raw) {
+      var line = String(raw == null ? "" : raw).trim();
+      if (!line) {
+        cur = null;
+        return;
+      }
+      var numbered = /^\d+[.)]\s+/.test(line);
+      if (!numbered && /:$/.test(line)) {
+        cur = { heading: line.replace(/:$/, ""), steps: [] };
+        groups.push(cur);
+        return;
+      }
+      if (!cur) {
+        cur = { heading: "", steps: [] };
+        groups.push(cur);
+      }
+      cur.steps.push(line.replace(/^\d+[.)]\s+/, ""));
+    });
+    return groups.filter(function (g) { return g.heading || g.steps.length; });
+  }
+
+  function buildProcedure(lines) {
+    var wrap = document.createElement("div");
+    wrap.className = "service-procedure";
+    procedureGroups(lines).forEach(function (g) {
+      if (g.heading) {
+        var h = document.createElement("p");
+        h.className = "service-variant";
+        h.textContent = g.heading;
+        wrap.appendChild(h);
+      }
+      if (!g.steps.length) return;
+      var ol = document.createElement("ol");
+      ol.className = "service-steps";
+      g.steps.forEach(function (step) {
+        var li = document.createElement("li");
+        li.textContent = step;
+        ol.appendChild(li);
+      });
+      wrap.appendChild(ol);
+    });
+    return wrap;
+  }
+
+  function buildCautions(cautions) {
+    var ul = document.createElement("ul");
+    ul.className = "service-cautions";
+    cautions.forEach(function (c) {
+      var li = document.createElement("li");
+      li.textContent = c;
+      ul.appendChild(li);
+    });
+    return ul;
+  }
+
+  function plural(n, word) {
+    return n + " " + word + (n === 1 ? "" : "s");
+  }
+
   function buildServiceRow(r) {
     var row = document.createElement("div");
-    row.className = "module-row";
+    row.className = "module-row service-row";
 
     var head = document.createElement("div");
     head.className = "module-row-head";
@@ -2758,10 +2866,12 @@
 
     if (r.models) {
       var models = document.createElement("p");
-      models.className = "obd-hint";
+      models.className = "service-models";
       models.textContent = r.models;
       row.appendChild(models);
     }
+
+    var cautions = r.cautions || [];
 
     if (r.method === "uds") {
       if (r.steps && r.steps.length) {
@@ -2770,9 +2880,12 @@
         sends.textContent = "Sends: " + r.steps.join("  ·  ");
         row.appendChild(sends);
       }
+      // This one changes the car from here, so its cautions stay in view
+      // next to the button rather than folded away.
+      if (cautions.length) row.appendChild(buildCautions(cautions));
       var runBtn = document.createElement("button");
       runBtn.type = "button";
-      runBtn.className = "btn btn-primary btn-small";
+      runBtn.className = "btn btn-primary btn-small service-run";
       runBtn.textContent = service.runningId === r.id ? "Running…" : "Run reset";
       runBtn.disabled = service.runningId !== null;
       runBtn.addEventListener("click", function () {
@@ -2780,45 +2893,102 @@
       });
       row.appendChild(runBtn);
     } else {
-      var steps = document.createElement("ol");
-      steps.className = "service-steps";
-      (r.procedure || []).forEach(function (step) {
-        var li = document.createElement("li");
-        li.textContent = step;
-        steps.appendChild(li);
+      // A dash procedure is read at the car, one card at a time. Folded, the
+      // list is a catalogue you can scan; open, it is the steps to follow.
+      var stepCount = 0;
+      procedureGroups(r.procedure).forEach(function (g) { stepCount += g.steps.length; });
+      var details = document.createElement("details");
+      details.className = "service-details";
+      var summary = document.createElement("summary");
+      var bits = [plural(stepCount, "step")];
+      if (cautions.length) bits.push(plural(cautions.length, "caution"));
+      var syncSummary = function () {
+        summary.textContent =
+          (details.open ? "Hide the steps" : "Show the steps") + " (" + bits.join(", ") + ")";
+      };
+      details.open = !!service.openIds[r.id];
+      syncSummary();
+      details.addEventListener("toggle", function () {
+        if (details.open) service.openIds[r.id] = true;
+        else delete service.openIds[r.id];
+        syncSummary();
       });
-      row.appendChild(steps);
+      details.appendChild(summary);
+      details.appendChild(buildProcedure(r.procedure));
+      if (cautions.length) details.appendChild(buildCautions(cautions));
+      if (r.source) {
+        var src = document.createElement("p");
+        src.className = "service-source";
+        src.textContent = "Source: " + r.source;
+        details.appendChild(src);
+      }
+      row.appendChild(details);
     }
-
-    (r.cautions || []).forEach(function (c) {
-      var warn = document.createElement("p");
-      warn.className = "dtc-desc";
-      warn.textContent = "⚠ " + c;
-      row.appendChild(warn);
-    });
 
     return row;
   }
+
+  // Below this many cards the list is short enough to scan by eye.
+  var SERVICE_FILTER_MIN = 6;
 
   function renderServiceResets(data) {
     el.serviceList.innerHTML = "";
     el.serviceMessage.hidden = true;
     var resets = (data && data.resets) || [];
+    el.serviceFilter.hidden = resets.length < SERVICE_FILTER_MIN;
+    if (el.serviceFilter.hidden) el.serviceFilter.value = "";
     if (!resets.length) {
       el.serviceMessage.hidden = false;
       el.serviceMessage.textContent = "No service resets catalogued for this manufacturer yet.";
       return;
     }
     resets.forEach(function (r) {
-      el.serviceList.appendChild(buildServiceRow(r));
+      var row = buildServiceRow(r);
+      row.setAttribute(
+        "data-search",
+        [r.name, r.models, r.description].join(" ").toLowerCase()
+      );
+      el.serviceList.appendChild(row);
     });
+    applyServiceFilter();
+  }
+
+  // Every word typed has to appear somewhere in the card's name, models or
+  // description, so "range sport" finds both Range Rover Sports.
+  function applyServiceFilter() {
+    var words = el.serviceFilter.value.toLowerCase().split(/\s+/).filter(Boolean);
+    var rows = el.serviceList.querySelectorAll(".service-row");
+    var shown = 0;
+    Array.prototype.forEach.call(rows, function (row) {
+      var hay = row.getAttribute("data-search") || "";
+      var match = words.every(function (w) { return hay.indexOf(w) !== -1; });
+      row.hidden = !match;
+      if (match) shown++;
+    });
+    if (words.length && !shown) {
+      el.serviceMessage.hidden = false;
+      el.serviceMessage.textContent =
+        "Nothing matches \u201c" + el.serviceFilter.value.trim() + "\u201d.";
+    } else if (words.length) {
+      el.serviceMessage.hidden = false;
+      el.serviceMessage.textContent = "Showing " + shown + " of " + rows.length + ".";
+    } else if (rows.length) {
+      el.serviceMessage.hidden = true;
+    }
   }
 
   function loadServiceResets() {
     var p = currentProfile();
+    var brandId = p ? p.id : "";
+    if (service.brandId !== brandId) {
+      service.brandId = brandId;
+      service.openIds = {};
+      el.serviceFilter.value = "";
+    }
     el.serviceList.innerHTML = "";
     loadLearnedResets(); // captured resets aren't gated behind the brand's catalogue
     if (!p || !brandFeatures(p).resets) {
+      el.serviceFilter.hidden = true;
       el.serviceMessage.hidden = false;
       el.serviceMessage.textContent = "No service resets catalogued for this manufacturer yet.";
       return;
@@ -2830,9 +3000,9 @@
       .then(function (data) {
         renderServiceResets(data);
       })
-      .catch(function () {
+      .catch(function (err) {
         el.serviceMessage.hidden = false;
-        el.serviceMessage.textContent = "Couldn't reach the backend for resets.";
+        el.serviceMessage.textContent = failText(err, "Couldn't reach the backend for resets.");
       })
       .then(function () {
         service.loading = false;
@@ -2858,9 +3028,9 @@
         el.serviceMessage.hidden = false;
         el.serviceMessage.textContent = (res && res.message) || "Reset finished.";
       })
-      .catch(function () {
+      .catch(function (err) {
         el.serviceMessage.hidden = false;
-        el.serviceMessage.textContent = "Couldn't reach the backend to run the reset.";
+        el.serviceMessage.textContent = failText(err, "Couldn't reach the backend to run the reset.");
       })
       .then(function () {
         service.runningId = null;
@@ -2987,7 +3157,7 @@
 
   function loadLearnedResets() {
     var p = currentProfile();
-    if (!p) {
+    if (!p || learned.supported === false) {
       learned.items = [];
       el.learnedList.innerHTML = "";
       el.learnedHeading.hidden = true;
@@ -2996,10 +3166,16 @@
     learned.loading = true;
     apiFetch("/api/captures?brand=" + encodeURIComponent(p.id))
       .then(function (data) {
+        learned.supported = true;
+        el.serviceCaptureBtn.hidden = false;
         learned.items = (data && data.captures) || [];
         renderLearnedResets();
       })
-      .catch(function () {
+      .catch(function (err) {
+        if (err && err.status === 404) {
+          learned.supported = false;
+          el.serviceCaptureBtn.hidden = true;
+        }
         learned.items = [];
         renderLearnedResets();
       })
@@ -3037,9 +3213,9 @@
           (res && res.message) || (res && res.ok ? "Reset finished." : "Reset failed.");
         learned.logs[reset.id] = (res && res.log) || [];
       })
-      .catch(function () {
+      .catch(function (err) {
         el.serviceMessage.hidden = false;
-        el.serviceMessage.textContent = "Couldn't reach the backend to run the reset.";
+        el.serviceMessage.textContent = failText(err, "Couldn't reach the backend to run the reset.");
         learned.logs[reset.id] = [];
       })
       .then(function () {
@@ -3295,9 +3471,9 @@
         renderCaptureModal();
         startCapturePoll();
       })
-      .catch(function () {
+      .catch(function (err) {
         capture.startInFlight = false;
-        capture.error = "Couldn't reach the backend to start the capture.";
+        capture.error = failText(err, "Couldn't reach the backend to start the capture.");
         renderCaptureModal();
       });
   }
@@ -3354,9 +3530,9 @@
         capture.phase = "review";
         renderCaptureModal();
       })
-      .catch(function () {
+      .catch(function (err) {
         capture.stopInFlight = false;
-        capture.error = "Couldn't reach the backend to stop the capture.";
+        capture.error = failText(err, "Couldn't reach the backend to stop the capture.");
         renderCaptureModal();
       });
   }
@@ -3396,9 +3572,9 @@
         el.serviceMessage.textContent = "Saved '" + name + "' as a learned reset.";
         loadLearnedResets();
       })
-      .catch(function () {
+      .catch(function (err) {
         capture.saveInFlight = false;
-        capture.error = "Couldn't reach the backend to save this reset.";
+        capture.error = failText(err, "Couldn't reach the backend to save this reset.");
         renderCaptureModal();
       });
   }
@@ -3416,8 +3592,8 @@
         pair.info = data;
         renderPairModal();
       })
-      .catch(function () {
-        pair.error = "Couldn't reach the backend to start pairing.";
+      .catch(function (err) {
+        pair.error = failText(err, "Couldn't reach the backend to start pairing.");
         renderPairModal();
       });
     loadPairedDevices();
@@ -3631,6 +3807,7 @@
   });
 
   el.serviceCaptureBtn.addEventListener("click", openCaptureModal);
+  el.serviceFilter.addEventListener("input", applyServiceFilter);
   el.captureModalClose.addEventListener("click", closeCaptureModal);
   el.captureModal.addEventListener("click", function (e) {
     if (e.target === el.captureModal) closeCaptureModal();

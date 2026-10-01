@@ -73,11 +73,15 @@
   display: none !important;
 }
 
+/* overflow-x must be `clip`, not `hidden`: `hidden` on both html and body
+   turns body into its own 100%-tall scroll box, so the window never scrolls
+   -- keyboard paging, scroll restoration and printing all see one screenful
+   and the rest of the page is cut off. */
 html, body {
   margin: 0;
   padding: 0;
-  height: 100%;
-  overflow-x: hidden;
+  min-height: 100%;
+  overflow-x: clip;
 }
 
 body {
@@ -1039,9 +1043,104 @@ select:disabled {
   margin-left: auto;
 }
 
+.service-filter {
+  display: block;
+  width: 100%;
+  max-width: 460px;
+  min-height: 42px;
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-hi);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.service-filter::placeholder {
+  color: var(--text-faint);
+}
+
+.service-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.service-row .dtc-desc {
+  margin-top: 6px;
+}
+
+.service-models {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.service-run {
+  margin-top: 12px;
+}
+
+/* The steps fold away so the list reads as a catalogue; open a card to follow
+   it at the car. The summary is a plain text toggle with a turning chevron. */
+.service-details {
+  margin-top: 10px;
+}
+
+.service-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--accent);
+  user-select: none;
+}
+
+.service-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.service-details > summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  flex: none;
+}
+
+.service-details[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.service-details > summary:hover {
+  color: #ffbe45;
+}
+
+.service-procedure {
+  margin-top: 4px;
+}
+
+.service-variant {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.service-variant:first-child {
+  margin-top: 6px;
+}
+
 .service-steps {
-  margin: 11px 0 0;
-  padding-left: 20px;
+  margin: 8px 0 0;
+  padding-left: 22px;
   color: var(--text-muted);
   font-size: 13.5px;
   line-height: 1.65;
@@ -1049,6 +1148,34 @@ select:disabled {
 
 .service-steps li {
   margin-bottom: 3px;
+  padding-left: 2px;
+}
+
+.service-steps li::marker {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.service-cautions {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--warn);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--warn-wash);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.service-cautions li + li {
+  margin-top: 6px;
+}
+
+.service-source {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
 /* ---------- Learned resets (capture & replay) ---------- */
@@ -1439,6 +1566,13 @@ select:disabled {
 }
 
 .type-choice {
+  /* The name and description are spans inside a <button>: without a column
+     flex they run together on one line, vertically centred in the card. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
   text-align: left;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1462,7 +1596,6 @@ select:disabled {
 .type-choice-name {
   font-weight: 700;
   font-size: 14.5px;
-  margin-bottom: 4px;
 }
 
 .type-choice-desc {
@@ -1604,9 +1737,36 @@ select:disabled {
 
 /* ---------- Responsive ---------- */
 
+/* Once the header wraps it is two or three rows of controls you set once per
+   car -- pinned, it would eat a fifth of a tablet screen and a quarter of a
+   phone's. Let it scroll away with the page instead. */
+@media (max-width: 1100px) {
+  .header {
+    position: static;
+  }
+}
+
 @media (max-width: 900px) {
   .header {
     align-items: flex-start;
+  }
+
+  /* Setup gets its own row so its three buttons sit side by side instead of
+     one alone and two wrapped under it. */
+  .header-right .field-setup {
+    flex: 1 1 100%;
+  }
+
+  .field-setup .panel-actions {
+    flex-wrap: nowrap;
+  }
+
+  .field-setup .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+    white-space: nowrap;
   }
 
   .header-right {
